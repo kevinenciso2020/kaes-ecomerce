@@ -104,10 +104,18 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
 
       const shippingEl = document.getElementById('order-shipping')!
       if (order.shippingAddress) {
+        const addr = order.shippingAddress
+        const departamento = addr.departamento || addr.department || ''
+        const municipio = addr.municipio || addr.city || ''
+        const zip = addr.zipCode || addr.postalCode || ''
+        const fullName = addr.fullName ? `<p>${escapeHtml(addr.fullName)}</p>` : ''
+        const phone = addr.phone ? `<p>Tel: ${escapeHtml(addr.phone)}</p>` : ''
         shippingEl.innerHTML = `
-          <p>${escapeHtml(order.shippingAddress.street)}</p>
-          <p>${escapeHtml(order.shippingAddress.city)}, ${escapeHtml(order.shippingAddress.state)}</p>
-          <p>${escapeHtml(order.shippingAddress.postalCode)}</p>
+          ${fullName}
+          ${phone}
+          <p>${escapeHtml(addr.street || '')}</p>
+          <p>${escapeHtml(municipio)}${departamento ? ', ' + escapeHtml(departamento) : ''}</p>
+          ${zip ? `<p>${escapeHtml(zip)}</p>` : ''}
         `
       } else {
         shippingEl.innerHTML = '<p>Retiro en tienda</p>'

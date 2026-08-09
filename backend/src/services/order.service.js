@@ -46,14 +46,20 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
 
     // Si se proporciona dirección, crearla
     if (address && !shippingAddressId) {
+      const departamento = (address.departamento || address.department || '').trim()
+      const municipio = (address.municipio || address.city || '').trim()
       const newAddress = await tx.address.create({
         data: {
           userId,
+          label: address.label || 'Casa',
           street: address.street,
-          city: address.city,
-          department: address.department,
-          fullName: address.fullName,
-          phone: address.phone,
+          city: municipio,
+          department: departamento,
+          departamento,
+          municipio,
+          zipCode: address.zipCode || null,
+          fullName: address.fullName || null,
+          phone: address.phone || null,
         }
       })
       finalShippingAddressId = newAddress.id

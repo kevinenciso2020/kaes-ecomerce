@@ -30,11 +30,25 @@ export function sanitizeCartItem(item) {
 
 export function sanitizeOrder(order) {
   if (!order) return null
+  const sanitizedShipping = order.shippingAddress && typeof order.shippingAddress === 'object'
+    ? {
+        ...order.shippingAddress,
+        street: escapeHtml(order.shippingAddress.street),
+        city: escapeHtml(order.shippingAddress.city),
+        department: escapeHtml(order.shippingAddress.department),
+        departamento: escapeHtml(order.shippingAddress.departamento),
+        municipio: escapeHtml(order.shippingAddress.municipio),
+        zipCode: escapeHtml(order.shippingAddress.zipCode),
+        fullName: escapeHtml(order.shippingAddress.fullName),
+        phone: escapeHtml(order.shippingAddress.phone),
+        label: escapeHtml(order.shippingAddress.label),
+      }
+    : order.shippingAddress
   return {
     ...order,
     id: escapeHtml(order.id),
     status: escapeHtml(order.status),
-    shippingAddress: escapeHtml(order.shippingAddress),
+    shippingAddress: sanitizedShipping,
     notes: escapeHtml(order.notes),
   }
 }

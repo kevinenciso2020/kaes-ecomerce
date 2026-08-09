@@ -219,17 +219,21 @@ model Coupon {
 }
 
 model Address {
-  id         String  @id @default(cuid())
-  userId     String
-  label      String  @default("Casa")
-  street     String
-  city       String
-  department String
-  zipCode    String?
-  isDefault  Boolean @default(false)
+  id           String  @id @default(cuid())
+  userId       String
+  label        String  @default("Casa")
+  street       String
+  city         String
+  department   String
+  departamento String  @default("")
+  municipio    String  @default("")
+  zipCode      String?
+  fullName     String?
+  phone        String?
+  isDefault    Boolean @default(false)
 
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders     Order[]
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders       Order[]
 
   @@map("addresses")
 }

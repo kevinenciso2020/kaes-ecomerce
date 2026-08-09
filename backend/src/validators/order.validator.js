@@ -6,7 +6,8 @@ export const createOrder = [
     .isArray({ min: 1 }).withMessage('Debe incluir al menos un producto'),
   body('items.*.productId')
     .notEmpty().withMessage('El ID del producto es requerido')
-    .isInt({ min: 1 }).withMessage('El ID del producto debe ser válido'),
+    .isString().withMessage('El ID del producto debe ser válido')
+    .isLength({ min: 1 }).withMessage('El ID del producto debe ser válido'),
   body('items.*.quantity')
     .notEmpty().withMessage('La cantidad es requerida')
     .isInt({ min: 1 }).withMessage('La cantidad debe ser al menos 1'),
@@ -28,11 +29,29 @@ export const createOrder = [
   body('address')
     .optional()
     .isObject().withMessage('La dirección debe ser un objeto'),
-  body('address.street')
+  body('address.label')
     .optional()
     .trim()
     .escape()
+    .isLength({ max: 50 }).withMessage('La etiqueta no puede superar los 50 caracteres'),
+  body('address.street')
+    .if(body('address').exists())
+    .notEmpty().withMessage('La calle es requerida')
+    .trim()
+    .escape()
     .isLength({ max: 255 }).withMessage('La calle no puede superar los 255 caracteres'),
+  body('address.departamento')
+    .if(body('address').exists())
+    .notEmpty().withMessage('El departamento es requerido')
+    .trim()
+    .escape()
+    .isLength({ max: 100 }).withMessage('El departamento no puede superar los 100 caracteres'),
+  body('address.municipio')
+    .if(body('address').exists())
+    .notEmpty().withMessage('El municipio es requerido')
+    .trim()
+    .escape()
+    .isLength({ max: 100 }).withMessage('El municipio no puede superar los 100 caracteres'),
   body('address.city')
     .optional()
     .trim()
@@ -49,12 +68,14 @@ export const createOrder = [
     .escape()
     .isLength({ max: 20 }).withMessage('El código postal no puede superar los 20 caracteres'),
   body('address.fullName')
-    .optional()
+    .if(body('address').exists())
+    .notEmpty().withMessage('El nombre del destinatario es requerido')
     .trim()
     .escape()
     .isLength({ max: 200 }).withMessage('El nombre completo no puede superar los 200 caracteres'),
   body('address.phone')
-    .optional()
+    .if(body('address').exists())
+    .notEmpty().withMessage('El teléfono es requerido')
     .trim()
     .escape()
     .isLength({ max: 30 }).withMessage('El teléfono no puede superar los 30 caracteres'),
@@ -65,11 +86,13 @@ export const createOrder = [
     .isLength({ max: 1000 }).withMessage('Las notas no pueden superar los 1000 caracteres'),
   body('shippingAddressId')
     .optional()
-    .isInt({ min: 1 }).withMessage('El ID de dirección debe ser válido')
+    .isString().withMessage('El ID de dirección debe ser válido')
+    .isLength({ min: 1 }).withMessage('El ID de dirección debe ser válido')
 ]
 
 export const getOrderById = [
   param('id')
     .notEmpty().withMessage('El ID de la orden es requerido')
-    .isInt({ min: 1 }).withMessage('El ID debe ser un número entero positivo')
+    .isString().withMessage('El ID debe ser válido')
+    .isLength({ min: 1 }).withMessage('El ID debe ser válido')
 ]

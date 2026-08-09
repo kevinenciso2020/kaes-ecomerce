@@ -1,5 +1,6 @@
 ---
 import ShopLayout from '../layouts/ShopLayout.astro'
+import UbicacionSelect from '../components/UbicacionSelect.jsx'
 import '../styles/checkout.css'
 ---
 
@@ -40,14 +41,13 @@ import '../styles/checkout.css'
           </div>
           <div class="form-grid">
             <div class="form-group">
-              <label class="form-label">Ciudad</label>
-              <input type="text" id="city" class="form-input" placeholder="Ciudad" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Departamento</label>
-              <input type="text" id="department" class="form-input" placeholder="Departamento" />
+              <label class="form-label">Código postal</label>
+              <input type="text" id="zipCode" class="form-input" placeholder="050010" inputmode="numeric" />
             </div>
           </div>
+          <UbicacionSelect client:load id="ubicacion" required={true} />
+          <input type="hidden" id="address-departamento" />
+          <input type="hidden" id="address-municipio" />
         </div>
 
         <div class="form-section">
@@ -135,6 +135,15 @@ import '../styles/checkout.css'
 
   let currentDiscount = 0
   let appliedCouponData = null
+
+  // Wire UbicacionSelect (React island) → hidden inputs
+  document.addEventListener('ubicacion-change', (e: Event) => {
+    const detail = (e as CustomEvent<{ departamento: string; municipio: string }>).detail
+    const depEl = document.getElementById('address-departamento') as HTMLInputElement | null
+    const munEl = document.getElementById('address-municipio') as HTMLInputElement | null
+    if (depEl) depEl.value = detail?.departamento || ''
+    if (munEl) munEl.value = detail?.municipio || ''
+  })
 
   // Mostrar cupón guardado si existe
   const savedCoupon = getCouponCode()
@@ -285,21 +294,25 @@ import '../styles/checkout.css'
     }
 
     const fullNameInput   = document.getElementById('full-name') as HTMLInputElement | null
+    const phoneInput      = document.getElementById('phone') as HTMLInputElement | null
     const streetInput     = document.getElementById('street') as HTMLInputElement | null
-    const cityInput       = document.getElementById('city') as HTMLInputElement | null
-    const departmentInput = document.getElementById('department') as HTMLInputElement | null
+    const zipInput        = document.getElementById('zipCode') as HTMLInputElement | null
+    const departamentoInput = document.getElementById('address-departamento') as HTMLInputElement | null
+    const municipioInput  = document.getElementById('address-municipio') as HTMLInputElement | null
 
     const errorEl = document.getElementById('checkout-error') as HTMLElement | null
     const btn     = document.getElementById('place-order-btn') as HTMLButtonElement | null
 
-    const fullName   = fullNameInput?.value.trim() || ''
-    const street     = streetInput?.value.trim() || ''
-    const city       = cityInput?.value.trim() || ''
-    const department = departmentInput?.value.trim() || ''
+    const fullName     = fullNameInput?.value.trim() || ''
+    const phone        = phoneInput?.value.trim() || ''
+    const street       = streetInput?.value.trim() || ''
+    const zipCode      = zipInput?.value.trim() || ''
+    const departamento = departamentoInput?.value.trim() || ''
+    const municipio    = municipioInput?.value.trim() || ''
 
-    if (!fullName || !street || !city || !department) {
+    if (!fullName || !phone || !street || !departamento || !municipio) {
       if (errorEl) {
-        errorEl.textContent   = 'Por favor completa todos los campos'
+        errorEl.textContent   = 'Por favor completa todos los campos requeridos (incluyendo departamento y municipio)'
         errorEl.style.display = 'block'
       }
       return
@@ -327,7 +340,15 @@ import '../styles/checkout.css'
       const order = await api.orders.create({
         items: orderItems,
         couponCode,
-        notes: `Envío a: ${street}, ${city}, ${department}`,
+        address: {
+          fullName,
+          phone,
+          street,
+          zipCode: zipCode || undefined,
+          departamento,
+          municipio,
+          label: 'Casa',
+        },
       })
 
       let paymentUrl = null
