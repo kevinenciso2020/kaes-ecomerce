@@ -25,9 +25,9 @@ export const isAuth = (req, res, next) => {
   }
 }
 
-// Verifica que el usuario tenga rol de administrador
+// Verifica que el usuario tenga rol de administrador (ADMIN o SUPER_ADMIN)
 export const isAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'ADMIN') {
+  if (!req.user || (req.user.role !== 'ADMIN' && req.user.role !== 'SUPER_ADMIN')) {
     return res.status(403).json({ error: 'Acceso denegado: se requiere rol de administrador' })
   }
   next()

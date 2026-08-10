@@ -46,7 +46,7 @@ npm run preview    # Preview build
 3. Select "frontend" as the directory
 4. Build command: `npm run build`
 5. Output directory: `dist`
-6. Add environment variable: `VITE_API_URL=https://your-backend-url.com`
+6. Add environment variable: `PUBLIC_API_URL=https://your-backend-url.com` (Astro uses `PUBLIC_*` prefix for client-exposed env vars, not `VITE_*`)
 7. Deploy
 
 ### Backend (Railway/Render)
@@ -69,4 +69,4 @@ npm run preview    # Preview build
 
 ### Important
 - After deploying backend, update `FRONTEND_URL` in backend env to your Vercel URL
-- After deploying backend, update `VITE_API_URL` in Vercel to your backend URL
+- After deploying backend, update `PUBLIC_API_URL` in Vercel to your backend URL

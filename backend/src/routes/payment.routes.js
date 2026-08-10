@@ -97,7 +97,7 @@ router.post("/create-preference", isAuth, async (req, res) => {
 // POST /api/payments/webhook
 // MercadoPago notifica aquí el resultado del pago
 // ─────────────────────────────────────────
-router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/webhook", async (req, res) => {
   try {
     // 1. Verificar firma del webhook (seguridad anti-spoofing)
     const xSignature = req.headers["x-signature"];
@@ -133,7 +133,10 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
     }
 
     // 2. Procesar la notificación
-    const notification = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    // req.body es un Buffer (express.raw en server.js); nunca aplicar JSON.stringify
+    // sobre un Buffer o la firma nunca coincidirá.
+    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : req.body;
+    const notification = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
 
     // MP solo nos interesa el evento "payment"
     if (notification.type !== "payment") {
@@ -323,9 +326,10 @@ router.post("/wompi/create-checkout", isAuth, async (req, res) => {
 // POST /api/payments/wompi/webhook
 // Wompi notifica aquí el resultado del pago
 // ─────────────────────────────────────────
-router.post("/wompi/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+router.post("/wompi/webhook", async (req, res) => {
   try {
-    const event = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : req.body;
+    const event = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
 
     if (event.event !== "transaction.updated") {
       return res.sendStatus(200)
@@ -348,14 +352,17 @@ router.post("/wompi/webhook", express.raw({ type: "application/json" }), async (
       .update(manifest)
       .digest("hex")
 
-    const secretBuffer   = Buffer.from(process.env.WOMPI_WEBHOOK_SECRET)
-    const receivedBuffer = Buffer.from(wompiSignature)
-    if (secretBuffer.length !== receivedBuffer.length ||
-        !crypto.timingSafeEqual(secretBuffer.slice(0, 1), receivedBuffer.slice(0, 1))) {
-      // basic length check fallback
+    // timingSafeEqual requiere buffers de igual longitud — si difieren, rechazar
+    // sin throw. También eliminar el bloque "basic length check fallback" muerto.
+    const expectedBuffer = Buffer.from(expectedSignature, "utf8")
+    const receivedBuffer = Buffer.from(wompiSignature, "utf8")
+
+    if (expectedBuffer.length !== receivedBuffer.length) {
+      console.warn("Webhook Wompi: firma inválida (longitud)")
+      return res.sendStatus(401).json({ error: "Firma inválida" })
     }
 
-    if (!crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(wompiSignature))) {
+    if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
       console.warn("Webhook Wompi: firma inválida")
       return res.sendStatus(401).json({ error: "Firma inválida" })
     }

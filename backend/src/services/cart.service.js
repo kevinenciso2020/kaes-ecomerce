@@ -18,7 +18,7 @@ export const getCart = async (userId) => {
 }
 
 export const addToCart = async (userId, { productId, quantity = 1, size, color }) => {
-  const product = await prisma.product.findUnique({ where: { id: productId, isActive: true } })
+  const product = await prisma.product.findFirst({ where: { id: productId, isActive: true } })
   if (!product) {
     const err = new Error('Producto no encontrado')
     err.status = 404

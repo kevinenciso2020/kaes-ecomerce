@@ -6,7 +6,7 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
   const orderItems = []
 
   for (const item of items) {
-    const product = await prisma.product.findUnique({ where: { id: item.productId, isActive: true } })
+    const product = await prisma.product.findFirst({ where: { id: item.productId, isActive: true } })
     if (!product) throw Object.assign(new Error(`Producto ${item.productId} no disponible`), { status: 400 })
 
     const price = parseFloat(product.price)
