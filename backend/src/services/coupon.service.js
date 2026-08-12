@@ -7,9 +7,14 @@ export const validateCoupon = async (code, subtotal = 0) => {
       code: code.toUpperCase(),
       isActive: true,
       startsAt: { lte: now },
-      endsAt: {
-        OR: [{ gte: now }, { isNull: true }]
-      }
+      AND: [
+        {
+          OR: [
+            { endsAt: { gte: now } },
+            { endsAt: null },
+          ],
+        },
+      ],
     },
   })
 

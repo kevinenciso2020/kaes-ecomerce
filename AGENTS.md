@@ -4,7 +4,6 @@
 
 - `backend/` - Express.js API with Prisma ORM
 - `frontend/` - Astro + React frontend
-- `shared/` - Shared code between packages
 
 ## Developer Commands
 
@@ -17,6 +16,9 @@ npm run db:migrate   # Run Prisma migrations
 npm run db:push     # Push schema to DB
 npm run db:studio   # Open Prisma Studio
 npm run db:seed    # Seed database
+npm test            # Run Vitest suite (unit + integration)
+npm run test:watch  # Watch mode
+npm run test:coverage # With v8 coverage
 ```
 
 ### Frontend
@@ -25,17 +27,21 @@ cd frontend
 npm run dev         # Dev server at localhost:4321
 npm run build      # Build for production
 npm run preview    # Preview build
+npm test           # Run Vitest suite
+npm run test:watch # Watch mode
+npm run test:coverage # With v8 coverage
 ```
 
 ## Important Quirks
 
 - **Backend is JavaScript (not TypeScript)** - uses `.js` files, no compilation step despite tsconfig.json `"module": "commonjs"`
+- **Backend is split into `src/app.js` (Express app) and `src/server.js` (listen + SIGTERM)** to allow supertest to import the app without binding a port
+- **Rate limiting is disabled when `NODE_ENV=test`** (both global limiter and per-route auth limiters) so suites don't self-block
 - **Database .env file** at `backend/.env` - contains required secrets (already exists)
 - **Two payment providers**: Stripe and MercadoPago configured
 - **File uploads**: multer + Cloudinary for image handling
 - **Frontend Node.js requirement**: `node >= 22.12.0` in engines
-- **Shared package** only contains `shared/types/` - TypeScript interfaces
-- **No test suite** - no test scripts or test directory found
+- **Tests use Vitest** in both packages; backend uses supertest + mocked Prisma, frontend uses jsdom
 - **No lint/typecheck** - no ESLint, Prettier, or TypeScript checking configured
 
 ## Deployment
