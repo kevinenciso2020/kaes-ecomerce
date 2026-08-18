@@ -7,21 +7,21 @@ import CtaBanner from '../components/sections/CtaBanner.tsx'
 import '../styles/index.css'
 import { api } from '../lib/api.js'
 
-let featuredProducts: any[] = []
+let featuredProducts = []
+let hasError = false
 
 try {
   const data = await api.products.list({ featured: true, limit: 8 })
   featuredProducts = Array.isArray(data.products) ? data.products : []
 } catch (e) {
   console.error('Error loading products:', e)
+  hasError = true
 }
 ---
 
 <ShopLayout title="Inicio" description="Ropa con personalidad. Prendas atemporales para quienes se atreven a definir su propio estilo.">
   <HeroSection client:load />
   <CategoriesSection client:visible />
-  {featuredProducts.length > 0 && (
-    <FeaturedProducts client:visible products={featuredProducts} />
-  )}
+  <FeaturedProducts client:visible products={featuredProducts} loading={hasError && featuredProducts.length === 0} />
   <CtaBanner client:visible />
 </ShopLayout>

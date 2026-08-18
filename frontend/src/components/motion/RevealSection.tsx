@@ -10,14 +10,19 @@ const fadeSlideUp = {
   },
 };
 
-export function RevealSection({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+export function RevealSection({
+  children,
+  className = "",
+  custom,
+}) {
   return (
     <motion.div
       variants={fadeSlideUp}
       initial="hidden"
       whileInView="visible"
-      viewport={{ once: true, margin: "-80px" }}
+      viewport={{ once: true, margin: "-60px" }}
       className={className}
+      custom={custom}
     >
       {children}
     </motion.div>

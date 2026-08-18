@@ -1,6 +1,6 @@
 ---
 import ShopLayout from '../layouts/ShopLayout.astro'
-import '../styles/carrito.css'
+import Icon from '../components/ui/Icon.astro'
 ---
 
 <ShopLayout title="Mi carrito">
@@ -8,20 +8,19 @@ import '../styles/carrito.css'
 
     <h1 class="page-title">Mi carrito</h1>
 
-    <!-- Estado vacío -->
-    <div id="cart-empty" style="display:none" class="cart-empty">
+    <div id="cart-empty" hidden class="cart-empty">
+      <div class="cart-empty-icon">
+        <Icon name="cart" size={48} strokeWidth={1} />
+      </div>
       <p>Tu carrito está vacío</p>
       <a href="/productos" class="btn btn-primary">Ver productos</a>
     </div>
 
-    <!-- Contenido del carrito -->
-    <div id="cart-content" style="display:none" class="cart-layout">
+    <div id="cart-content" hidden class="cart-layout">
 
-      <!-- Lista de items -->
-      <div class="cart-items" id="cart-items-list"></div>
+      <div class="cart-items" id="cart-items-list" aria-live="polite"></div>
 
-      <!-- Resumen -->
-      <div class="cart-summary">
+      <aside class="cart-summary" aria-label="Resumen del pedido">
         <h2 class="summary-title">Resumen del pedido</h2>
 
         <div class="summary-rows">
@@ -35,31 +34,33 @@ import '../styles/carrito.css'
           </div>
         </div>
 
-        <!-- Cupón -->
         <div class="coupon-group">
+          <label for="coupon-input" class="sr-only">Código de cupón</label>
           <input
             type="text"
             id="coupon-input"
             class="form-input"
             placeholder="Código de cupón"
+            autocomplete="off"
           />
-          <button class="btn btn-outline" id="apply-coupon-btn">Aplicar</button>
+          <button class="btn btn-outline" id="apply-coupon-btn" type="button">Aplicar</button>
         </div>
-        <div id="coupon-message" style="display:none" class="coupon-message"></div>
+        <div id="coupon-message" hidden class="coupon-message"></div>
 
         <div class="summary-row total-row">
           <span>Total</span>
           <span id="summary-total">$0</span>
         </div>
 
-        <button class="btn btn-primary btn-full" id="checkout-btn">
+        <button class="btn btn-primary btn-full" id="checkout-btn" type="button">
           Proceder al pago
         </button>
 
         <a href="/productos" class="continue-shopping">
-          ← Continuar comprando
+          <Icon name="arrowLeft" size={14} />
+          Continuar comprando
         </a>
-      </div>
+      </aside>
 
     </div>
 
@@ -67,7 +68,7 @@ import '../styles/carrito.css'
 </ShopLayout>
 
 <script>
-  import { cartItems, cartTotal, removeFromCart, updateQuantity, clearCart } from '../stores/cart.store.js'
+  import { cartItems, cartTotal, removeFromCart, updateQuantity } from '../stores/cart.store.js'
   import { api } from '../lib/api.js'
   import { sanitizeCartItem, escapeHtml } from '../lib/sanitize.js'
 
@@ -80,46 +81,42 @@ import '../styles/carrito.css'
 
     if (!emptyEl || !contentEl) return
 
-    emptyEl.style.display  = isEmpty ? 'flex' : 'none'
-    contentEl.style.display = isEmpty ? 'none' : 'grid'
+    emptyEl.hidden   = !isEmpty
+    contentEl.hidden = isEmpty
 
     if (isEmpty) return
 
-    // Renderizar items
     const listEl = document.getElementById('cart-items-list')
     if (listEl) {
-      listEl.innerHTML = sanitized.map(item => `
-        <div class="cart-item" data-id="${item.id}" data-size="${item.size || ''}" data-color="${item.color || ''}">
+      listEl.innerHTML = sanitized.map((item) => `
+        <article class="cart-item" data-id="${escapeHtml(item.id)}" data-size="${escapeHtml(item.size || '')}" data-color="${escapeHtml(item.color || '')}">
           <div class="item-image">
             ${item.image
-              ? `<img src="${item.image}" alt="${item.name}" />`
-              : `<div class="item-image-placeholder">📦</div>`
+              ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" />`
+              : `<div class="item-image-placeholder"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>`
             }
           </div>
           <div class="item-details">
-            <h3 class="item-name">${item.name}</h3>
+            <h3 class="item-name">${escapeHtml(item.name)}</h3>
             <div class="item-variants">
-              ${item.size  ? `<span class="variant-tag">Talla: ${item.size}</span>`  : ''}
-              ${item.color ? `<span class="variant-tag">Color: ${item.color}</span>` : ''}
+              ${item.size  ? `<span class="variant-tag">Talla: ${escapeHtml(item.size)}</span>`  : ''}
+              ${item.color ? `<span class="variant-tag">Color: ${escapeHtml(item.color)}</span>` : ''}
             </div>
             <p class="item-price">$${Number(item.price).toLocaleString('es-CO')}</p>
           </div>
           <div class="item-controls">
-            <div class="quantity-selector">
-              <button class="qty-btn" onclick="changeItemQty('${item.id}','${item.size || ''}','${item.color || ''}',-1)">−</button>
-              <span>${item.quantity}</span>
-              <button class="qty-btn" onclick="changeItemQty('${item.id}','${item.size || ''}','${item.color || ''}',1)">+</button>
+            <div class="quantity-selector" role="group" aria-label="Cantidad de ${escapeHtml(item.name)}">
+              <button class="qty-btn" type="button" data-action="decrease" aria-label="Disminuir">−</button>
+              <span aria-live="polite">${item.quantity}</span>
+              <button class="qty-btn" type="button" data-action="increase" aria-label="Aumentar">+</button>
             </div>
             <p class="item-subtotal">$${Number(item.price * item.quantity).toLocaleString('es-CO')}</p>
-            <button class="remove-btn" onclick="removeItem('${item.id}','${item.size || ''}','${item.color || ''}')">
-              Eliminar
-            </button>
+            <button class="remove-btn" type="button" data-action="remove" aria-label="Eliminar ${escapeHtml(item.name)}">Eliminar</button>
           </div>
-        </div>
+        </article>
       `).join('')
     }
 
-    // Actualizar totales
     const formatted = '$' + Number(total).toLocaleString('es-CO')
     const subtotalEl = document.getElementById('summary-subtotal')
     const totalEl    = document.getElementById('summary-total')
@@ -127,29 +124,55 @@ import '../styles/carrito.css'
     if (totalEl)    totalEl.textContent    = formatted
   }
 
-  // Suscribirse a cambios del carrito
   cartItems.subscribe(renderCart)
 
-  // Funciones globales para los botones inline
-  window.changeItemQty = (id, size, color, delta) => {
-    const items    = cartItems.get()
-    const item     = items.find(i => i.id === id && i.size === size && i.color === color)
-    if (item) updateQuantity(id, size === 'null' ? null : size, color === 'null' ? null : color, item.quantity + delta)
+  const listEl = document.getElementById('cart-items-list')
+  listEl?.addEventListener('click', (e) => {
+    const target = e.target
+    const btn = target.closest('[data-action]')
+    if (!btn) return
+    const item = btn.closest('.cart-item')
+    if (!item) return
+
+    const id    = item.dataset.id || ''
+    const size  = item.dataset.size  === '' ? null : (item.dataset.size  || null)
+    const color = item.dataset.color === '' ? null : (item.dataset.color || null)
+    const items = cartItems.get()
+    const found = items.find((i) => i.id === id && (i.size || null) === size && (i.color || null) === color)
+
+    const action = btn.dataset.action
+    if (!found || !action) return
+
+    if (action === 'increase') {
+      updateQuantity(id, size, color, found.quantity + 1)
+    } else if (action === 'decrease') {
+      updateQuantity(id, size, color, found.quantity - 1)
+    } else if (action === 'remove') {
+      removeFromCart(id, size, color)
+    }
+  })
+
+  const applyBtn = document.getElementById('apply-coupon-btn')
+  const couponInput = document.getElementById('coupon-input')
+  const couponMsg = document.getElementById('coupon-message')
+
+  const showCouponMessage = (text, type) => {
+    if (!couponMsg) return
+    couponMsg.textContent = text
+    couponMsg.className = `coupon-message coupon-${type}`
+    couponMsg.hidden = false
   }
 
-  window.removeItem = (id, size, color) => {
-    removeFromCart(id, size === 'null' ? null : size, color === 'null' ? null : color)
-  }
+  applyBtn?.addEventListener('click', async () => {
+    const code = couponInput?.value.trim() || ''
+    if (!code) {
+      showCouponMessage('Ingresa un código', 'error')
+      return
+    }
 
-  // Aplicar cupón
-  document.getElementById('apply-coupon-btn')?.addEventListener('click', async () => {
-    const code    = (document.getElementById('coupon-input') as HTMLInputElement).value.trim()
-    const msgEl   = document.getElementById('coupon-message')
-    const btnEl  = document.getElementById('apply-coupon-btn') as HTMLButtonElement
-    if (!code || !msgEl) return
-
-    btnEl.disabled = true
-    btnEl.textContent = 'Validando...'
+    applyBtn.disabled = true
+    const prevText = applyBtn.textContent
+    applyBtn.textContent = 'Validando...'
 
     try {
       const subtotal = cartTotal.get()
@@ -162,39 +185,27 @@ import '../styles/carrito.css'
         ? `${coupon.value}%`
         : `$${Number(coupon.discount).toLocaleString('es-CO')}`
 
-      msgEl.textContent   = `Cupón aplicado: -${discountFormatted}`
-      msgEl.style.display = 'block'
-      msgEl.style.background = '#dcfce7'
-      msgEl.style.color      = '#166534'
+      showCouponMessage(`Cupón aplicado: -${discountFormatted}`, 'success')
 
-      updateTotalWithDiscount(subtotal, coupon.discount)
+      const newTotal = subtotal - coupon.discount
+      const totalEl = document.getElementById('summary-total')
+      if (totalEl) {
+        totalEl.textContent = '$' + Number(Math.max(0, newTotal)).toLocaleString('es-CO')
+      }
     } catch (err) {
       localStorage.removeItem('couponCode')
       localStorage.removeItem('couponDiscount')
-      msgEl.textContent   = err.message || 'Cupón no válido'
-      msgEl.style.display = 'block'
-      msgEl.style.background = '#fee2e2'
-      msgEl.style.color      = '#991b1b'
+      showCouponMessage(err.message || 'Cupón no válido', 'error')
     } finally {
-      const btnFinal = document.getElementById('apply-coupon-btn') as HTMLButtonElement
-      btnFinal.disabled = false
-      btnFinal.textContent = 'Aplicar'
+      applyBtn.disabled = false
+      applyBtn.textContent = prevText || 'Aplicar'
     }
   })
 
-  const updateTotalWithDiscount = (subtotal, discount) => {
-    const newTotal = subtotal - discount
-    const totalEl = document.getElementById('summary-total')
-    if (totalEl) {
-      totalEl.textContent = '$' + Number(Math.max(0, newTotal)).toLocaleString('es-CO')
-    }
-  }
-
-  // Ir al checkout
   document.getElementById('checkout-btn')?.addEventListener('click', () => {
     const user = localStorage.getItem('user')
     if (!user) {
-      window.location.href = '/auth/login'
+      window.location.href = '/auth/login?redirect=/carrito'
       return
     }
     window.location.href = '/checkout'
@@ -202,128 +213,143 @@ import '../styles/carrito.css'
 </script>
 
 <style>
+  .sr-only {
+    position:      absolute;
+    width:         1px;
+    height:        1px;
+    padding:       0;
+    margin:        -1px;
+    overflow:      hidden;
+    clip:          rect(0, 0, 0, 0);
+    white-space:   nowrap;
+    border:        0;
+  }
+
   .cart-page {
-    padding-top:    calc(var(--header-height) + var(--space-8));
-    padding-bottom: var(--space-16);
+    padding-top:    calc(var(--header-height) + 1.5rem);
+    padding-bottom: 3rem;
+    max-width:      var(--max-width);
+    margin:         0 auto;
   }
 
   .page-title {
     font-family:   var(--font-serif);
-    font-size:     2rem;
+    font-size:     1.6rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: var(--space-8);
+    margin-bottom: 1.5rem;
   }
 
   .cart-empty {
     flex-direction:  column;
     align-items:     center;
     justify-content: center;
-    gap:             var(--space-6);
-    padding:         var(--space-16);
+    gap:             1rem;
+    padding:         4rem 1rem;
     text-align:      center;
-    color:           var(--color-gray-400);
-    font-size:       1.1rem;
+    color:           var(--color-gray-500);
+    font-size:       1rem;
+  }
+  .cart-empty-icon {
+    width:          80px;
+    height:         80px;
+    border-radius:  50%;
+    background:     var(--color-gray-50);
+    color:          var(--color-gray-400);
+    display:        flex;
+    align-items:    center;
+    justify-content: center;
   }
 
   .cart-layout {
     display:               grid;
-    grid-template-columns: 1fr 360px;
-    gap:                   var(--space-8);
+    grid-template-columns: 1fr;
+    gap:                   2rem;
     align-items:           start;
   }
 
-  /* Items */
   .cart-items {
     display:        flex;
     flex-direction: column;
-    gap:            var(--space-4);
+    gap:            0.75rem;
   }
 
   .cart-item {
     display:       grid;
-    grid-template-columns: 100px 1fr auto;
-    gap:           var(--space-4);
-    padding:       var(--space-4);
+    grid-template-columns: 80px 1fr;
+    gap:           0.85rem;
+    padding:       0.85rem;
     border:        1.5px solid var(--color-gray-200);
     border-radius: var(--radius-lg);
     background:    var(--color-white);
   }
 
   .item-image {
-    width:         100px;
-    height:        130px;
+    width:         80px;
+    height:        105px;
     border-radius: var(--radius-md);
     overflow:      hidden;
     background:    var(--color-gray-100);
   }
-
-  .item-image img {
-    width:      100%;
-    height:     100%;
-    object-fit: cover;
-  }
-
+  .item-image img { width: 100%; height: 100%; object-fit: cover; }
   .item-image-placeholder {
-    width:           100%;
-    height:          100%;
-    display:         flex;
-    align-items:     center;
+    width:        100%;
+    height:       100%;
+    display:      flex;
+    align-items:  center;
     justify-content: center;
-    font-size:       2rem;
+    color:        var(--color-gray-400);
   }
 
+  .item-details { min-width: 0; }
   .item-name {
-    font-size:     0.95rem;
+    font-size:     0.9rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: var(--space-2);
+    margin-bottom: 0.4rem;
+    line-height:   1.3;
   }
-
-  .item-variants {
-    display:       flex;
-    gap:           var(--space-2);
-    margin-bottom: var(--space-2);
-  }
-
+  .item-variants { display: flex; gap: 0.4rem; margin-bottom: 0.4rem; flex-wrap: wrap; }
   .variant-tag {
-    font-size:     0.75rem;
+    font-size:     0.7rem;
     padding:       2px 8px;
     background:    var(--color-gray-100);
-    border-radius: 100px;
+    border-radius: var(--radius-full);
     color:         var(--color-gray-600);
   }
-
-  .item-price {
-    font-size:  0.875rem;
-    color:      var(--color-gray-400);
-  }
+  .item-price { font-size: 0.85rem; color: var(--color-gray-500); margin: 0; }
 
   .item-controls {
+    grid-column: 1 / -1;
     display:        flex;
-    flex-direction: column;
-    align-items:    flex-end;
-    gap:            var(--space-3);
+    flex-direction: row;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             0.85rem;
+    padding-top:     0.5rem;
+    border-top:      1px dashed var(--color-gray-200);
   }
 
   .quantity-selector {
     display:       flex;
     align-items:   center;
-    gap:           var(--space-3);
+    gap:           0.5rem;
     border:        1.5px solid var(--color-gray-200);
     border-radius: var(--radius-md);
-    padding:       var(--space-2) var(--space-3);
+    padding:       0.25rem 0.6rem;
   }
-
   .qty-btn {
     font-size:  1.1rem;
     color:      var(--color-gray-600);
-    transition: color var(--transition);
-    width:      20px;
+    width:      24px;
     text-align: center;
+    transition: color var(--transition);
+    background: none;
+    border:     none;
+    cursor:     pointer;
   }
-
   .qty-btn:hover { color: var(--color-black); }
+  .quantity-selector span { font-weight: 600; min-width: 20px; text-align: center; font-size: 0.9rem; }
 
   .item-subtotal {
     font-size:   1rem;
@@ -332,89 +358,100 @@ import '../styles/carrito.css'
   }
 
   .remove-btn {
-    font-size:  0.8rem;
-    color:      var(--color-gray-400);
-    transition: color var(--transition);
+    font-size:      0.8rem;
+    color:          var(--color-gray-500);
+    transition:     color var(--transition);
+    background:     none;
+    border:         none;
+    cursor:         pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
-
   .remove-btn:hover { color: var(--color-danger); }
 
-  /* Summary */
   .cart-summary {
     background:    var(--color-white);
     border:        1.5px solid var(--color-gray-200);
     border-radius: var(--radius-lg);
-    padding:       var(--space-6);
-    position:      sticky;
-    top:           calc(var(--header-height) + var(--space-4));
+    padding:       1.25rem;
   }
 
   .summary-title {
     font-size:     1.1rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: var(--space-6);
-    padding-bottom: var(--space-4);
+    margin-bottom: 1.25rem;
+    padding-bottom: 0.85rem;
     border-bottom: 1.5px solid var(--color-gray-200);
   }
 
-  .summary-rows {
-    display:        flex;
-    flex-direction: column;
-    gap:            var(--space-3);
-    margin-bottom:  var(--space-6);
-  }
-
+  .summary-rows { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; }
   .summary-row {
     display:         flex;
     justify-content: space-between;
     font-size:       0.9rem;
     color:           var(--color-gray-600);
   }
-
   .shipping-free { color: var(--color-success); font-weight: 500; }
 
   .total-row {
     font-size:    1.1rem;
     font-weight:  600;
     color:        var(--color-black);
-    padding-top:  var(--space-4);
+    padding-top:  0.85rem;
     border-top:   1.5px solid var(--color-gray-200);
-    margin-top:   var(--space-4);
-    margin-bottom: var(--space-6);
+    margin-top:   0.85rem;
+    margin-bottom: 1.25rem;
   }
 
-  .coupon-group {
-    display: flex;
-    gap:     var(--space-2);
-    margin-bottom: var(--space-3);
-  }
-
-  .coupon-group .form-input { flex: 1; }
+  .coupon-group { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .coupon-group .form-input { flex: 1; min-width: 0; }
 
   .coupon-message {
-    padding:       var(--space-2) var(--space-3);
+    padding:       0.5rem 0.75rem;
     border-radius: var(--radius-md);
     font-size:     0.8rem;
-    margin-bottom: var(--space-4);
+    margin-bottom: 0.85rem;
   }
+  .coupon-success { background: #dcfce7; color: #166534; }
+  .coupon-error   { background: #fee2e2; color: #991b1b; }
 
   .btn-full { width: 100%; }
 
   .continue-shopping {
-    display:    block;
-    text-align: center;
-    margin-top: var(--space-4);
+    display:    flex;
+    align-items: center;
+    justify-content: center;
+    gap:        0.4rem;
+    margin-top: 0.85rem;
     font-size:  0.875rem;
-    color:      var(--color-gray-400);
+    color:      var(--color-gray-500);
     transition: color var(--transition);
   }
-
   .continue-shopping:hover { color: var(--color-black); }
 
-  @media (max-width: 768px) {
-    .cart-layout          { grid-template-columns: 1fr; }
-    .cart-item            { grid-template-columns: 80px 1fr; }
-    .item-controls        { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
+  @media (min-width: 768px) {
+    .cart-page { padding-top: calc(var(--header-height) + 2rem); padding-bottom: 4rem; }
+    .cart-layout { grid-template-columns: 1fr 360px; gap: 2rem; }
+    .cart-item { grid-template-columns: 100px 1fr auto; padding: 1rem; gap: 1rem; }
+    .item-image { width: 100px; height: 130px; }
+    .item-controls {
+      grid-column: auto;
+      flex-direction: column;
+      align-items:    flex-end;
+      border-top:     none;
+      padding-top:    0;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .cart-layout { grid-template-columns: 1fr 380px; gap: 2.5rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cart-item,
+    .qty-btn,
+    .remove-btn,
+    .continue-shopping { transition: none; }
   }
 </style>

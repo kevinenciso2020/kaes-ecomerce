@@ -1,11 +1,11 @@
 ---
 import ShopLayout from '../../layouts/ShopLayout.astro'
-import '../../styles/productos.css'
+import Icon from '../../components/ui/Icon.astro'
 import { api } from '../../lib/api.js'
 
-let products: any[]   = []
-let categories: any[] = []
-let pagination: any   = {}
+let products = []
+let categories = []
+let pagination = {}
 
 const { searchParams } = Astro.url
 const page     = searchParams.get('page')     || '1'
@@ -15,7 +15,7 @@ const minPrice = searchParams.get('minPrice') || ''
 const maxPrice = searchParams.get('maxPrice') || ''
 const size     = searchParams.get('size')     || ''
 
-const queryParams: Record<string, string> = { page, limit: '12' }
+const queryParams = { page, limit: '12' }
 if (category) queryParams.category = category
 if (search)   queryParams.search   = search
 if (minPrice) queryParams.minPrice = minPrice
@@ -35,96 +35,141 @@ try {
 }
 
 const hasFilters = !!(category || search || minPrice || maxPrice || size)
+const activeFiltersCount = [category, search, minPrice, maxPrice, size].filter(Boolean).length
 ---
 
 <ShopLayout title="Productos">
-  <div class="catalog-page">
+  <div class="catalog-page container">
 
-    <aside class="sidebar">
-      <h3 class="sidebar-title">Filtros</h3>
+    <aside class="sidebar" aria-label="Filtros">
+      <details class="filters-collapse" open>
+        <summary class="sidebar-title">
+          Filtros
+          {activeFiltersCount > 0 && (
+            <span class="filter-count">{activeFiltersCount}</span>
+          )}
+          <span class="filters-chevron" aria-hidden="true">
+            <Icon name="chevronDown" size={16} />
+          </span>
+        </summary>
 
-      <div class="filter-group">
-        <label class="filter-label">Buscar</label>
-        <input type="text" id="search-input" class="form-input" placeholder="Buscar..." value={search} />
-      </div>
+        <div class="filters-body">
+          <div class="filter-group">
+            <label class="filter-label" for="search-input">Buscar</label>
+            <input
+              type="text"
+              id="search-input"
+              class="form-input"
+              placeholder="Buscar..."
+              value={search}
+              autocomplete="off"
+            />
+          </div>
 
-      <div class="filter-group">
-        <label class="filter-label">Categoría</label>
-        <div class="filter-options">
-          <a href="/productos" class={!category ? 'filter-option active' : 'filter-option'}>
-            Todas
-          </a>
-          {categories.map(cat => {
-            const isActive = category === cat.slug
-            const url = `/productos?category=${cat.slug}`
-            return (
-              <a href={url} class={isActive ? 'filter-option active' : 'filter-option'}>
-                {cat.name}
+          <div class="filter-group">
+            <span class="filter-label">Categoría</span>
+            <div class="filter-options">
+              <a href="/productos" class={!category ? 'filter-option active' : 'filter-option'}>
+                Todas
               </a>
-            )
-          })}
-        </div>
-      </div>
+              {categories.map((cat) => {
+                const isActive = category === cat.slug
+                const url = `/productos?category=${cat.slug}`
+                return (
+                  <a href={url} class={isActive ? 'filter-option active' : 'filter-option'}>
+                    {cat.name}
+                  </a>
+                )
+              })}
+            </div>
+          </div>
 
-      <div class="filter-group">
-        <label class="filter-label">Talla</label>
-        <div class="size-options">
-          {['XS','S','M','L','XL','XXL'].map(s => {
-            const isActive = size === s
-            const url = `/productos?size=${s}`
-            return (
-              <a href={url} class={isActive ? 'size-btn active' : 'size-btn'}>
-                {s}
-              </a>
-            )
-          })}
-        </div>
-      </div>
+          <div class="filter-group">
+            <span class="filter-label">Talla</span>
+            <div class="size-options">
+              {['XS','S','M','L','XL','XXL'].map((s) => {
+                const isActive = size === s
+                const url = `/productos?size=${s}`
+                return (
+                  <a href={url} class={isActive ? 'size-btn active' : 'size-btn'}>
+                    {s}
+                  </a>
+                )
+              })}
+            </div>
+          </div>
 
-      <div class="filter-group">
-        <label class="filter-label">Precio</label>
-        <div class="price-inputs">
-          <input type="number" id="min-price" class="form-input" placeholder="Mín" value={minPrice} />
-          <span>—</span>
-          <input type="number" id="max-price" class="form-input" placeholder="Máx" value={maxPrice} />
-        </div>
-        <button class="btn btn-outline btn-sm" id="apply-price">Aplicar</button>
-      </div>
+          <div class="filter-group">
+            <span class="filter-label">Precio</span>
+            <div class="price-inputs">
+              <input
+                type="number"
+                id="min-price"
+                class="form-input"
+                placeholder="Mín"
+                value={minPrice}
+                inputmode="numeric"
+                min="0"
+              />
+              <span class="price-sep" aria-hidden="true">—</span>
+              <input
+                type="number"
+                id="max-price"
+                class="form-input"
+                placeholder="Máx"
+                value={maxPrice}
+                inputmode="numeric"
+                min="0"
+              />
+            </div>
+            <button class="btn btn-outline btn-sm" id="apply-price" type="button">
+              Aplicar
+            </button>
+          </div>
 
-      {hasFilters && (
-        <a href="/productos" class="clear-btn">Limpiar filtros</a>
-      )}
+          {hasFilters && (
+            <a href="/productos" class="clear-btn">
+              <Icon name="close" size={14} />
+              Limpiar filtros
+            </a>
+          )}
+        </div>
+      </details>
     </aside>
 
     <main class="catalog-main">
       <div class="catalog-header">
         <h1 class="catalog-title">
           {category
-            ? (categories.find(c => c.slug === category)?.name || 'Productos')
+            ? ((categories.find((c) => c.slug === category)?.name) || 'Productos')
             : 'Colección'
           }
         </h1>
-        <span class="catalog-count">{pagination.total || products.length} productos</span>
+        <span class="catalog-count">
+          {pagination.total || products.length} {products.length === 1 ? 'producto' : 'productos'}
+        </span>
       </div>
 
       {products.length === 0 ? (
         <div class="empty-state">
-          <p>No se encontraron productos</p>
+          <p>No se encontraron productos con los filtros aplicados.</p>
           <a href="/productos" class="btn btn-outline">Ver todos</a>
         </div>
       ) : (
         <div class="products-grid">
-          {products.map(product => {
+          {products.map((product) => {
             const productUrl = `/productos/${product.slug}`
             const imageUrl   = product.images?.[0]?.url
             const price      = Number(product.price).toLocaleString('es-CO')
-            const sizes      = [...new Set((product.variants || []).map((v: any) => v.size).filter(Boolean))].slice(0, 3)
+            const sizes      = [...new Set((product.variants || []).map((v) => v.size).filter(Boolean))].slice(0, 3)
             return (
-              <a href={productUrl} class="product-card">
+              <a href={productUrl} class="product-card" aria-label={`Ver producto ${product.name}`}>
                 <div class="product-image">
                   {imageUrl
-                    ? <img src={imageUrl} alt={product.name} loading="lazy" />
-                    : <div class="product-image-placeholder">📦</div>
+                    ? <img src={imageUrl} alt={product.name} loading="lazy" decoding="async" />
+                    : <div class="product-image-placeholder">
+                        <Icon name="box" size={32} />
+                      </div>
                   }
                   {product.isFeatured && <span class="product-badge">Destacado</span>}
                 </div>
@@ -133,9 +178,11 @@ const hasFilters = !!(category || search || minPrice || maxPrice || size)
                   <h3 class="product-name">{product.name}</h3>
                   <div class="product-footer">
                     <p class="product-price">${price}</p>
-                    <div class="product-sizes">
-                      {sizes.map((s: any) => <span class="size-tag">{s}</span>)}
-                    </div>
+                    {sizes.length > 0 && (
+                      <div class="product-sizes">
+                        {sizes.map((s) => <span class="size-tag">{s}</span>)}
+                      </div>
+                    )}
                   </div>
                 </div>
               </a>
@@ -145,15 +192,23 @@ const hasFilters = !!(category || search || minPrice || maxPrice || size)
       )}
 
       {pagination.totalPages > 1 && (
-        <div class="pagination">
+        <nav class="pagination" aria-label="Paginación">
           {pagination.page > 1 && (
-            <a href={`/productos?page=${pagination.page - 1}`} class="btn btn-outline">← Anterior</a>
+            <a href={`/productos?page=${pagination.page - 1}`} class="btn btn-outline btn-pagination">
+              <Icon name="arrowLeft" size={16} />
+              Anterior
+            </a>
           )}
-          <span class="pagination-info">Página {pagination.page} de {pagination.totalPages}</span>
+          <span class="pagination-info">
+            Página {pagination.page} de {pagination.totalPages}
+          </span>
           {pagination.page < pagination.totalPages && (
-            <a href={`/productos?page=${pagination.page + 1}`} class="btn btn-outline">Siguiente →</a>
+            <a href={`/productos?page=${pagination.page + 1}`} class="btn btn-outline btn-pagination">
+              Siguiente
+              <Icon name="arrowRight" size={16} />
+            </a>
           )}
-        </div>
+        </nav>
       )}
     </main>
 
@@ -161,8 +216,8 @@ const hasFilters = !!(category || search || minPrice || maxPrice || size)
 </ShopLayout>
 
 <script>
-  const searchInput = document.getElementById('search-input') as HTMLInputElement
-  let timeout: ReturnType<typeof setTimeout>
+  const searchInput = document.getElementById('search-input')
+  let timeout
 
   searchInput?.addEventListener('input', () => {
     clearTimeout(timeout)
@@ -176,121 +231,221 @@ const hasFilters = !!(category || search || minPrice || maxPrice || size)
   })
 
   document.getElementById('apply-price')?.addEventListener('click', () => {
-    const min = (document.getElementById('min-price') as HTMLInputElement).value
-    const max = (document.getElementById('max-price') as HTMLInputElement).value
-    const p   = new URLSearchParams(window.location.search)
-min ? p.set('minPrice', min) : p.delete('minPrice')
-max ? p.set('maxPrice', max) : p.delete('maxPrice')
-
-p.delete('page')
+    const min = document.getElementById('min-price').value
+    const max = document.getElementById('max-price').value
+    const p = new URLSearchParams(window.location.search)
+    if (min) p.set('minPrice', min); else p.delete('minPrice')
+    if (max) p.set('maxPrice', max); else p.delete('maxPrice')
+    p.delete('page')
     window.location.href = `/productos?${p}`
   })
 </script>
 
 <style>
   .catalog-page {
-    display:   flex;
-    gap:       2rem;
-    max-width: 1280px;
+    display:   grid;
+    grid-template-columns: 1fr;
+    gap:       1.5rem;
+    padding:   calc(var(--header-height) + 1.5rem) var(--container-padding) 3rem;
+    max-width: var(--max-width);
     margin:    0 auto;
-    padding:   calc(60px + 2rem) 2rem 4rem;
   }
 
-  .sidebar       { width: 220px; flex-shrink: 0; }
+  .sidebar { width: 100%; }
+
+  .filters-collapse {
+    border:        1.5px solid var(--color-gray-200);
+    border-radius: var(--radius-lg);
+    background:    var(--color-white);
+    overflow:      hidden;
+  }
+
   .sidebar-title {
-    font-size:      0.7rem;
-    font-weight:    600;
+    display:         flex;
+    align-items:     center;
+    gap:             0.5rem;
+    padding:         0.85rem 1rem;
+    font-size:       0.7rem;
+    font-weight:     600;
     text-transform: uppercase;
     letter-spacing: 0.12em;
-    color:          var(--color-gray-400);
-    margin-bottom:  1.5rem;
+    color:          var(--color-gray-500);
+    cursor:         pointer;
+    list-style:     none;
+    user-select:    none;
+  }
+  .sidebar-title::-webkit-details-marker { display: none; }
+
+  .filters-chevron {
+    margin-left: auto;
+    display: inline-flex;
+    transition: transform 200ms ease;
+  }
+  details[open] .filters-chevron { transform: rotate(180deg); }
+
+  .filter-count {
+    background:    var(--color-black);
+    color:         var(--color-white);
+    font-size:     0.65rem;
+    padding:       1px 7px;
+    border-radius: var(--radius-full);
+    font-weight:   700;
+    letter-spacing: 0;
   }
 
-  .filter-group  { margin-bottom: 1.5rem; }
+  .filters-body {
+    padding:       0 1rem 1rem;
+    border-top:    1.5px solid var(--color-gray-200);
+    padding-top:   1rem;
+  }
+
+  .filter-group  { margin-bottom: 1.25rem; }
   .filter-label  {
     display:        block;
     font-size:      0.7rem;
     font-weight:    600;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color:          var(--color-gray-400);
-    margin-bottom:  0.6rem;
+    color:          var(--color-gray-500);
+    margin-bottom:  0.5rem;
   }
 
-  .filter-options { display: flex; flex-direction: column; gap: 0.2rem; }
+  .filter-options { display: flex; flex-direction: column; gap: 0.15rem; }
   .filter-option  {
-    padding:       0.35rem 0.6rem;
-    border-radius: 4px;
-    font-size:     0.85rem;
+    padding:       0.5rem 0.65rem;
+    border-radius: var(--radius-md);
+    font-size:     0.875rem;
     color:         var(--color-gray-600);
     transition:    all 150ms;
   }
   .filter-option:hover,
-  .filter-option.active { background: var(--color-gray-100); color: var(--color-black); font-weight: 500; }
+  .filter-option.active {
+    background: var(--color-gray-100);
+    color:      var(--color-black);
+    font-weight: 500;
+  }
 
-  .size-options  { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .size-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
   .size-btn {
-    padding:       0.2rem 0.55rem;
-    border:        1px solid var(--color-gray-200);
-    border-radius: 2px;
-    font-size:     0.75rem;
-    font-weight:   500;
-    color:         var(--color-gray-600);
-    transition:    all 150ms;
+    min-width:    40px;
+    height:       36px;
+    display:      inline-flex;
+    align-items:  center;
+    justify-content: center;
+    padding:      0 0.55rem;
+    border:       1px solid var(--color-gray-200);
+    border-radius: var(--radius-md);
+    font-size:    0.75rem;
+    font-weight:  500;
+    color:        var(--color-gray-600);
+    transition:   all 150ms;
   }
   .size-btn:hover,
-  .size-btn.active { border-color: var(--color-black); background: var(--color-black); color: white; }
+  .size-btn.active {
+    border-color: var(--color-black);
+    background:   var(--color-black);
+    color:        white;
+  }
 
-  .price-inputs  { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.6rem; }
-  .price-inputs .form-input { flex: 1; padding: 0.35rem 0.5rem; font-size: 0.8rem; }
-  .btn-sm        { padding: 0.35rem 0.9rem; font-size: 0.78rem; }
-  .clear-btn     { display: block; font-size: 0.8rem; color: var(--color-danger); margin-top: 0.5rem; }
+  .price-inputs {
+    display:     flex;
+    align-items: center;
+    gap:         0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .price-inputs .form-input {
+    flex:       1;
+    min-width:  0;
+    padding:    0.5rem 0.6rem;
+    font-size:  0.85rem;
+  }
+  .price-sep { color: var(--color-gray-400); font-size: 0.85rem; }
+  .btn-sm    { padding: 0.45rem 1rem; font-size: 0.8rem; }
 
-  .catalog-main  { flex: 1; min-width: 0; }
+  .clear-btn {
+    display:         inline-flex;
+    align-items:     center;
+    gap:             0.4rem;
+    font-size:       0.8rem;
+    color:           var(--color-danger);
+    margin-top:      0.5rem;
+    font-weight:     500;
+  }
+
+  .catalog-main  { min-width: 0; }
+
   .catalog-header {
     display:         flex;
     align-items:     baseline;
     justify-content: space-between;
-    margin-bottom:   1.5rem;
+    margin-bottom:   1.25rem;
+    flex-wrap:       wrap;
+    gap:             0.5rem;
   }
+
   .catalog-title {
     font-family: var(--font-serif);
-    font-size:   1.6rem;
+    font-size:   1.4rem;
     font-weight: 600;
     color:       var(--color-black);
+    margin:      0;
   }
-  .catalog-count { font-size: 0.8rem; color: var(--color-gray-400); }
+
+  .catalog-count {
+    font-size: 0.8rem;
+    color:     var(--color-gray-500);
+  }
 
   .empty-state {
-    display:         flex;
-    flex-direction:  column;
-    align-items:     center;
-    gap:             1rem;
-    padding:         4rem;
-    text-align:      center;
-    color:           var(--color-gray-400);
+    display:        flex;
+    flex-direction: column;
+    align-items:    center;
+    gap:            1rem;
+    padding:        3rem 1.5rem;
+    text-align:     center;
+    color:          var(--color-gray-500);
+    background:     var(--color-gray-50);
+    border-radius:  var(--radius-lg);
   }
 
   .product-card {
     display:        flex;
     flex-direction: column;
-    border-radius:  6px;
+    border-radius:  var(--radius-lg);
     overflow:       hidden;
     border:         1px solid var(--color-gray-200);
     transition:     all 200ms;
     background:     var(--color-white);
+    text-decoration: none;
+    color: inherit;
   }
-  .product-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: transparent; }
+  .product-card:hover {
+    transform:    translateY(-3px);
+    box-shadow:   var(--shadow-md);
+    border-color: transparent;
+  }
 
   .product-image {
-    position:     relative;
-    aspect-ratio: 3/4;
-    overflow:     hidden;
-    background:   var(--color-gray-100);
+    position:      relative;
+    aspect-ratio:  3/4;
+    overflow:      hidden;
+    background:    var(--color-gray-100);
   }
-  .product-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 400ms; }
+  .product-image img {
+    width:      100%;
+    height:     100%;
+    object-fit: cover;
+    transition: transform 400ms;
+  }
   .product-card:hover .product-image img { transform: scale(1.04); }
-  .product-image-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; }
+  .product-image-placeholder {
+    width:           100%;
+    height:          100%;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    color:           var(--color-gray-400);
+  }
 
   .product-badge {
     position:       absolute;
@@ -300,13 +455,13 @@ p.delete('page')
     color:          white;
     font-size:      0.6rem;
     font-weight:    600;
-    padding:        2px 7px;
-    border-radius:  2px;
+    padding:        3px 8px;
+    border-radius:  var(--radius-sm);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
-  .product-info     { padding: 0.9rem; }
+  .product-info { padding: 0.85rem; }
   .product-category {
     font-size:      0.65rem;
     font-weight:    600;
@@ -315,17 +470,79 @@ p.delete('page')
     color:          var(--color-gray-400);
     margin-bottom:  0.2rem;
   }
-  .product-name   { font-size: 0.875rem; font-weight: 500; color: var(--color-gray-800); margin-bottom: 0.6rem; line-height: 1.3; }
-  .product-footer { display: flex; align-items: center; justify-content: space-between; }
-  .product-price  { font-size: 0.95rem; font-weight: 600; color: var(--color-black); }
-  .product-sizes  { display: flex; gap: 0.2rem; }
-  .size-tag       { font-size: 0.6rem; padding: 1px 4px; border: 1px solid var(--color-gray-200); border-radius: 2px; color: var(--color-gray-400); }
+  .product-name {
+    font-size:      0.875rem;
+    font-weight:    500;
+    color:          var(--color-gray-800);
+    margin-bottom:  0.5rem;
+    line-height:    1.3;
+    display:        -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow:       hidden;
+  }
+  .product-footer {
+    display:         flex;
+    align-items:     center;
+    justify-content: space-between;
+    gap:             0.5rem;
+  }
+  .product-price {
+    font-size:  0.95rem;
+    font-weight: 600;
+    color:      var(--color-black);
+    margin:     0;
+  }
+  .product-sizes { display: flex; gap: 0.2rem; }
+  .size-tag {
+    font-size:    0.6rem;
+    padding:      1px 5px;
+    border:       1px solid var(--color-gray-200);
+    border-radius: 2px;
+    color:        var(--color-gray-400);
+  }
 
-  .pagination      { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 3rem; }
-  .pagination-info { font-size: 0.875rem; color: var(--color-gray-400); }
+  .pagination {
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    gap:             1rem;
+    margin-top:      2.5rem;
+    flex-wrap:       wrap;
+  }
+  .pagination-info { font-size: 0.85rem; color: var(--color-gray-500); }
+  .btn-pagination { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 1rem; font-size: 0.85rem; }
 
-  @media (max-width: 768px) {
-    .catalog-page { flex-direction: column; padding: calc(60px + 1rem) 1rem 3rem; }
-    .sidebar      { width: 100%; }
+  @media (min-width: 768px) {
+    .catalog-page {
+      grid-template-columns: 240px 1fr;
+      gap:                   2rem;
+      padding-top:           calc(var(--header-height) + 2rem);
+    }
+    .sidebar { width: 240px; }
+    .filters-collapse { border: none; background: transparent; }
+    .sidebar-title { padding: 0 0 1rem 0; cursor: default; pointer-events: none; }
+    .sidebar-title::-webkit-details-marker { display: none; }
+    .filters-chevron { display: none; }
+    details[open] .filters-chevron { display: none; }
+    .filters-body {
+      padding:     0;
+      border-top:  none;
+      padding-top: 0;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .catalog-page {
+      grid-template-columns: 260px 1fr;
+      gap:                   3rem;
+    }
+    .sidebar { width: 260px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .product-card,
+    .product-image img,
+    .filters-chevron { transition: none; }
   }
 </style>

@@ -2,7 +2,7 @@
 ---
 
 <footer class="footer">
-  <div class="container footer-inner">
+  <div class="footer-inner">
     <div class="footer-brand">
       <span class="footer-logo">Kaes Store</span>
       <p class="footer-tagline">Moda que te define</p>
@@ -32,72 +32,3 @@
 </footer>
 
 <style>
-  .footer {
-    background:  var(--color-gray-50);
-    border-top:  1px solid var(--color-gray-200);
-    margin-top:  var(--space-16);
-  }
-
-  .footer-inner {
-    display:         flex;
-    justify-content: space-between;
-    gap:             var(--space-8);
-    padding:         var(--space-12) var(--space-4);
-  }
-
-  .footer-logo {
-    font-family:    var(--font-serif);
-    font-size:      1.3rem;
-    font-weight:    600;
-    color:          var(--color-black);
-  }
-
-  .footer-tagline {
-    font-size:  0.875rem;
-    color:      var(--color-gray-400);
-    margin-top: var(--space-2);
-  }
-
-  .footer-links {
-    display: flex;
-    gap:     var(--space-12);
-  }
-
-  .footer-col {
-    display:        flex;
-    flex-direction: column;
-    gap:            var(--space-3);
-  }
-
-  .footer-col h4 {
-    font-size:   0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color:       var(--color-gray-400);
-    margin-bottom: var(--space-1);
-  }
-
-  .footer-col a {
-    font-size:  0.875rem;
-    color:      var(--color-gray-600);
-    transition: color var(--transition);
-  }
-
-  .footer-col a:hover { color: var(--color-black); }
-
-  .footer-bottom {
-    border-top: 1px solid var(--color-gray-200);
-    padding:    var(--space-4);
-    text-align: center;
-  }
-
-  .footer-bottom p {
-    font-size: 0.8rem;
-    color:     var(--color-gray-400);
-  }
-
-  @media (max-width: 768px) {
-    .footer-inner  { flex-direction: column; }
-    .footer-links  { flex-direction: column; gap: var(--space-6); }
-  }

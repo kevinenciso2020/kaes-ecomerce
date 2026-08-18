@@ -1,7 +1,7 @@
 ---
 import ShopLayout from '../layouts/ShopLayout.astro'
 import UbicacionSelect from '../components/UbicacionSelect.jsx'
-import '../styles/checkout.css'
+import Icon from '../components/ui/Icon.astro'
 ---
 
 <ShopLayout title="Checkout">
@@ -9,54 +9,53 @@ import '../styles/checkout.css'
 
     <h1 class="page-title">Finalizar compra</h1>
 
-    <div id="checkout-empty" style="display:none" class="checkout-empty">
+    <div id="checkout-empty" hidden class="checkout-empty">
       <p>No tienes productos en el carrito</p>
       <a href="/productos" class="btn btn-primary">Ver productos</a>
     </div>
 
-    <div id="checkout-content" style="display:none" class="checkout-layout">
+    <div id="checkout-content" hidden class="checkout-layout">
 
-      <!-- Formulario -->
       <div class="checkout-form">
 
-        <div class="form-section">
-          <h2 class="section-title">Información de contacto</h2>
+        <fieldset class="form-section">
+          <legend class="section-title">Información de contacto</legend>
           <div class="form-grid">
             <div class="form-group">
-              <label class="form-label">Nombre completo</label>
-              <input type="text" id="full-name" class="form-input" placeholder="Tu nombre" />
+              <label class="form-label" for="full-name">Nombre completo</label>
+              <input type="text" id="full-name" class="form-input" placeholder="Tu nombre" autocomplete="name" required />
             </div>
             <div class="form-group">
-              <label class="form-label">Teléfono</label>
-              <input type="tel" id="phone" class="form-input" placeholder="300 000 0000" />
+              <label class="form-label" for="phone">Teléfono</label>
+              <input type="tel" id="phone" class="form-input" placeholder="300 000 0000" autocomplete="tel" inputmode="numeric" required />
             </div>
           </div>
-        </div>
+        </fieldset>
 
-        <div class="form-section">
-          <h2 class="section-title">Dirección de envío</h2>
+        <fieldset class="form-section">
+          <legend class="section-title">Dirección de envío</legend>
           <div class="form-group">
-            <label class="form-label">Dirección</label>
-            <input type="text" id="street" class="form-input" placeholder="Calle, número, apto" />
+            <label class="form-label" for="street">Dirección</label>
+            <input type="text" id="street" class="form-input" placeholder="Calle, número, apto" autocomplete="street-address" required />
           </div>
           <div class="form-grid">
             <div class="form-group">
-              <label class="form-label">Código postal</label>
-              <input type="text" id="zipCode" class="form-input" placeholder="050010" inputmode="numeric" />
+              <label class="form-label" for="zipCode">Código postal</label>
+              <input type="text" id="zipCode" class="form-input" placeholder="050010" inputmode="numeric" autocomplete="postal-code" />
             </div>
           </div>
           <UbicacionSelect client:load id="ubicacion" required={true} />
           <input type="hidden" id="address-departamento" />
           <input type="hidden" id="address-municipio" />
-        </div>
+        </fieldset>
 
-        <div class="form-section">
-          <h2 class="section-title">Método de pago</h2>
-          <div class="payment-methods">
+        <fieldset class="form-section">
+          <legend class="section-title">Método de pago</legend>
+          <div class="payment-methods" role="radiogroup" aria-label="Métodos de pago">
             <label class="payment-option">
               <input type="radio" name="payment" value="wompi" checked />
               <div class="payment-card">
-                <span class="payment-icon">💳</span>
+                <span class="payment-icon"><Icon name="card" size={22} /></span>
                 <div>
                   <p class="payment-name">Wompi</p>
                   <p class="payment-desc">Tarjetas, Nequi, PSE, Daviplata</p>
@@ -66,7 +65,7 @@ import '../styles/checkout.css'
             <label class="payment-option">
               <input type="radio" name="payment" value="mercadopago" />
               <div class="payment-card">
-                <span class="payment-icon">🏦</span>
+                <span class="payment-icon"><Icon name="bank" size={22} /></span>
                 <div>
                   <p class="payment-name">MercadoPago</p>
                   <p class="payment-desc">PSE, Nequi, efectivo y más</p>
@@ -74,32 +73,31 @@ import '../styles/checkout.css'
               </div>
             </label>
           </div>
-        </div>
+        </fieldset>
 
-        <div id="checkout-error" class="checkout-error" style="display:none"></div>
+        <div id="checkout-error" class="checkout-error" role="alert" hidden></div>
 
-        <button class="btn btn-primary btn-full" id="place-order-btn">
+        <button type="button" class="btn btn-primary btn-full" id="place-order-btn">
           Confirmar pedido
         </button>
 
       </div>
 
-      <!-- Resumen -->
-      <div class="order-summary">
+      <aside class="order-summary" aria-label="Resumen del pedido">
         <h2 class="summary-title">Tu pedido</h2>
         <div id="order-items"></div>
         <div class="summary-divider"></div>
 
-        <!-- Aplicar cupón -->
         <div class="coupon-section">
           <div class="coupon-input-group">
-            <input type="text" id="coupon-code" class="coupon-input" placeholder="Código de cupón" />
+            <label for="coupon-code" class="sr-only">Código de cupón</label>
+            <input type="text" id="coupon-code" class="coupon-input" placeholder="Código de cupón" autocomplete="off" />
             <button type="button" id="apply-coupon-btn" class="coupon-btn">Aplicar</button>
           </div>
           <div id="coupon-message" class="coupon-message"></div>
-          <div id="coupon-applied" class="coupon-applied" style="display:none">
+          <div id="coupon-applied" hidden class="coupon-applied">
             <span id="applied-code"></span>
-            <button type="button" id="remove-coupon-btn" class="remove-coupon-btn">✕</button>
+            <button type="button" id="remove-coupon-btn" class="remove-coupon-btn" aria-label="Eliminar cupón">✕</button>
           </div>
         </div>
 
@@ -108,7 +106,7 @@ import '../styles/checkout.css'
           <span>Subtotal</span>
           <span id="order-subtotal">$0</span>
         </div>
-        <div class="summary-row" id="discount-row" style="display:none">
+        <div class="summary-row" id="discount-row" hidden>
           <span>Descuento</span>
           <span id="order-discount" class="discount-amount">-$0</span>
         </div>
@@ -121,7 +119,7 @@ import '../styles/checkout.css'
           <span>Total</span>
           <span id="order-total">$0</span>
         </div>
-      </div>
+      </aside>
 
     </div>
   </div>
@@ -131,32 +129,29 @@ import '../styles/checkout.css'
   import { cartItems, cartTotal, clearCart } from '../stores/cart.store.js'
   import { applyCoupon, removeCoupon, getCouponCode } from '../stores/coupon.store.js'
   import { api } from '../lib/api.js'
-  import { sanitizeCartItem } from '../lib/sanitize.js'
+  import { sanitizeCartItem, escapeHtml } from '../lib/sanitize.js'
 
   let currentDiscount = 0
   let appliedCouponData = null
 
-  // Wire UbicacionSelect (React island) → hidden inputs
-  document.addEventListener('ubicacion-change', (e: Event) => {
-    const detail = (e as CustomEvent<{ departamento: string; municipio: string }>).detail
-    const depEl = document.getElementById('address-departamento') as HTMLInputElement | null
-    const munEl = document.getElementById('address-municipio') as HTMLInputElement | null
+  document.addEventListener('ubicacion-change', (e) => {
+    const detail = e.detail
+    const depEl = document.getElementById('address-departamento')
+    const munEl = document.getElementById('address-municipio')
     if (depEl) depEl.value = detail?.departamento || ''
     if (munEl) munEl.value = detail?.municipio || ''
   })
 
-  // Mostrar cupón guardado si existe
   const savedCoupon = getCouponCode()
   if (savedCoupon) {
     const codeEl = document.getElementById('applied-code')
     const appliedEl = document.getElementById('coupon-applied')
     const inputEl = document.getElementById('coupon-code')
     if (codeEl) codeEl.textContent = savedCoupon
-    if (appliedEl) appliedEl.style.display = 'flex'
-    if (inputEl) inputEl.style.display = 'none'
+    if (appliedEl) appliedEl.hidden = false
+    if (inputEl) inputEl.hidden = true
   }
 
-  // Función para actualizar totales
   const updateTotals = (subtotal, discount = 0) => {
     currentDiscount = discount
     const discountRow = document.getElementById('discount-row')
@@ -164,28 +159,30 @@ import '../styles/checkout.css'
     const totalEl = document.getElementById('order-total')
 
     if (discount > 0 && discountRow && discountEl && totalEl) {
-      discountRow.style.display = 'flex'
+      discountRow.hidden = false
       discountEl.textContent = '-$' + Number(discount).toLocaleString('es-CO')
       const total = subtotal - discount
       totalEl.textContent = '$' + Number(Math.max(0, total)).toLocaleString('es-CO')
     } else if (totalEl) {
-      discountRow.style.display = 'none'
+      discountRow.hidden = true
       totalEl.textContent = '$' + Number(subtotal).toLocaleString('es-CO')
     }
   }
 
-  // Aplicar cupón
+  const setCouponMessage = (msg, text, type) => {
+    if (!msg) return
+    msg.textContent = text
+    msg.className = `coupon-message${type ? ' ' + type : ''}`
+  }
+
   document.getElementById('apply-coupon-btn')?.addEventListener('click', async () => {
-    const codeInput = document.getElementById('coupon-code') as HTMLInputElement | null
+    const codeInput = document.getElementById('coupon-code')
     const messageEl = document.getElementById('coupon-message')
     const appliedEl = document.getElementById('coupon-applied')
 
-    const code = codeInput?.value.trim().toUpperCase()
+    const code = codeInput?.value.trim().toUpperCase() || ''
     if (!code) {
-      if (messageEl) {
-        messageEl.textContent = 'Ingresa un código'
-        messageEl.className = 'coupon-message error'
-      }
+      setCouponMessage(messageEl, 'Ingresa un código', 'error')
       return
     }
 
@@ -198,14 +195,15 @@ import '../styles/checkout.css'
 
         const codeEl = document.getElementById('applied-code')
         if (codeEl) codeEl.textContent = code
-        if (appliedEl) appliedEl.style.display = 'flex'
-        if (codeInput) codeInput.style.display = 'none'
-        if (messageEl) {
-          messageEl.textContent = result.coupon.type === 'PERCENTAGE'
+        if (appliedEl) appliedEl.hidden = false
+        if (codeInput) codeInput.hidden = true
+        setCouponMessage(
+          messageEl,
+          result.coupon.type === 'PERCENTAGE'
             ? `${result.coupon.value}% de descuento aplicado`
-            : `$${Number(result.coupon.value).toLocaleString('es-CO')} de descuento aplicado`
-          messageEl.className = 'coupon-message success'
-        }
+            : `$${Number(result.coupon.value).toLocaleString('es-CO')} de descuento aplicado`,
+          'success'
+        )
 
         const subtotal = cartTotal.get()
         const discount = result.coupon.type === 'PERCENTAGE'
@@ -213,38 +211,27 @@ import '../styles/checkout.css'
           : parseFloat(result.coupon.value)
         updateTotals(subtotal, discount)
       } else {
-        if (messageEl) {
-          messageEl.textContent = result.message || 'Cupón inválido'
-          messageEl.className = 'coupon-message error'
-        }
+        setCouponMessage(messageEl, result.message || 'Cupón inválido', 'error')
       }
     } catch (err) {
-      if (messageEl) {
-        messageEl.textContent = err.message || 'Error al validar cupón'
-        messageEl.className = 'coupon-message error'
-      }
+      setCouponMessage(messageEl, err.message || 'Error al validar cupón', 'error')
     }
   })
 
-  // Remover cupón
   document.getElementById('remove-coupon-btn')?.addEventListener('click', () => {
     removeCoupon()
     appliedCouponData = null
 
-    const codeInput = document.getElementById('coupon-code') as HTMLInputElement | null
+    const codeInput = document.getElementById('coupon-code')
     const appliedEl = document.getElementById('coupon-applied')
     const messageEl = document.getElementById('coupon-message')
-    const discountRow = document.getElementById('discount-row')
 
     if (codeInput) {
-      codeInput.style.display = 'block'
+      codeInput.hidden = false
       codeInput.value = ''
     }
-    if (appliedEl) appliedEl.style.display = 'none'
-    if (messageEl) {
-      messageEl.textContent = ''
-      messageEl.className = 'coupon-message'
-    }
+    if (appliedEl) appliedEl.hidden = true
+    setCouponMessage(messageEl, '', '')
 
     const subtotal = cartTotal.get()
     updateTotals(subtotal, 0)
@@ -253,11 +240,12 @@ import '../styles/checkout.css'
   const items = cartItems.get().map(sanitizeCartItem)
   const subtotal = cartTotal.get()
 
-  // Verificar si hay items
   if (items.length === 0) {
-    document.getElementById('checkout-empty').style.display = 'flex'
+    const el = document.getElementById('checkout-empty')
+    if (el) el.hidden = false
   } else {
-    document.getElementById('checkout-content').style.display = 'grid'
+    const el = document.getElementById('checkout-content')
+    if (el) el.hidden = false
 
     const orderItemsEl = document.getElementById('order-items')
     if (orderItemsEl) {
@@ -265,15 +253,15 @@ import '../styles/checkout.css'
         <div class="order-item">
           <div class="order-item-image">
             ${item.image
-              ? `<img src="${item.image}" alt="${item.name}" />`
-              : `<div class="order-item-placeholder">📦</div>`
+              ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" />`
+              : `<div class="order-item-placeholder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>`
             }
             <span class="order-item-qty">${item.quantity}</span>
           </div>
           <div class="order-item-info">
-            <p class="order-item-name">${item.name}</p>
-            ${item.size  ? `<p class="order-item-variant">Talla: ${item.size}</p>`  : ''}
-            ${item.color ? `<p class="order-item-variant">Color: ${item.color}</p>` : ''}
+            <p class="order-item-name">${escapeHtml(item.name)}</p>
+            ${item.size  ? `<p class="order-item-variant">Talla: ${escapeHtml(item.size)}</p>`  : ''}
+            ${item.color ? `<p class="order-item-variant">Color: ${escapeHtml(item.color)}</p>` : ''}
           </div>
           <p class="order-item-price">$${Number(item.price * item.quantity).toLocaleString('es-CO')}</p>
         </div>
@@ -281,11 +269,12 @@ import '../styles/checkout.css'
     }
 
     const formatted = '$' + Number(subtotal).toLocaleString('es-CO')
-    document.getElementById('order-subtotal').textContent = formatted
-    document.getElementById('order-total').textContent    = formatted
+    const sub = document.getElementById('order-subtotal')
+    const tot = document.getElementById('order-total')
+    if (sub) sub.textContent = formatted
+    if (tot) tot.textContent = formatted
   }
 
-  // Confirmar pedido
   document.getElementById('place-order-btn')?.addEventListener('click', async () => {
     const user = localStorage.getItem('user')
     if (!user) {
@@ -293,15 +282,15 @@ import '../styles/checkout.css'
       return
     }
 
-    const fullNameInput   = document.getElementById('full-name') as HTMLInputElement | null
-    const phoneInput      = document.getElementById('phone') as HTMLInputElement | null
-    const streetInput     = document.getElementById('street') as HTMLInputElement | null
-    const zipInput        = document.getElementById('zipCode') as HTMLInputElement | null
-    const departamentoInput = document.getElementById('address-departamento') as HTMLInputElement | null
-    const municipioInput  = document.getElementById('address-municipio') as HTMLInputElement | null
+    const fullNameInput   = document.getElementById('full-name')
+    const phoneInput      = document.getElementById('phone')
+    const streetInput     = document.getElementById('street')
+    const zipInput        = document.getElementById('zipCode')
+    const departamentoInput = document.getElementById('address-departamento')
+    const municipioInput  = document.getElementById('address-municipio')
 
-    const errorEl = document.getElementById('checkout-error') as HTMLElement | null
-    const btn     = document.getElementById('place-order-btn') as HTMLButtonElement | null
+    const errorEl = document.getElementById('checkout-error')
+    const btn     = document.getElementById('place-order-btn')
 
     const fullName     = fullNameInput?.value.trim() || ''
     const phone        = phoneInput?.value.trim() || ''
@@ -312,20 +301,20 @@ import '../styles/checkout.css'
 
     if (!fullName || !phone || !street || !departamento || !municipio) {
       if (errorEl) {
-        errorEl.textContent   = 'Por favor completa todos los campos requeridos (incluyendo departamento y municipio)'
-        errorEl.style.display = 'block'
+        errorEl.textContent = 'Por favor completa todos los campos requeridos (incluyendo departamento y municipio)'
+        errorEl.hidden = false
       }
       return
     }
 
-    const paymentMethod = (document.querySelector('input[name="payment"]:checked') as HTMLInputElement | null)?.value || 'wompi'
+    const paymentMethod = document.querySelector('input[name="payment"]:checked')?.value || 'wompi'
 
     if (!btn) {
       return
     }
     btn.disabled    = true
     btn.textContent = 'Procesando...'
-    errorEl.style.display = 'none'
+    errorEl.hidden = true
 
     try {
       const couponCode = getCouponCode() || undefined
@@ -376,8 +365,8 @@ import '../styles/checkout.css'
 
     } catch (err) {
       if (errorEl) {
-        errorEl.textContent   = err.message || 'Error al procesar el pedido'
-        errorEl.style.display = 'block'
+        errorEl.textContent = err.message || 'Error al procesar el pedido'
+        errorEl.hidden = false
       }
       if (btn) {
         btn.disabled    = false
@@ -388,75 +377,95 @@ import '../styles/checkout.css'
 </script>
 
 <style>
+  .sr-only {
+    position:    absolute;
+    width:       1px;
+    height:      1px;
+    padding:     0;
+    margin:      -1px;
+    overflow:    hidden;
+    clip:        rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border:      0;
+  }
+
   .checkout-page {
-    padding-top:    calc(var(--header-height) + var(--space-8));
-    padding-bottom: var(--space-16);
+    padding-top:    calc(var(--header-height) + 1.5rem);
+    padding-bottom: 3rem;
+    max-width:      var(--max-width);
+    margin:         0 auto;
   }
 
   .page-title {
     font-family:   var(--font-serif);
-    font-size:     2rem;
+    font-size:     1.6rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: var(--space-8);
+    margin-bottom: 1.5rem;
   }
 
   .checkout-empty {
     flex-direction:  column;
     align-items:     center;
     justify-content: center;
-    gap:             var(--space-6);
-    padding:         var(--space-16);
+    gap:             1rem;
+    padding:         4rem 1rem;
     text-align:      center;
-    color:           var(--color-gray-400);
+    color:           var(--color-gray-500);
   }
 
   .checkout-layout {
     display:               grid;
-    grid-template-columns: 1fr 380px;
-    gap:                   var(--space-8);
+    grid-template-columns: 1fr;
+    gap:                   2rem;
     align-items:           start;
   }
 
   .form-section {
-    margin-bottom:  var(--space-8);
-    padding-bottom: var(--space-8);
-    border-bottom:  1.5px solid var(--color-gray-200);
+    margin:        0 0 1.5rem 0;
+    padding:       0 0 1.5rem 0;
+    border:        none;
+    border-bottom: 1.5px solid var(--color-gray-200);
   }
-
   .form-section:last-of-type { border-bottom: none; }
 
   .section-title {
-    font-size:     1rem;
+    font-size:     0.95rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: var(--space-4);
+    margin-bottom: 1rem;
+    padding:       0;
   }
 
   .form-grid {
     display:               grid;
-    grid-template-columns: 1fr 1fr;
-    gap:                   var(--space-4);
+    grid-template-columns: 1fr;
+    gap:                   0.85rem;
   }
 
-  /* Métodos de pago */
   .payment-methods {
     display:        flex;
     flex-direction: column;
-    gap:            var(--space-3);
+    gap:            0.6rem;
   }
 
   .payment-option {
-    cursor: pointer;
+    cursor:     pointer;
+    display:    block;
+    position:   relative;
   }
 
-  .payment-option input { display: none; }
+  .payment-option input {
+    position:        absolute;
+    opacity:         0;
+    pointer-events:  none;
+  }
 
   .payment-card {
     display:       flex;
     align-items:   center;
-    gap:           var(--space-4);
-    padding:       var(--space-4);
+    gap:           0.85rem;
+    padding:       0.85rem 1rem;
     border:        1.5px solid var(--color-gray-200);
     border-radius: var(--radius-lg);
     transition:    all var(--transition);
@@ -467,69 +476,74 @@ import '../styles/checkout.css'
     background:   var(--color-gray-50);
   }
 
-  .payment-icon  { font-size: 1.5rem; }
+  .payment-option input:focus-visible + .payment-card {
+    outline:        2px solid var(--color-black);
+    outline-offset: 2px;
+  }
 
-  .payment-name  { font-size: 0.9rem; font-weight: 500; color: var(--color-black); }
-  .payment-desc  { font-size: 0.8rem; color: var(--color-gray-400); }
+  .payment-icon {
+    width:           44px;
+    height:          44px;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    background:      var(--color-gray-100);
+    border-radius:   var(--radius-md);
+    color:           var(--color-black);
+  }
+
+  .payment-name { font-size: 0.9rem;  font-weight: 500; color: var(--color-black); margin: 0; }
+  .payment-desc { font-size: 0.78rem; color: var(--color-gray-500); margin: 0; }
 
   .checkout-error {
     background:    #fee2e2;
     color:         #991b1b;
-    padding:       var(--space-3) var(--space-4);
+    padding:       0.75rem 1rem;
     border-radius: var(--radius-md);
     font-size:     0.875rem;
-    margin-bottom: var(--space-4);
+    margin-bottom: 0.85rem;
   }
 
-  .btn-full { width: 100%; }
+  .btn-full { width: 100%; padding: 0.95rem 1.5rem; }
 
-  /* Resumen */
   .order-summary {
     background:    var(--color-white);
     border:        1.5px solid var(--color-gray-200);
     border-radius: var(--radius-lg);
-    padding:       var(--space-6);
-    position:      sticky;
-    top:           calc(var(--header-height) + var(--space-4));
+    padding:       1.25rem;
   }
 
   .summary-title {
     font-size:     1rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: var(--space-4);
+    margin-bottom: 0.85rem;
   }
 
   .order-item {
-    display:       flex;
-    align-items:   center;
-    gap:           var(--space-3);
-    padding:       var(--space-3) 0;
+    display:     flex;
+    align-items: center;
+    gap:         0.6rem;
+    padding:     0.5rem 0;
   }
 
   .order-item-image {
     position:      relative;
-    width:         56px;
-    height:        70px;
+    width:         50px;
+    height:        64px;
     border-radius: var(--radius-md);
     overflow:      hidden;
     background:    var(--color-gray-100);
     flex-shrink:   0;
   }
-
-  .order-item-image img {
-    width:      100%;
-    height:     100%;
-    object-fit: cover;
-  }
-
+  .order-item-image img { width: 100%; height: 100%; object-fit: cover; }
   .order-item-placeholder {
-    width:           100%;
-    height:          100%;
-    display:         flex;
-    align-items:     center;
+    width:        100%;
+    height:       100%;
+    display:      flex;
+    align-items:  center;
     justify-content: center;
-    font-size:       1.5rem;
+    color:        var(--color-gray-400);
   }
 
   .order-item-qty {
@@ -538,25 +552,26 @@ import '../styles/checkout.css'
     right:           -6px;
     background:      var(--color-black);
     color:           white;
-    font-size:       0.65rem;
+    font-size:       0.6rem;
     font-weight:     600;
-    width:           18px;
+    min-width:       18px;
     height:          18px;
-    border-radius:   50%;
+    padding:         0 5px;
+    border-radius:   var(--radius-full);
     display:         flex;
     align-items:     center;
     justify-content: center;
   }
 
-  .order-item-info { flex: 1; }
-  .order-item-name    { font-size: 0.875rem; font-weight: 500; color: var(--color-black); }
-  .order-item-variant { font-size: 0.75rem; color: var(--color-gray-400); }
-  .order-item-price   { font-size: 0.875rem; font-weight: 600; color: var(--color-black); }
+  .order-item-info { flex: 1; min-width: 0; }
+  .order-item-name    { font-size: 0.85rem; font-weight: 500; color: var(--color-black); margin: 0; }
+  .order-item-variant { font-size: 0.7rem; color: var(--color-gray-500); margin: 0; }
+  .order-item-price   { font-size: 0.85rem; font-weight: 600; color: var(--color-black); margin: 0; white-space: nowrap; }
 
   .summary-divider {
     height:     1.5px;
     background: var(--color-gray-200);
-    margin:     var(--space-4) 0;
+    margin:     0.85rem 0;
   }
 
   .summary-row {
@@ -564,74 +579,86 @@ import '../styles/checkout.css'
     justify-content: space-between;
     font-size:       0.9rem;
     color:           var(--color-gray-600);
-    margin-bottom:   var(--space-3);
+    margin-bottom:   0.6rem;
   }
 
   .discount-amount { color: var(--color-success); }
   .shipping-free   { color: var(--color-success); font-weight: 500; }
 
-  /* Cupón */
-  .coupon-section { margin-bottom: var(--space-4); }
-  .coupon-input-group { display: flex; gap: var(--space-2); }
+  .coupon-section { margin-bottom: 0.85rem; }
+  .coupon-input-group { display: flex; gap: 0.5rem; }
   .coupon-input {
-    flex: 1;
-    padding: var(--space-2) var(--space-3);
-    border: 1.5px solid var(--color-gray-200);
+    flex:        1;
+    min-width:   0;
+    padding:     0.5rem 0.75rem;
+    border:      1.5px solid var(--color-gray-200);
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
+    font-size:   0.85rem;
     text-transform: uppercase;
   }
-  .coupon-input:focus {
-    outline: none;
-    border-color: var(--color-black);
-  }
+  .coupon-input:focus { outline: none; border-color: var(--color-black); }
   .coupon-btn {
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-black);
-    color: white;
-    border: none;
+    padding:       0.5rem 1rem;
+    background:    var(--color-black);
+    color:         white;
+    border:        none;
     border-radius: var(--radius-md);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
+    font-size:     0.85rem;
+    font-weight:   500;
+    cursor:        pointer;
   }
   .coupon-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
   .coupon-message {
-    font-size: 0.75rem;
-    margin-top: var(--space-2);
+    font-size:    0.75rem;
+    margin-top:   0.4rem;
+    min-height:   1em;
   }
-  .coupon-message.error { color: var(--color-error); }
-  .coupon-message.success { color: var(--color-success); }
+  .coupon-message.error   { color: #991b1b; }
+  .coupon-message.success { color: #166534; }
+
   .coupon-applied {
-    display: flex;
-    align-items: center;
+    display:         flex;
+    align-items:     center;
     justify-content: space-between;
-    padding: var(--space-2) var(--space-3);
-    background: var(--color-gray-50);
-    border: 1px solid var(--color-success);
-    border-radius: var(--radius-md);
-    font-size: 0.875rem;
-    color: var(--color-success);
+    padding:         0.5rem 0.75rem;
+    background:      #dcfce7;
+    border:          1px solid var(--color-success);
+    border-radius:   var(--radius-md);
+    font-size:       0.85rem;
+    color:           #166534;
+    margin-top:      0.4rem;
   }
   .remove-coupon-btn {
     background: none;
-    border: none;
-    color: var(--color-gray-400);
-    cursor: pointer;
-    font-size: 1rem;
-    padding: 0 var(--space-1);
+    border:     none;
+    color:      var(--color-gray-500);
+    cursor:     pointer;
+    font-size:  0.95rem;
+    padding:    0 0.25rem;
   }
-  .remove-coupon-btn:hover { color: var(--color-error); }
+  .remove-coupon-btn:hover { color: var(--color-danger); }
 
   .total-row {
-    font-size:  1rem;
-    font-weight: 600;
-    color:      var(--color-black);
-    margin-bottom: var(--space-6);
+    font-size:      1.05rem;
+    font-weight:    600;
+    color:          var(--color-black);
+    margin-bottom:  1.25rem;
   }
 
-  @media (max-width: 768px) {
-    .checkout-layout { grid-template-columns: 1fr; }
-    .form-grid       { grid-template-columns: 1fr; }
+  @media (min-width: 768px) {
+    .checkout-page { padding-top: calc(var(--header-height) + 2rem); padding-bottom: 4rem; }
+    .checkout-layout { grid-template-columns: 1fr 360px; gap: 2rem; }
+    .form-grid { grid-template-columns: 1fr 1fr; }
+    .page-title { font-size: 2rem; }
+  }
+
+  @media (min-width: 1024px) {
+    .checkout-layout { grid-template-columns: 1fr 380px; gap: 2.5rem; }
+    .order-summary { position: sticky; top: calc(var(--header-height) + 1rem); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .payment-card { transition: none; }
   }
 </style>

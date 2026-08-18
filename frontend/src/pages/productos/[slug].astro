@@ -1,12 +1,12 @@
 ---
 import ShopLayout from '../../layouts/ShopLayout.astro'
-import '../../styles/product-detail.css'
+import Icon from '../../components/ui/Icon.astro'
 import { api } from '../../lib/api.js'
 
 const { slug } = Astro.params
 
-let product: any = null
-let error        = false
+let product = null
+let error = false
 
 try {
   product = await api.products.detail(slug)
@@ -18,10 +18,9 @@ if (!product || error) {
   return Astro.redirect('/productos')
 }
 
-const mainImage   = product.images?.find((i: any) => i.isMain) || product.images?.[0]
-const otherImages = product.images?.filter((i: any) => !i.isMain) || []
-const sizes       = [...new Set(product.variants?.map((v: any) => v.size).filter(Boolean))]
-const colors      = [...new Set(product.variants?.map((v: any) => v.color).filter(Boolean))]
+const mainImage   = product.images?.find((i) => i.isMain) || product.images?.[0]
+const sizes       = [...new Set(product.variants?.map((v) => v.size).filter(Boolean))]
+const colors      = [...new Set(product.variants?.map((v) => v.color).filter(Boolean))]
 
 const formattedPrice = Number(product.price).toLocaleString('es-CO')
 ---
@@ -29,44 +28,45 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
 <ShopLayout title={product.name} description={product.description}>
   <div class="product-page container">
 
-    <!-- Breadcrumb -->
-    <nav class="breadcrumb">
+    <nav class="breadcrumb" aria-label="Migas de pan">
       <a href="/">Inicio</a>
-      <span>›</span>
+      <span aria-hidden="true">›</span>
       <a href="/productos">Productos</a>
-      <span>›</span>
+      <span aria-hidden="true">›</span>
       <a href={`/productos?category=${product.category?.slug}`}>{product.category?.name}</a>
-      <span>›</span>
-      <span>{product.name}</span>
+      <span aria-hidden="true">›</span>
+      <span aria-current="page">{product.name}</span>
     </nav>
 
     <div class="product-layout">
 
-      <!-- Galería de imágenes -->
       <div class="product-gallery">
         <div class="main-image">
           <img
             id="main-img"
-            src={mainImage?.url || '/placeholder.jpg'}
+            src={mainImage?.url}
             alt={product.name}
+            fetchpriority="high"
           />
         </div>
-        {otherImages.length > 0 && (
-          <div class="thumbnails">
-            {product.images.map((img: any, i: number) => (
+        {product.images && product.images.length > 1 && (
+          <div class="thumbnails" role="tablist" aria-label="Imágenes del producto">
+            {product.images.map((img, i) => (
               <button
+                type="button"
+                role="tab"
                 class={`thumbnail ${i === 0 ? 'active' : ''}`}
                 data-src={img.url}
-                onclick={`selectImage(this, '${img.url}')`}
+                aria-label={`Imagen ${i + 1} de ${product.images.length}`}
+                aria-selected={i === 0 ? 'true' : 'false'}
               >
-                <img src={img.url} alt={`${product.name} ${i + 1}`} />
+                <img src={img.url} alt="" />
               </button>
             ))}
           </div>
         )}
       </div>
 
-      <!-- Info del producto -->
       <div class="product-info">
 
         <div class="product-meta">
@@ -78,22 +78,27 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
 
         <h1 class="product-title">{product.name}</h1>
 
-        <p class="product-price">${formattedPrice} <span class="currency">COP</span></p>
+        <p class="product-price">
+          <span class="currency-symbol">$</span>{formattedPrice} <span class="currency">COP</span>
+        </p>
 
-        <p class="product-description">{product.description}</p>
+        {product.description && (
+          <p class="product-description">{product.description}</p>
+        )}
 
-        <!-- Selector de talla -->
         {sizes.length > 0 && (
           <div class="option-group">
             <label class="option-label">
               Talla: <span id="selected-size" class="selected-value">—</span>
             </label>
-            <div class="size-grid">
-              {sizes.map(size => (
+            <div class="size-grid" role="radiogroup" aria-label="Seleccionar talla">
+              {sizes.map((size) => (
                 <button
+                  type="button"
                   class="size-btn"
                   data-size={size}
-                  onclick="selectSize(this)"
+                  role="radio"
+                  aria-checked="false"
                 >
                   {size}
                 </button>
@@ -102,18 +107,19 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
           </div>
         )}
 
-        <!-- Selector de color -->
         {colors.length > 0 && (
           <div class="option-group">
             <label class="option-label">
               Color: <span id="selected-color" class="selected-value">—</span>
             </label>
-            <div class="color-grid">
-              {colors.map(color => (
+            <div class="color-grid" role="radiogroup" aria-label="Seleccionar color">
+              {colors.map((color) => (
                 <button
+                  type="button"
                   class="color-btn"
                   data-color={color}
-                  onclick="selectColor(this)"
+                  role="radio"
+                  aria-checked="false"
                 >
                   {color}
                 </button>
@@ -122,38 +128,38 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
           </div>
         )}
 
-        <!-- Cantidad -->
         <div class="option-group">
           <label class="option-label">Cantidad</label>
           <div class="quantity-selector">
-            <button onclick="changeQty(-1)" class="qty-btn">−</button>
-            <span id="qty-display">1</span>
-            <button onclick="changeQty(1)" class="qty-btn">+</button>
+            <button type="button" id="qty-minus" class="qty-btn" aria-label="Disminuir cantidad">−</button>
+            <span id="qty-display" aria-live="polite">1</span>
+            <button type="button" id="qty-plus" class="qty-btn" aria-label="Aumentar cantidad">+</button>
           </div>
         </div>
 
-        <!-- Botones de acción -->
         <div class="product-actions">
-          <button class="btn btn-primary btn-full" id="add-to-cart-btn">
+          <button type="button" class="btn btn-primary btn-full" id="add-to-cart-btn">
             Agregar al carrito
           </button>
-          <button class="btn btn-outline btn-full" id="buy-now-btn">
+          <button type="button" class="btn btn-outline btn-full" id="buy-now-btn">
             Comprar ahora
           </button>
         </div>
 
-        <div id="action-message" class="action-message" style="display:none"></div>
+        <div id="action-message" class="action-message" role="status" aria-live="polite" hidden></div>
 
-        <!-- Info adicional -->
         <div class="product-details">
           <div class="detail-item">
-            <span>📦</span> Envío a todo Colombia
+            <Icon name="truck" size={20} />
+            <span>Envío a todo Colombia</span>
           </div>
           <div class="detail-item">
-            <span>🔄</span> Cambios y devoluciones en 30 días
+            <Icon name="refresh" size={20} />
+            <span>Cambios y devoluciones en 30 días</span>
           </div>
           <div class="detail-item">
-            <span>🔒</span> Pago seguro
+            <Icon name="lock" size={20} />
+            <span>Pago seguro</span>
           </div>
         </div>
 
@@ -162,92 +168,137 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
   </div>
 </ShopLayout>
 
-<script define:vars={{ product }}>
-  let selectedSize  = null
+<script id="product-data" type="application/json" set:html={JSON.stringify({
+  id:       product.id,
+  slug:     product.slug,
+  name:     product.name,
+  price:    parseFloat(product.price),
+  images:   product.images,
+})} />
+
+<script>
+  import { addToCart } from '../../stores/cart.store.js'
+
+  let selectedSize = null
   let selectedColor = null
-  let quantity      = 1
+  let quantity = 1
 
-  function selectSize(btn) {
-    document.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-    selectedSize = btn.dataset.size
-    document.getElementById('selected-size').textContent = selectedSize
-  }
+  const mainImg = document.getElementById('main-img')
+  const thumbnails = document.querySelectorAll('.thumbnail')
 
-  function selectColor(btn) {
-    document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-    selectedColor = btn.dataset.color
-    document.getElementById('selected-color').textContent = selectedColor
-  }
-
-  function selectImage(btn, src) {
-    document.getElementById('main-img').src = src
-    document.querySelectorAll('.thumbnail').forEach(b => b.classList.remove('active'))
-    btn.classList.add('active')
-  }
-
-  function changeQty(delta) {
-    quantity = Math.max(1, Math.min(10, quantity + delta))
-    document.getElementById('qty-display').textContent = quantity
-  }
-
-  function showMessage(text, type) {
-    const el = document.getElementById('action-message')
-    el.textContent     = text
-    el.style.display   = 'block'
-    el.style.background = type === 'success' ? '#dcfce7' : '#fee2e2'
-    el.style.color      = type === 'success' ? '#166534' : '#991b1b'
-    setTimeout(() => { el.style.display = 'none' }, 3000)
-  }
-
-  // Agregar al carrito usando el store de nanostores
-  document.getElementById('add-to-cart-btn').addEventListener('click', async () => {
-    const { addToCart } = await import('/src/stores/cart.store.js')
-    addToCart(product, quantity, selectedSize, selectedColor)
-    showMessage('¡Producto agregado al carrito!', 'success')
+  thumbnails.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const src = btn.dataset.src
+      if (!src || !mainImg) return
+      mainImg.src = src
+      thumbnails.forEach((b) => {
+        b.classList.remove('active')
+        b.setAttribute('aria-selected', 'false')
+      })
+      btn.classList.add('active')
+      btn.setAttribute('aria-selected', 'true')
+    })
   })
 
-  // Comprar ahora — agrega al carrito y va al checkout
-  document.getElementById('buy-now-btn').addEventListener('click', async () => {
-    const { addToCart } = await import('/src/stores/cart.store.js')
-    addToCart(product, quantity, selectedSize, selectedColor)
-    window.location.href = '/carrito'
+  const sizeButtons = document.querySelectorAll('.size-btn')
+  const sizeDisplay = document.getElementById('selected-size')
+  sizeButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      sizeButtons.forEach((b) => {
+        b.classList.remove('active')
+        b.setAttribute('aria-checked', 'false')
+      })
+      btn.classList.add('active')
+      btn.setAttribute('aria-checked', 'true')
+      selectedSize = btn.dataset.size || null
+      if (sizeDisplay) sizeDisplay.textContent = selectedSize || '—'
+    })
+  })
+
+  const colorButtons = document.querySelectorAll('.color-btn')
+  const colorDisplay = document.getElementById('selected-color')
+  colorButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      colorButtons.forEach((b) => {
+        b.classList.remove('active')
+        b.setAttribute('aria-checked', 'false')
+      })
+      btn.classList.add('active')
+      btn.setAttribute('aria-checked', 'true')
+      selectedColor = btn.dataset.color || null
+      if (colorDisplay) colorDisplay.textContent = selectedColor || '—'
+    })
+  })
+
+  const qtyDisplay = document.getElementById('qty-display')
+  const setQty = (q) => {
+    quantity = Math.max(1, Math.min(10, q))
+    if (qtyDisplay) qtyDisplay.textContent = String(quantity)
+  }
+
+  document.getElementById('qty-minus')?.addEventListener('click', () => setQty(quantity - 1))
+  document.getElementById('qty-plus')?.addEventListener('click', () => setQty(quantity + 1))
+
+  const messageEl = document.getElementById('action-message')
+  const showMessage = (text, type) => {
+    if (!messageEl) return
+    messageEl.textContent = text
+    messageEl.className = `action-message action-${type}`
+    messageEl.hidden = false
+    setTimeout(() => { messageEl.hidden = true }, 3000)
+  }
+
+  const product = JSON.parse(document.getElementById('product-data')?.textContent || '{}')
+
+  document.getElementById('add-to-cart-btn')?.addEventListener('click', async () => {
+    try {
+      await addToCart(product, quantity, selectedSize, selectedColor)
+      showMessage('¡Producto agregado al carrito!', 'success')
+    } catch {
+      showMessage('Error al agregar el producto', 'error')
+    }
+  })
+
+  document.getElementById('buy-now-btn')?.addEventListener('click', async () => {
+    try {
+      await addToCart(product, quantity, selectedSize, selectedColor)
+      window.location.href = '/carrito'
+    } catch {
+      showMessage('Error al procesar la compra', 'error')
+    }
   })
 </script>
 
 <style>
   .product-page {
-    padding-top:    calc(var(--header-height) + var(--space-8));
-    padding-bottom: var(--space-16);
+    padding-top:    calc(var(--header-height) + 1.5rem);
+    padding-bottom: 3rem;
   }
 
   .breadcrumb {
     display:     flex;
     align-items: center;
-    gap:         var(--space-2);
+    flex-wrap:   wrap;
+    gap:         0.4rem;
     font-size:   0.8rem;
-    color:       var(--color-gray-400);
-    margin-bottom: var(--space-8);
+    color:       var(--color-gray-500);
+    margin-bottom: 1.5rem;
   }
-
   .breadcrumb a:hover { color: var(--color-black); }
-  .breadcrumb span    { color: var(--color-gray-400); }
+  .breadcrumb span { color: var(--color-gray-400); }
 
   .product-layout {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap:     var(--space-12);
+    grid-template-columns: 1fr;
+    gap:     2rem;
   }
 
-  /* Galería */
   .main-image {
     aspect-ratio: 3/4;
     overflow:     hidden;
     border-radius: var(--radius-lg);
     background:   var(--color-gray-100);
   }
-
   .main-image img {
     width:      100%;
     height:     100%;
@@ -255,121 +306,119 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
     transition: transform 400ms ease;
   }
 
-  .main-image:hover img { transform: scale(1.03); }
-
   .thumbnails {
     display: flex;
-    gap:     var(--space-2);
-    margin-top: var(--space-3);
+    gap:     0.5rem;
+    margin-top: 0.75rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
   }
-
   .thumbnail {
-    width:         72px;
-    height:        90px;
+    flex-shrink:  0;
+    width:        64px;
+    height:       84px;
     border-radius: var(--radius-md);
-    overflow:      hidden;
-    border:        2px solid transparent;
-    transition:    border-color var(--transition);
-    padding:       0;
+    overflow:     hidden;
+    border:       2px solid transparent;
+    background:   transparent;
+    padding:      0;
+    cursor:       pointer;
+    transition:   border-color var(--transition);
   }
-
   .thumbnail.active,
   .thumbnail:hover { border-color: var(--color-black); }
-
   .thumbnail img { width: 100%; height: 100%; object-fit: cover; }
 
-  /* Info */
   .product-meta {
     display:     flex;
     align-items: center;
-    gap:         var(--space-3);
-    margin-bottom: var(--space-3);
+    gap:         0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap:   wrap;
   }
-
   .product-category-link {
-    font-size:      0.75rem;
+    font-size:      0.7rem;
     font-weight:    600;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color:          var(--color-gray-400);
-    transition:     color var(--transition);
+    color:          var(--color-gray-500);
   }
-
   .product-category-link:hover { color: var(--color-black); }
 
   .badge-featured {
-    font-size:     0.7rem;
+    font-size:     0.65rem;
     font-weight:   600;
     padding:       2px 8px;
     background:    var(--color-black);
     color:         white;
-    border-radius: 100px;
+    border-radius: var(--radius-full);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
 
   .product-title {
     font-family:   var(--font-serif);
-    font-size:     2rem;
+    font-size:     1.6rem;
     font-weight:   600;
     color:         var(--color-black);
     line-height:   1.2;
-    margin-bottom: var(--space-4);
+    margin-bottom: 0.75rem;
   }
 
   .product-price {
-    font-size:     1.8rem;
+    font-size:     1.5rem;
     font-weight:   700;
     color:         var(--color-black);
-    margin-bottom: var(--space-4);
+    margin-bottom: 1rem;
+    display:       flex;
+    align-items:    baseline;
+    gap:            0.25rem;
   }
-
+  .currency-symbol { font-size: 1rem; font-weight: 500; color: var(--color-gray-500); }
   .currency {
-    font-size:   1rem;
+    font-size:   0.85rem;
     font-weight: 400;
-    color:       var(--color-gray-400);
+    color:       var(--color-gray-500);
   }
 
   .product-description {
     font-size:     0.95rem;
     color:         var(--color-gray-600);
     line-height:   1.7;
-    margin-bottom: var(--space-6);
-    padding-bottom: var(--space-6);
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
     border-bottom: 1.5px solid var(--color-gray-200);
   }
 
-  .option-group  { margin-bottom: var(--space-5); }
+  .option-group { margin-bottom: 1.25rem; }
 
   .option-label {
-    display:       block;
-    font-size:     0.875rem;
-    font-weight:   600;
-    color:         var(--color-gray-800);
-    margin-bottom: var(--space-3);
+    display:     block;
+    font-size:   0.85rem;
+    font-weight: 600;
+    color:       var(--color-gray-800);
+    margin-bottom: 0.75rem;
   }
+  .selected-value { font-weight: 400; color: var(--color-gray-500); }
 
-  .selected-value {
-    font-weight: 400;
-    color:       var(--color-gray-400);
-  }
-
-  .size-grid {
+  .size-grid, .color-grid {
     display:   flex;
     flex-wrap: wrap;
-    gap:       var(--space-2);
+    gap:       0.5rem;
   }
 
   .size-btn {
     min-width:     48px;
     height:        44px;
-    padding:       0 var(--space-3);
+    padding:       0 0.75rem;
     border:        1.5px solid var(--color-gray-200);
     border-radius: var(--radius-md);
     font-size:     0.875rem;
     font-weight:   500;
     color:         var(--color-gray-600);
     transition:    all var(--transition);
+    background:    var(--color-white);
   }
-
   .size-btn:hover,
   .size-btn.active {
     border-color: var(--color-black);
@@ -377,21 +426,15 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
     color:        white;
   }
 
-  .color-grid {
-    display:   flex;
-    flex-wrap: wrap;
-    gap:       var(--space-2);
-  }
-
   .color-btn {
-    padding:       var(--space-2) var(--space-4);
+    padding:       0.5rem 1rem;
     border:        1.5px solid var(--color-gray-200);
-    border-radius: 100px;
+    border-radius: var(--radius-full);
     font-size:     0.8rem;
     color:         var(--color-gray-600);
     transition:    all var(--transition);
+    background:    var(--color-white);
   }
-
   .color-btn:hover,
   .color-btn.active {
     border-color: var(--color-black);
@@ -400,68 +443,84 @@ const formattedPrice = Number(product.price).toLocaleString('es-CO')
   }
 
   .quantity-selector {
-    display:     flex;
-    align-items: center;
-    gap:         var(--space-4);
-    width:       fit-content;
-    border:      1.5px solid var(--color-gray-200);
-    border-radius: var(--radius-md);
-    padding:     var(--space-2) var(--space-4);
+    display:        flex;
+    align-items:    center;
+    gap:            1rem;
+    width:          fit-content;
+    border:         1.5px solid var(--color-gray-200);
+    border-radius:  var(--radius-md);
+    padding:        0.4rem 0.85rem;
   }
-
   .qty-btn {
     font-size:   1.2rem;
     color:       var(--color-gray-600);
     width:       24px;
     text-align:  center;
     transition:  color var(--transition);
+    background:  none;
+    border:      none;
+    cursor:      pointer;
   }
-
   .qty-btn:hover { color: var(--color-black); }
-
   #qty-display {
-    font-size:   1rem;
-    font-weight: 600;
-    min-width:   24px;
-    text-align:  center;
+    font-size:     1rem;
+    font-weight:   600;
+    min-width:     24px;
+    text-align:    center;
   }
 
   .product-actions {
     display:        flex;
     flex-direction: column;
-    gap:            var(--space-3);
-    margin-top:     var(--space-6);
-    margin-bottom:  var(--space-4);
+    gap:            0.75rem;
+    margin-top:     1.5rem;
+    margin-bottom:  1rem;
   }
-
-  .btn-full { width: 100%; }
+  .btn-full { width: 100%; padding: 0.95rem 1.5rem; }
 
   .action-message {
-    padding:       var(--space-3) var(--space-4);
+    padding:       0.75rem 1rem;
     border-radius: var(--radius-md);
     font-size:     0.875rem;
     font-weight:   500;
-    margin-top:    var(--space-3);
+    margin-top:    0.75rem;
   }
+  .action-success { background: #dcfce7; color: #166534; }
+  .action-error   { background: #fee2e2; color: #991b1b; }
 
   .product-details {
     display:        flex;
     flex-direction: column;
-    gap:            var(--space-3);
-    margin-top:     var(--space-6);
-    padding-top:    var(--space-6);
+    gap:            0.75rem;
+    margin-top:     1.5rem;
+    padding-top:    1.5rem;
     border-top:     1.5px solid var(--color-gray-200);
   }
-
   .detail-item {
     display:     flex;
     align-items: center;
-    gap:         var(--space-3);
+    gap:         0.75rem;
     font-size:   0.875rem;
     color:       var(--color-gray-600);
   }
 
-  @media (max-width: 768px) {
-    .product-layout { grid-template-columns: 1fr; }
+  @media (min-width: 768px) {
+    .product-page { padding-top: calc(var(--header-height) + 2rem); padding-bottom: 4rem; }
+    .product-layout { gap: 2.5rem; }
+    .product-title { font-size: 2rem; }
+    .product-price { font-size: 1.8rem; }
+    .thumbnail { width: 72px; height: 90px; }
+  }
+
+  @media (min-width: 1024px) {
+    .product-layout {
+      grid-template-columns: 1fr 1fr;
+      gap:                   3rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .main-image img,
+    .thumbnail { transition: none; }
   }
 </style>
