@@ -64,7 +64,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 </ShopLayout>
 
 <script>
-  import { api } from '../../lib/api.js'
+  import { api, bootstrapAuth } from '../../lib/api.js'
   import { currentUser } from '../../stores/auth.store.js'
   import { escapeHtml, sanitizeOrder } from '../../lib/sanitize.js'
 
@@ -72,15 +72,18 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   let currentPage = 1
   let totalPages = 1
 
-  const user = currentUser.get()
-
-  if (!user || user.role !== 'ADMIN') {
-    document.getElementById('no-access')!.style.display = 'flex'
-  } else {
+  const init = async () => {
+    const user = await bootstrapAuth()
+    if (!user || user.role !== 'ADMIN') {
+      document.getElementById('no-access')!.style.display = 'flex'
+      return
+    }
     document.getElementById('admin-content')!.style.display = 'block'
-    loadOrders()
+    await loadOrders()
     setupEventListeners()
   }
+
+  init()
 
   async function loadOrders(params = {}) {
     try {

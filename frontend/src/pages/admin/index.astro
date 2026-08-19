@@ -61,34 +61,19 @@ import '../../styles/admin.css'
 
 <script>
   import { currentUser } from '../../stores/auth.store.js'
-  import { api } from '../../lib/api.js'
+  import { api, bootstrapAuth } from '../../lib/api.js'
 
-  //Durante el SSR, currentUser.get() siempre retorna null porque no hay acceso a localStorage
-  //Por eso necesitamos verificar directamente localStorage desde el cliente
-  const initAuth = () => {
-    const savedUser = localStorage.getItem('user')
-    const savedToken = localStorage.getItem('accessToken')
-    if (savedUser && savedToken) {
-      try {
-        const user = JSON.parse(savedUser)
-        currentUser.set(user)
-        return user
-      } catch {
-        return null
+  const init = async () => {
+    const user = await bootstrapAuth()
+    if (!user || user.role !== 'ADMIN') {
+      //Si existe un usuario pero no es admin, mostrar mensaje de acceso denegado
+      //Si no existe usuario, simplemente no mostrar el admin
+      if (user) {
+        document.getElementById('no-access')!.style.display = 'flex'
       }
+      return
     }
-    return null
-  }
 
-  const user = initAuth()
-
-  if (!user || user.role !== 'ADMIN') {
-    //Si existe un usuario pero no es admin, mostrar mensaje de acceso denegado
-    //Si no existe usuario, simplemente no mostrar el admin
-    if (user) {
-      document.getElementById('no-access')!.style.display = 'flex'
-    }
-  } else {
     document.getElementById('admin-content')!.style.display = 'block'
 
     api.admin.stats().then(stats => {
@@ -99,6 +84,8 @@ import '../../styles/admin.css'
         '$' + Number(stats.revenue).toLocaleString('es-CO')
     }).catch(() => {})
   }
+
+  init()
 </script>
 
 <style>

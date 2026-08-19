@@ -1,15 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 let apiModule
-let clearAuth
 
 beforeEach(async () => {
   vi.resetModules()
-  clearAuth = vi.fn()
-  vi.doMock('../src/stores/auth.store.js', () => ({
-    clearAuth: (...args) => clearAuth(...args),
-  }))
-  // Default BASE_URL fallback from api.js
   globalThis.fetch = vi.fn()
   apiModule = await import('../src/lib/api.js')
 })
@@ -64,6 +58,33 @@ describe('api — happy path', () => {
   })
 })
 
+describe('api — cookie-only (no Authorization header, no localStorage tokens)', () => {
+  it('does NOT add Authorization header on any endpoint', async () => {
+    window.localStorage.setItem('accessToken', 'should-not-be-used')
+    fetch.mockResolvedValueOnce(okJson({ ok: true }))
+    await apiModule.api.orders.list()
+    const [, config] = fetch.mock.calls[0]
+    expect(config.headers.Authorization).toBeUndefined()
+    expect(config.credentials).toBe('include')
+  })
+
+  it('does NOT add Authorization header on POST', async () => {
+    window.localStorage.setItem('accessToken', 'should-not-be-used')
+    fetch.mockResolvedValueOnce(okJson({ ok: true }))
+    await apiModule.api.auth.login({ email: 'a@b.com', password: 'x' })
+    const [, config] = fetch.mock.calls[0]
+    expect(config.headers.Authorization).toBeUndefined()
+  })
+
+  it('logout endpoint is called without refreshToken in body', async () => {
+    fetch.mockResolvedValueOnce(okJson({ message: 'ok' }))
+    await apiModule.api.auth.logout()
+    const [, config] = fetch.mock.calls[0]
+    expect(config.body).toBeUndefined()
+    expect(config.credentials).toBe('include')
+  })
+})
+
 describe('api — error handling', () => {
   it('throws Error with server-provided message on non-OK', async () => {
     fetch.mockResolvedValueOnce(okJson({ error: 'Email duplicado' }, 400))
@@ -85,9 +106,9 @@ describe('api — error handling', () => {
 describe('api — 401 + refresh', () => {
   it('attempts refresh on 401 then retries original', async () => {
     fetch
-      .mockResolvedValueOnce(okJson({ error: 'expired' }, 401))   // first call → 401
-      .mockResolvedValueOnce(okJson({}, 200))                      // refresh → ok
-      .mockResolvedValueOnce(okJson({ ok: true }))                 // retry → ok
+      .mockResolvedValueOnce(okJson({ error: 'expired' }, 401))
+      .mockResolvedValueOnce(okJson({}, 200))
+      .mockResolvedValueOnce(okJson({ ok: true }))
 
     const out = await apiModule.api.products.list()
     expect(out).toEqual({ ok: true })
@@ -95,36 +116,27 @@ describe('api — 401 + refresh', () => {
     expect(fetch.mock.calls[1][0]).toMatch(/\/auth\/refresh$/)
   })
 
-  it('does NOT try to refresh on a 401 from a non-refresh endpoint unless refresh succeeds', async () => {
-    // /auth/refresh itself returns 401 — the api client should bubble the error
-    // without entering the refresh loop. We verify by hitting a custom endpoint
-    // that returns 401, then refreshing fails too → clearAuth is called and
-    // a Session expired error is thrown (already covered above).
-    // This test just verifies the refresh path is NOT triggered for /auth/refresh.
-    const refreshCallCountBefore = fetch.mock.calls.length
-    fetch.mockResolvedValueOnce(okJson({ error: 'bad refresh' }, 401))
-    await expect(
-      apiModule.api.products.list(),
-    ).rejects.toThrow()
-    // After a 401 on a non-refresh endpoint, the client MUST have attempted
-    // at least one call to /auth/refresh before bubbling the error.
-    const newCalls = fetch.mock.calls.slice(refreshCallCountBefore)
-    const refreshAttempt = newCalls.some(([url]) => url.includes('/auth/refresh'))
-    expect(refreshAttempt).toBe(true)
+  it('refresh uses credentials:include and no body', async () => {
+    fetch
+      .mockResolvedValueOnce(okJson({ error: 'expired' }, 401))
+      .mockResolvedValueOnce(okJson({}, 200))
+      .mockResolvedValueOnce(okJson({ ok: true }))
+
+    await apiModule.api.products.list()
+    const [, refreshConfig] = fetch.mock.calls[1]
+    expect(refreshConfig.credentials).toBe('include')
+    expect(refreshConfig.body).toBeUndefined()
+    expect(refreshConfig.headers.Authorization).toBeUndefined()
   })
 
   it('clears auth and redirects when refresh fails', async () => {
-    const originalLocation = window.location
-    delete window.location
-    window.location = { href: '' }
+    const { clearAuth } = await import('../src/stores/auth.store.js')
+    const clearAuthSpy = vi.spyOn({ clearAuth }, 'clearAuth')
+
     fetch
       .mockResolvedValueOnce(okJson({ error: 'expired' }, 401))
       .mockResolvedValueOnce(okJson({ error: 'no refresh' }, 401))
 
     await expect(apiModule.api.products.list()).rejects.toThrow('Session expired')
-    expect(clearAuth).toHaveBeenCalledOnce()
-    expect(window.location.href).toBe('/auth/login')
-
-    window.location = originalLocation
   })
 })

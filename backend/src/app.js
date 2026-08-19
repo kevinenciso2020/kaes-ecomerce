@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 
 import { errorHandler } from './middleware/error.middleware.js'
+import { csrfProtection } from './middleware/csrf.middleware.js'
 import { prisma } from './config/prisma.js'
 
 import authRoutes     from './routes/auth.routes.js'
@@ -41,6 +42,14 @@ const corsOptions = {
   credentials: true,
 }
 app.use(cors(corsOptions))
+
+// ── CSRF ────────────────────────────────────────────────────────
+// Los cookies de auth viajan con `sameSite: 'none'` para funcionar
+// cross-origin entre Vercel y Railway. Eso debilita la protección CSRF del
+// navegador, así que añadimos un Origin-check obligatorio para cualquier
+// request que modifique estado. Los webhooks de payments están excluidos
+// porque vienen de los proveedores, no de un navegador.
+app.use(csrfProtection)
 
 // Rate limiting global — máximo 100 peticiones por 15 minutos por IP
 // Deshabilitado en tests para no auto-bloquear la suite.

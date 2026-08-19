@@ -3,21 +3,28 @@ import * as AuthService from '../services/auth.service.js'
 const isProduction = process.env.NODE_ENV === 'production'
 
 const setAuthCookies = (res, accessToken, refreshToken) => {
-  const cookieOptions = {
+  // En producción front (Vercel) y back (Railway) viven en dominios distintos,
+  // así que el cookie debe cruzar el cross-origin XHR. Eso exige
+  // `sameSite: 'none' + secure: true`. En desarrollo local todo va por
+  // `localhost` same-site, así que `sameSite: 'lax'` basta y evita fricciones
+  // con herramientas que no envían `secure` (curl, supertest, etc).
+  const sameSite = isProduction ? 'none' : 'lax'
+
+  const baseOptions = {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: isProduction ? 'strict' : 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60 * 1000,
+    secure:   true,
+    sameSite,
+    path:     '/',
   }
 
-  res.cookie('accessToken', accessToken, { ...cookieOptions, maxAge: 15 * 60 * 1000 })
-  res.cookie('refreshToken', refreshToken, cookieOptions)
+  res.cookie('accessToken',  accessToken,  { ...baseOptions, maxAge: 15 * 60 * 1000 })
+  res.cookie('refreshToken', refreshToken, { ...baseOptions, maxAge: 7 * 24 * 60 * 60 * 1000 })
 }
 
 const clearAuthCookies = (res) => {
-  res.clearCookie('accessToken', { path: '/' })
-  res.clearCookie('refreshToken', { path: '/' })
+  const clearOptions = { path: '/' }
+  res.clearCookie('accessToken',  clearOptions)
+  res.clearCookie('refreshToken', clearOptions)
 }
 
 export const register = async (req, res, next) => {

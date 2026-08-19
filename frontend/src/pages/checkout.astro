@@ -276,7 +276,8 @@ import Icon from '../components/ui/Icon.astro'
   }
 
   document.getElementById('place-order-btn')?.addEventListener('click', async () => {
-    const user = localStorage.getItem('user')
+    const { bootstrapAuth } = await import('../lib/api.js')
+    const user = await bootstrapAuth()
     if (!user) {
       window.location.href = '/auth/login'
       return

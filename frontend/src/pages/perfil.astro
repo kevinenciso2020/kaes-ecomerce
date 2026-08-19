@@ -32,15 +32,18 @@ import ShopLayout from '../layouts/ShopLayout.astro'
 
 <script>
   import { currentUser, clearAuth } from '../stores/auth.store.js'
-  import { api } from '../lib/api.js'
+  import { api, bootstrapAuth } from '../lib/api.js'
   import { escapeHtml } from '../lib/sanitize.js'
 
-  const user = currentUser.get()
+  const init = async () => {
+    const user = await bootstrapAuth()
 
-  if (!user) {
-    const el = document.getElementById('perfil-empty')
-    if (el) el.hidden = false
-  } else {
+    if (!user) {
+      const el = document.getElementById('perfil-empty')
+      if (el) el.hidden = false
+      return
+    }
+
     const el = document.getElementById('perfil-content')
     if (el) el.hidden = false
 
@@ -79,6 +82,8 @@ import ShopLayout from '../layouts/ShopLayout.astro'
       window.location.href = '/'
     })
   }
+
+  init()
 </script>
 
 <style>

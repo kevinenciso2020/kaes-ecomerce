@@ -202,8 +202,9 @@ import Icon from '../components/ui/Icon.astro'
     }
   })
 
-  document.getElementById('checkout-btn')?.addEventListener('click', () => {
-    const user = localStorage.getItem('user')
+  document.getElementById('checkout-btn')?.addEventListener('click', async () => {
+    const { bootstrapAuth } = await import('../lib/api.js')
+    const user = await bootstrapAuth()
     if (!user) {
       window.location.href = '/auth/login?redirect=/carrito'
       return

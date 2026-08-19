@@ -125,31 +125,34 @@ import '../../styles/admin.css'
 </ShopLayout>
 
 <script>
-  import { api } from '../../lib/api.js'
+  import { api, bootstrapAuth } from '../../lib/api.js'
   import { currentUser } from '../../stores/auth.store.js'
   import { escapeHtml, sanitizeProduct } from '../../lib/sanitize.js'
 
-  const user = currentUser.get()
+  let products = []
+  let currentPage = 1
+  let totalPages = 1
 
-  if (!user || user.role !== 'ADMIN') {
-    const noAccess = document.getElementById('no-access')
-    const adminContent = document.getElementById('admin-content')
-    if (noAccess) noAccess.style.display = 'flex'
-    if (adminContent) adminContent.style.display = 'none'
-  } else {
+  async function init() {
+    const user = await bootstrapAuth()
+    if (!user || user.role !== 'ADMIN') {
+      const noAccess = document.getElementById('no-access')
+      const adminContent = document.getElementById('admin-content')
+      if (noAccess) noAccess.style.display = 'flex'
+      if (adminContent) adminContent.style.display = 'none'
+      return
+    }
+
     const adminContent = document.getElementById('admin-content')
     if (adminContent) adminContent.style.display = 'block'
 
-    let products = []
-    let currentPage = 1
-    let totalPages = 1
+    renderColorOptions()
+    await loadCategories()
+    await loadProducts()
+    setupEventListeners()
+  }
 
-    async function init() {
-      renderColorOptions()
-      await loadCategories()
-      await loadProducts()
-      setupEventListeners()
-    }
+  init()
 
     const COLORS = [
       'Blanco', 'Negro', 'Gris', 'Azul', 'Rojo', 'Verde', 'Amarillo', 'Naranja',
@@ -490,9 +493,6 @@ import '../../styles/admin.css'
         }, delay)
       }
     }
-
-    init()
-  }
 </script>
 
 <style>

@@ -97,33 +97,21 @@ import '../../styles/admin.css'
 
 <script>
   import { currentUser } from '../../stores/auth.store.js'
-  import { api } from '../../lib/api.js'
+  import { api, bootstrapAuth } from '../../lib/api.js'
 
-  const initAuth = () => {
-    const savedUser = localStorage.getItem('user')
-    const savedToken = localStorage.getItem('accessToken')
-    if (savedUser && savedToken) {
-      try {
-        const user = JSON.parse(savedUser)
-        currentUser.set(user)
-        return user
-      } catch {
-        return null
+  const init = async () => {
+    const user = await bootstrapAuth()
+    if (!user || user.role !== 'ADMIN') {
+      if (user) {
+        document.getElementById('no-access').style.display = 'flex'
       }
+      return
     }
-    return null
-  }
-
-  const user = initAuth()
-
-  if (!user || user.role !== 'ADMIN') {
-    if (user) {
-      document.getElementById('no-access').style.display = 'flex'
-    }
-  } else {
     document.getElementById('studio-content').style.display = 'block'
     initStudio()
   }
+
+  init()
 
   async function initStudio() {
     loadProducts()

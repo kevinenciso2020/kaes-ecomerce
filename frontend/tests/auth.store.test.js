@@ -42,14 +42,27 @@ describe('auth.store — initial state', () => {
     await loadFresh()
     expect(authStoreModule.currentUser.get()).toBe(null)
   })
+
+  it('does NOT touch accessToken or refreshToken in localStorage', async () => {
+    window.localStorage.setItem('accessToken', 'fake-access')
+    window.localStorage.setItem('refreshToken', 'fake-refresh')
+    await loadFresh()
+    expect(authStoreModule.currentUser.get()).toBe(null)
+  })
 })
 
 describe('setAuth', () => {
-  it('sets currentUser and writes to localStorage', async () => {
+  it('sets currentUser and writes user to localStorage', async () => {
     const user = { id: 'u1', email: 'a@b.com', role: 'CUSTOMER' }
     await authStoreModule.setAuth(user)
     expect(authStoreModule.currentUser.get()).toEqual(user)
     expect(JSON.parse(window.localStorage.getItem('user'))).toEqual(user)
+  })
+
+  it('does NOT write accessToken or refreshToken to localStorage', async () => {
+    await authStoreModule.setAuth({ id: 'u1', email: 'a@b.com' })
+    expect(window.localStorage.getItem('accessToken')).toBe(null)
+    expect(window.localStorage.getItem('refreshToken')).toBe(null)
   })
 
   it('calls initCart after setting', async () => {
@@ -60,7 +73,7 @@ describe('setAuth', () => {
 })
 
 describe('clearAuth', () => {
-  it('clears currentUser and removes localStorage entry', async () => {
+  it('clears currentUser and removes user from localStorage', async () => {
     authStoreModule.currentUser.set({ id: 'u1', email: 'a@b.com' })
     window.localStorage.setItem('user', JSON.stringify({ id: 'u1' }))
     await authStoreModule.clearAuth()

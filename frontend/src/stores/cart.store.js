@@ -1,12 +1,12 @@
 import { atom, computed } from 'nanostores'
-import { currentUser, authToken } from './auth.store.js'
+import { currentUser } from './auth.store.js'
 import { api } from '../lib/api.js'
 
 export const cartItems = atom([])
 export const cartOpen  = atom(false)
 export const cartLoading = atom(false)
 
-const isLoggedIn = () => !!authToken.get()
+const isLoggedIn = () => !!currentUser.get()
 
 const saveToLocalStorage = (items) => {
   if (typeof window !== 'undefined') {

@@ -139,13 +139,10 @@ const currentPath = Astro.url.pathname
   })
 
   const handleLogout = async () => {
-    const refreshToken = localStorage.getItem('refreshToken')
     clearAuth()
-    if (refreshToken) {
-      try {
-        await api.auth.logout(refreshToken)
-      } catch (e) {}
-    }
+    try {
+      await api.auth.logout()
+    } catch (e) {}
     window.location.href = '/'
   }
 

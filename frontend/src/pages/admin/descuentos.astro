@@ -187,7 +187,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 </ShopLayout>
 
 <script>
-  import { api } from '../../lib/api.js'
+  import { api, bootstrapAuth } from '../../lib/api.js'
   import { currentUser } from '../../stores/auth.store.js'
   import { escapeHtml } from '../../lib/sanitize.js'
 
@@ -195,15 +195,18 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   let discounts: any[] = []
   let products: any[] = []
 
-  const user = currentUser.get()
-
-  if (!user || user.role !== 'ADMIN') {
-    document.getElementById('no-access')!.style.display = 'flex'
-  } else {
+  const init = async () => {
+    const user = await bootstrapAuth()
+    if (!user || user.role !== 'ADMIN') {
+      document.getElementById('no-access')!.style.display = 'flex'
+      return
+    }
     document.getElementById('admin-content')!.style.display = 'block'
-    loadData()
+    await loadData()
     setupEventListeners()
   }
+
+  init()
 
   async function loadData() {
     try {

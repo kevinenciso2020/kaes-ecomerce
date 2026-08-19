@@ -8,8 +8,8 @@ const subscribeTokenRefresh = (cb) => {
   refreshSubscribers.push(cb)
 }
 
-const onTokenRefreshed = (newToken) => {
-  refreshSubscribers.forEach(cb => cb(newToken))
+const onTokenRefreshed = () => {
+  refreshSubscribers.forEach(cb => cb())
   refreshSubscribers = []
 }
 
@@ -20,21 +20,9 @@ const refreshAccessToken = async () => {
     headers: { 'Content-Type': 'application/json' },
   })
 
-  if (!res.ok) {
-    clearAuthData()
-    window.location.href = '/auth/login'
-    throw new Error('Session expired')
-  }
+  if (!res.ok) throw new Error('Session expired')
 
-  const data = await res.json()
-  onTokenRefreshed(data.accessToken)
-  return data.accessToken
-}
-
-const clearAuthData = () => {
-  localStorage.removeItem('accessToken')
-  localStorage.removeItem('refreshToken')
-  localStorage.removeItem('user')
+  onTokenRefreshed()
 }
 
 const fetchWithRetry = async (url, config, maxRetries = 3, baseDelay = 1000) => {
@@ -45,9 +33,9 @@ const fetchWithRetry = async (url, config, maxRetries = 3, baseDelay = 1000) => 
       return res
     } catch (err) {
       lastError = err
-      const isNetworkError = err instanceof TypeError && 
-        (err.message === 'Failed to fetch' || 
-         err.message.includes('network') || 
+      const isNetworkError = err instanceof TypeError &&
+        (err.message === 'Failed to fetch' ||
+         err.message.includes('network') ||
          err.message.includes('NetworkError') ||
          err.message.includes('Connection'))
       if (!isNetworkError || attempt === maxRetries) throw err
@@ -62,16 +50,10 @@ const fetchWithRetry = async (url, config, maxRetries = 3, baseDelay = 1000) => 
 const request = async (endpoint, options = {}) => {
   const isFormData = options.body instanceof FormData
 
-  let token = null
-  if (typeof window !== 'undefined') {
-    token = localStorage.getItem('accessToken')
-  }
-
   const config = {
     credentials: 'include',
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
     ...options,
@@ -85,17 +67,14 @@ const request = async (endpoint, options = {}) => {
       try {
         await refreshAccessToken()
         res = await fetchWithRetry(`${BASE_URL}${endpoint}`, config)
-      } catch (err) {
+      } finally {
         isRefreshing = false
-        throw err
       }
-      isRefreshing = false
     } else {
-      return new Promise((resolve) => {
-        subscribeTokenRefresh(() => {
-          resolve(fetchWithRetry(`${BASE_URL}${endpoint}`, config).then(r => r.json()))
-        })
+      await new Promise((resolve) => {
+        subscribeTokenRefresh(() => resolve())
       })
+      res = await fetchWithRetry(`${BASE_URL}${endpoint}`, config)
     }
   }
 
@@ -107,12 +86,26 @@ const request = async (endpoint, options = {}) => {
   return res.json()
 }
 
+const bootstrapAuth = async () => {
+  const { currentUser } = await import('../stores/auth.store.js')
+
+  if (currentUser.get()) return currentUser.get()
+
+  try {
+    const data = await request('/auth/me')
+    currentUser.set(data.user)
+    return data.user
+  } catch {
+    return null
+  }
+}
+
 export const api = {
   auth: {
     login:    (data) => request('/auth/login',    { method: 'POST', body: JSON.stringify(data) }),
     register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
     me:       ()     => request('/auth/me'),
-    logout:   (refreshToken) => request('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+    logout:   ()     => request('/auth/logout',   { method: 'POST' }),
   },
   products: {
     list:   (params = {}) => request(`/products?${new URLSearchParams(params)}`),
@@ -159,3 +152,5 @@ export const api = {
     validate: (code, subtotal = 0) => request(`/coupons/${code}?subtotal=${subtotal}`),
   },
 }
+
+export { bootstrapAuth }
