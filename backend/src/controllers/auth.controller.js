@@ -133,3 +133,41 @@ export const checkVerification = async (req, res, next) => {
     next(err)
   }
 }
+
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email requerido' })
+    }
+
+    const result = await AuthService.requestPasswordReset(email)
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { email, code, password, confirmPassword } = req.body
+
+    if (!email || !code || !password) {
+      return res.status(400).json({ error: 'Email, código y contraseña son requeridos' })
+    }
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ error: 'Las contraseñas no coinciden' })
+    }
+
+    const result = await AuthService.resetPasswordWithOtp({
+      email,
+      code: code.trim(),
+      newPassword: password,
+    })
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}

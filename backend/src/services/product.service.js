@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { generateSlug } from '../utils/slug.utils.js'
 import cloudinary from '../config/cloudinary.js'
+import { verifyMagicNumbers, cleanupTempFiles } from '../middleware/upload.middleware.js'
 
 export const getProducts = async ({ page = 1, limit = 12, category, minPrice, maxPrice, size, color, search, featured }) => {
   const skip = (page - 1) * limit
@@ -129,23 +130,28 @@ export const createProduct = async (data, files) => {
   }
   // O subir archivos a Cloudinary
   else if (files && files.length > 0) {
-    const uploadPromises = files.map((file, index) =>
-      cloudinary.uploader.upload(file.path, {
-        folder:         'ecommerce-ropa/products',
-        transformation: [{ width: 800, height: 1000, crop: 'fill', quality: 'auto' }]
-      }).then(result =>
-        prisma.productImage.create({
-          data: {
-            url:       result.secure_url,
-            publicId:  result.public_id,
-            isMain:    index === 0,
-            order:     index,
-            productId: product.id,
-          }
-        })
+    try {
+      await verifyMagicNumbers(files)
+      const uploadPromises = files.map((file, index) =>
+        cloudinary.uploader.upload(file.path, {
+          folder:         'ecommerce-ropa/products',
+          transformation: [{ width: 800, height: 1000, crop: 'fill', quality: 'auto' }]
+        }).then(result =>
+          prisma.productImage.create({
+            data: {
+              url:       result.secure_url,
+              publicId:  result.public_id,
+              isMain:    index === 0,
+              order:     index,
+              productId: product.id,
+            }
+          })
+        )
       )
-    )
-    await Promise.all(uploadPromises)
+      await Promise.all(uploadPromises)
+    } finally {
+      await cleanupTempFiles(files)
+    }
   }
 
   if (data.variants) {
@@ -219,23 +225,28 @@ export const updateProduct = async (id, data, files) => {
   }
   // O subir archivos a Cloudinary
   else if (files && files.length > 0) {
-    const uploadPromises = files.map((file, index) =>
-      cloudinary.uploader.upload(file.path, {
-        folder:         'ecommerce-ropa/products',
-        transformation: [{ width: 800, height: 1000, crop: 'fill', quality: 'auto' }]
-      }).then(result =>
-        prisma.productImage.create({
-          data: {
-            url:       result.secure_url,
-            publicId:  result.public_id,
-            isMain:    false,
-            order:     index,
-            productId: id,
-          }
-        })
+    try {
+      await verifyMagicNumbers(files)
+      const uploadPromises = files.map((file, index) =>
+        cloudinary.uploader.upload(file.path, {
+          folder:         'ecommerce-ropa/products',
+          transformation: [{ width: 800, height: 1000, crop: 'fill', quality: 'auto' }]
+        }).then(result =>
+          prisma.productImage.create({
+            data: {
+              url:       result.secure_url,
+              publicId:  result.public_id,
+              isMain:    false,
+              order:     index,
+              productId: id,
+            }
+          })
+        )
       )
-    )
-    await Promise.all(uploadPromises)
+      await Promise.all(uploadPromises)
+    } finally {
+      await cleanupTempFiles(files)
+    }
   }
 
   // Actualizar variants/colores si se proporcionan
@@ -272,7 +283,9 @@ export const deleteProduct = async (id) => {
   // Eliminar imágenes de Cloudinary antes de borrar el producto
   if (product.images.length > 0) {
     await Promise.all(
-      product.images.map(img => cloudinary.uploader.destroy(img.publicId))
+      product.images
+        .filter(img => img.publicId)
+        .map(img => cloudinary.uploader.destroy(img.publicId))
     )
   }
 

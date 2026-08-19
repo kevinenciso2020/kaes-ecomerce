@@ -48,3 +48,30 @@ export const resendVerification = [
     .isEmail().withMessage('El email debe ser válido')
     .normalizeEmail(),
 ]
+
+export const forgotPassword = [
+  body('email')
+    .trim()
+    .notEmpty().withMessage('El email es requerido')
+    .isEmail().withMessage('El email debe ser válido')
+    .normalizeEmail(),
+]
+
+export const resetPassword = [
+  body('email')
+    .trim()
+    .notEmpty().withMessage('El email es requerido')
+    .isEmail().withMessage('El email debe ser válido')
+    .normalizeEmail(),
+  body('code')
+    .trim()
+    .notEmpty().withMessage('El código es requerido')
+    .matches(/^\d{6}$/).withMessage('El código debe tener 6 dígitos'),
+  body('password')
+    .trim()
+    .notEmpty().withMessage('La contraseña es requerida')
+    .isLength({ min: 6, max: 50 }).withMessage('La contraseña debe tener entre 6 y 50 caracteres'),
+  body('confirmPassword')
+    .trim()
+    .notEmpty().withMessage('Confirma tu contraseña'),
+]

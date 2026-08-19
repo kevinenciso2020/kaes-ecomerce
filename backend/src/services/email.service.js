@@ -251,3 +251,71 @@ export const sendVerificationEmail = async (user, verificationToken) => {
     return false
   }
 }
+
+export const sendPasswordResetEmail = async (user, code) => {
+  try {
+    const expiresInMinutes = 10
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden;">
+    <div style="background: #1a1a1a; color: white; padding: 24px; text-align: center;">
+      <h1 style="margin: 0; font-size: 24px;">${FROM_NAME}</h1>
+    </div>
+
+    <div style="padding: 24px;">
+      <h2 style="color: #333; margin-top: 0;">Restablece tu contraseña 🔒</h2>
+      <p style="color: #666;">Hola <strong>${user.name}</strong>,</p>
+      <p style="color: #666;">Recibimos una solicitud para restablecer la contraseña de tu cuenta. Usa el siguiente código de 6 dígitos para continuar:</p>
+
+      <div style="text-align: center; margin: 32px 0;">
+        <div style="display: inline-block; background: #f9f9f9; border: 2px dashed #1a1a1a; border-radius: 12px; padding: 20px 32px; letter-spacing: 12px; font-family: 'Courier New', monospace; font-size: 36px; font-weight: bold; color: #1a1a1a;">
+          ${code}
+        </div>
+      </div>
+
+      <p style="color: #666; text-align: center; margin: 0 0 16px;">
+        Ingresa este código en la página de recuperación para crear una nueva contraseña.
+      </p>
+
+      <div style="background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin: 20px 0;">
+        <p style="margin: 0; color: #92400e; font-size: 14px;">
+          ⏱️ Este código expira en <strong>${expiresInMinutes} minutos</strong>. Si no solicitaste este cambio, puedes ignorar este mensaje — tu contraseña seguirá siendo la misma.
+        </p>
+      </div>
+
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; margin: 0;">
+          Por seguridad, nunca pedimos tu contraseña por correo, teléfono o redes sociales.
+        </p>
+      </div>
+    </div>
+
+    <div style="background: #f5f5f5; padding: 16px; text-align: center; font-size: 12px; color: #999;">
+      <p style="margin: 0;">© ${new Date().getFullYear()} ${FROM_NAME}. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim()
+
+    const result = await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: user.email,
+      subject: `Código para restablecer tu contraseña - ${FROM_NAME}`,
+      html: htmlContent,
+    })
+
+    console.log(`✅ Email de reset enviado a ${user.email} (MessageID: ${result.messageId})`)
+    return true
+  } catch (error) {
+    console.error('❌ Error enviando email de reset de contraseña:', error.message)
+    return false
+  }
+}

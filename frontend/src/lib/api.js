@@ -120,6 +120,8 @@ export const api = {
     verifyEmail:     (token) => request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
     resendVerify:    (email) => request('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
     verifyStatus:    ()     => request('/auth/verification-status'),
+    forgotPassword:  (email) => request('/auth/forgot-password',  { method: 'POST', body: JSON.stringify({ email }) }),
+    resetPassword:   (data)  => request('/auth/reset-password',   { method: 'POST', body: JSON.stringify(data) }),
   },
   products: {
     list:   (params = {}) => request(`/products?${new URLSearchParams(params)}`),

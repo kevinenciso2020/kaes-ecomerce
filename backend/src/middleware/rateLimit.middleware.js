@@ -60,3 +60,25 @@ export const emailVerifyLimiter = isTest
       message: { error: 'Demasiadas solicitudes de verificación, intenta más tarde' },
       keyGenerator: (req) => `${req.ip}:${normalizeEmail(req.body?.email)}`,
     })
+
+export const passwordResetRequestLimiter = isTest
+  ? noop
+  : rateLimit({
+      ...standardOptions,
+      skipSuccessfulRequests: true,
+      windowMs: 60 * 60 * 1000,
+      max: 5,
+      message: { error: 'Demasiadas solicitudes de recuperación, intenta más tarde' },
+      keyGenerator: (req) => `${req.ip}:${normalizeEmail(req.body?.email)}`,
+    })
+
+export const passwordResetConfirmLimiter = isTest
+  ? noop
+  : rateLimit({
+      ...standardOptions,
+      skipSuccessfulRequests: false,
+      windowMs: 15 * 60 * 1000,
+      max: 5,
+      message: { error: 'Demasiados intentos de código, intenta más tarde' },
+      keyGenerator: (req) => `${req.ip}:${normalizeEmail(req.body?.email)}`,
+    })

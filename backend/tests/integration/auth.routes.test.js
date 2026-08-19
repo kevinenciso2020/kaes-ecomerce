@@ -23,6 +23,14 @@ vi.mock('../../src/config/prisma.js', () => ({
       update: vi.fn(),
       deleteMany: vi.fn(),
     },
+    passwordResetToken: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      deleteMany: vi.fn(),
+    },
     $transaction: vi.fn(),
   },
 }))
@@ -313,5 +321,137 @@ describe('GET /api/v1/auth/verification-status', () => {
       .set('Authorization', `Bearer ${token}`)
     expect(res.status).toBe(200)
     expect(res.body.status.emailVerified).toBe(false)
+  })
+})
+
+describe('POST /api/v1/auth/forgot-password', () => {
+  it('returns 400 with missing email', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({})
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 with invalid email', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'not-an-email' })
+    expect(res.status).toBe(400)
+  })
+
+  it('always returns 200 even if the user does not exist (no info leak)', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce(null)
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'ghost@example.com' })
+    expect(res.status).toBe(200)
+    expect(res.body.message).toMatch(/c[oó]digo/i)
+    expect(res.body.expiresInMinutes).toBe(10)
+    expect(prisma.passwordResetToken.create).not.toHaveBeenCalled()
+  })
+
+  it('generates a token and revokes previous for an existing user', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u1', name: 'Ada', email: 'a@b.com',
+    })
+    prisma.$transaction.mockResolvedValueOnce([])
+
+    const res = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'a@b.com' })
+    expect(res.status).toBe(200)
+    expect(prisma.$transaction).toHaveBeenCalledOnce()
+  })
+})
+
+describe('POST /api/v1/auth/reset-password', () => {
+  it('returns 400 with missing email', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ code: '123456', password: 'newpass1', confirmPassword: 'newpass1' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 with missing code', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', password: 'newpass1', confirmPassword: 'newpass1' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 with non-6-digit code', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', code: '12345', password: 'newpass1', confirmPassword: 'newpass1' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 with short password', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', code: '123456', password: '123', confirmPassword: '123' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 when passwords do not match', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', code: '123456', password: 'newpass1', confirmPassword: 'different' })
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 with invalid/unknown/expired code and bumps attempts counter', async () => {
+    prisma.passwordResetToken.findFirst.mockResolvedValueOnce(null)
+    prisma.passwordResetToken.updateMany.mockResolvedValueOnce({ count: 1 })
+
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', code: '999999', password: 'newpass1', confirmPassword: 'newpass1' })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toMatch(/inv[áa]lido|expirado/i)
+    expect(prisma.passwordResetToken.updateMany).toHaveBeenCalledOnce()
+  })
+
+  it('returns 429 when attempts on the active token exceed the cap', async () => {
+    prisma.passwordResetToken.findFirst.mockResolvedValueOnce({
+      id: 'tok-1',
+      attempts: 5,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      userId: 'u1',
+      user: { id: 'u1', email: 'a@b.com' },
+    })
+    prisma.passwordResetToken.update.mockResolvedValueOnce({})
+
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', code: '123456', password: 'newpass1', confirmPassword: 'newpass1' })
+    expect(res.status).toBe(429)
+    expect(prisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('returns 200 on valid code, updates password and revokes refresh tokens', async () => {
+    prisma.passwordResetToken.findFirst.mockResolvedValueOnce({
+      id: 'tok-1',
+      attempts: 0,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+      userId: 'u1',
+      user: { id: 'u1', email: 'a@b.com' },
+    })
+    prisma.$transaction.mockResolvedValueOnce([])
+
+    const res = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ email: 'a@b.com', code: '123456', password: 'newpass1', confirmPassword: 'newpass1' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.message).toMatch(/actualizada/i)
+    expect(prisma.$transaction).toHaveBeenCalledOnce()
+    // La transacción debe contener 4 operaciones: update token, delete others, update user password, delete refresh tokens
+    const txArg = prisma.$transaction.mock.calls[0][0]
+    expect(Array.isArray(txArg)).toBe(true)
+    expect(txArg).toHaveLength(4)
   })
 })

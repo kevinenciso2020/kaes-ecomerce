@@ -3,10 +3,13 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { prisma } from '../config/prisma.js'
 import { generateTokens } from '../utils/jwt.utils.js'
-import { sendVerificationEmail } from './email.service.js'
+import { sendVerificationEmail, sendPasswordResetEmail } from './email.service.js'
 
 const VERIFICATION_TOKEN_BYTES = 32
 const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 horas
+
+const RESET_CODE_EXPIRY_MS = 10 * 60 * 1000 // 10 minutos — ventana corta para OTP
+const RESET_MAX_ATTEMPTS = 5
 
 const hashToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex')
@@ -230,4 +233,113 @@ export const getVerificationStatus = async (userId) => {
   }
 
   return user
+}
+
+export const requestPasswordReset = async (email) => {
+  const normalized = typeof email === 'string' ? email.toLowerCase().trim() : ''
+
+  // Mismo principio que resend-verification: no filtramos si el correo existe o no.
+  const user = await prisma.user.findUnique({ where: { email: normalized } })
+
+  if (user) {
+    // Código de 6 dígitos con leading zeros (000000–999999) — fácil de tipear en mobile
+    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
+    const tokenHash = hashToken(code)
+
+    await prisma.$transaction([
+      // Revocamos todos los códigos pendientes del usuario para que sólo haya uno activo
+      prisma.passwordResetToken.deleteMany({
+        where: { userId: user.id, usedAt: null },
+      }),
+      prisma.passwordResetToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(Date.now() + RESET_CODE_EXPIRY_MS),
+        },
+      }),
+    ])
+
+    sendPasswordResetEmail({ name: user.name, email: user.email }, code)
+      .catch((err) => console.error('Background email error:', err.message))
+  }
+
+  // Mensaje neutro SIEMPRE — evita user-enumeration
+  return {
+    message: 'Si el correo existe, te enviamos un código de 6 dígitos para restablecer tu contraseña.',
+    expiresInMinutes: 10,
+  }
+}
+
+export const resetPasswordWithOtp = async ({ email, code, newPassword }) => {
+  const normalized = typeof email === 'string' ? email.toLowerCase().trim() : ''
+
+  if (typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 50) {
+    throw reject('La contraseña debe tener entre 6 y 50 caracteres', 400)
+  }
+
+  const tokenHash = hashToken(code)
+
+  // 1) Buscamos el código activo (no usado, no expirado) que matchea el hash
+  const record = await prisma.passwordResetToken.findFirst({
+    where: {
+      tokenHash,
+      usedAt: null,
+      expiresAt: { gt: new Date() },
+      user: { email: normalized },
+    },
+    include: { user: true },
+  })
+
+  if (!record) {
+    // 2) Si no matchea: intentamos bumpear el contador del ÚLTIMO token
+    //    pendiente del usuario (si existe) para mitigar fuerza bruta sobre
+    //    códigos válidos pero tipeados mal.
+    await prisma.passwordResetToken.updateMany({
+      where: {
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+        user: { email: normalized },
+        attempts: { lt: RESET_MAX_ATTEMPTS },
+      },
+      data: { attempts: { increment: 1 } },
+    }).catch(() => {})
+
+    throw reject('Código inválido o expirado', 400)
+  }
+
+  // 3) Si ya superó el límite, descartamos el token y pedimos uno nuevo
+  if (record.attempts >= RESET_MAX_ATTEMPTS) {
+    await prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }).catch(() => {})
+    throw reject('Demasiados intentos. Solicita un nuevo código.', 429)
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 12)
+
+  // 4) Marcamos el código como usado, limpiamos otros pendientes del usuario,
+  //    cambiamos la password y revocamos TODAS las sesiones activas.
+  //    Si la cuenta fue comprometida, el ladrón queda fuera automáticamente.
+  await prisma.$transaction([
+    prisma.passwordResetToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+    prisma.passwordResetToken.deleteMany({
+      where: { userId: record.userId, id: { not: record.id }, usedAt: null },
+    }),
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { password: hashedPassword },
+    }),
+    prisma.refreshToken.deleteMany({
+      where: { userId: record.userId },
+    }),
+  ])
+
+  return {
+    message: 'Contraseña actualizada. Inicia sesión con tu nueva contraseña.',
+  }
 }

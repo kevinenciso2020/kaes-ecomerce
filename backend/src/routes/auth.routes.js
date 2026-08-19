@@ -9,6 +9,8 @@ import {
   verifyEmail,
   resendVerification,
   checkVerification,
+  forgotPassword,
+  resetPassword,
 } from '../controllers/auth.controller.js'
 import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
 import { canManageAdmins } from '../middleware/authorization.middleware.js'
@@ -18,8 +20,14 @@ import {
   authRegisterLimiter,
   authRefreshLimiter,
   emailVerifyLimiter,
+  passwordResetRequestLimiter,
+  passwordResetConfirmLimiter,
 } from '../middleware/rateLimit.middleware.js'
-import { resendVerification as resendVerificationValidator } from '../validators/auth.validator.js'
+import {
+  resendVerification as resendVerificationValidator,
+  forgotPassword as forgotPasswordValidator,
+  resetPassword as resetPasswordValidator,
+} from '../validators/auth.validator.js'
 import { prisma } from '../config/prisma.js'
 
 const router = Router()
@@ -34,6 +42,10 @@ router.get('/me',                   isAuth,              me)
 router.get('/verify-email',         verifyEmail)
 router.post('/resend-verification', emailVerifyLimiter, validate(resendVerificationValidator), resendVerification)
 router.get('/verification-status',  isAuth,              checkVerification)
+
+// Recuperación de contraseña por OTP — público, rate-limited
+router.post('/forgot-password',     passwordResetRequestLimiter, validate(forgotPasswordValidator), forgotPassword)
+router.post('/reset-password',      passwordResetConfirmLimiter, validate(resetPasswordValidator),  resetPassword)
 
 router.get('/admins', isAuth, isAdmin, async (req, res) => {
   const admins = await prisma.user.findMany({
