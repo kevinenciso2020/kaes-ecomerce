@@ -12,6 +12,7 @@ import {
   updateUserRole as updateUserRoleValidator
 } from '../validators/admin.validator.js'
 import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
+import { canManageAdmins } from '../middleware/authorization.middleware.js'
 
 const router = Router()
 
@@ -48,6 +49,6 @@ router.get('/users',              validate(getAllUsersValidator), getAllUsers)
 router.get('/users/:id',          validate(getUserByIdValidator), getUserById)
 router.put('/users/:id',          validate(updateUserValidator), updateUser)
 router.delete('/users/:id',       validate(deleteUserValidator), deleteUser)
-router.put('/users/:id/role',     validate(updateUserRoleValidator), updateUserRole)
+router.put('/users/:id/role',     validate(updateUserRoleValidator), canManageAdmins, updateUserRole)
 
 export default router
