@@ -2,12 +2,14 @@ import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
-import morgan from 'morgan'
+import pinoHttp from 'pino-http'
 import rateLimit from 'express-rate-limit'
 import cookieParser from 'cookie-parser'
 
+import { logger } from './config/logger.js'
 import { errorHandler } from './middleware/error.middleware.js'
 import { csrfProtection } from './middleware/csrf.middleware.js'
+import { requestContextMiddleware } from './middleware/requestContext.middleware.js'
 import { prisma } from './config/prisma.js'
 
 import authRoutes     from './routes/auth.routes.js'
@@ -21,6 +23,36 @@ import couponRoutes   from './routes/coupon.routes.js'
 const app = express()
 
 app.set('trust proxy', 1)
+
+// ── Request ID + base logger (debe ir antes que cualquier middleware que loguee) ──
+app.use(requestContextMiddleware)
+
+// ── HTTP access logs estructurados ─────────────────────────────
+app.use(pinoHttp({
+  logger,
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error'
+    if (res.statusCode >= 400) return 'warn'
+    return 'info'
+  },
+  customSuccessMessage: (req, res) => `${req.method} ${req.url} ${res.statusCode}`,
+  customErrorMessage: (req, res, err) => `${req.method} ${req.url} ${res.statusCode} - ${err.message}`,
+  serializers: {
+    req: (req) => ({
+      id: req.id,
+      method: req.method,
+      url: req.url,
+      remoteAddress: req.remoteAddress,
+    }),
+    res: (res) => ({
+      statusCode: res.statusCode,
+    }),
+  },
+  autoLogging: {
+    ignore: (req) => req.url === '/api/health',
+  },
+  customProps: (req) => ({ reqId: req.id }),
+}))
 
 // ── Seguridad ────────────────────────────────────────────────
 app.use(helmet())
@@ -73,9 +105,6 @@ app.use('/api/v1/payments/wompi/webhook', express.raw({ type: 'application/json'
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-// ── Logs ─────────────────────────────────────────────────────
-if (process.env.NODE_ENV === 'development') app.use(morgan('dev'))
-
 // ── Rutas ────────────────────────────────────────────────────
 app.use('/api/v1/auth',     authRoutes)
 app.use('/api/v1/products', productRoutes)
@@ -89,6 +118,7 @@ app.use('/api/v1/coupons',  couponRoutes)
 app.get('/api/health', async (req, res) => {
   const maxRetries = 3
   const baseDelay = 1000 // 1 segundo
+  const log = req.log || logger
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -96,7 +126,7 @@ app.get('/api/health', async (req, res) => {
       return res.json({ status: 'ok', db: 'connected', env: process.env.NODE_ENV })
     } catch (err) {
       if (attempt === maxRetries) {
-        console.error(`[Health] DB connection failed after ${maxRetries} attempts:`, err.message)
+        log.error({ err, attempts: maxRetries }, 'health.db_unreachable')
         return res.status(503).json({
           status: 'error',
           db: 'disconnected',
@@ -105,7 +135,7 @@ app.get('/api/health', async (req, res) => {
         })
       }
       const delay = baseDelay * Math.pow(2, attempt - 1) // 1s, 2s, 4s
-      console.log(`[Health] DB connection attempt ${attempt} failed, retrying in ${delay}ms...`)
+      log.warn({ attempt, retryInMs: delay, err: err.message }, 'health.db_retrying')
       await new Promise(r => setTimeout(r, delay))
     }
   }

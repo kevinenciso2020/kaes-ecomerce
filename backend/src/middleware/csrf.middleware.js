@@ -57,11 +57,13 @@ export const csrfProtection = (req, res, next) => {
   // Aún así, lo bloqueamos para mantener defensa en profundidad.
   const requestOrigin = extractOrigin(req)
   if (!requestOrigin) {
+    req.log?.warn({ reqId: req.id, method: req.method, path: req.path, ip: req.ip }, 'csrf.origin_missing')
     return res.status(403).json({ error: 'Origen requerido' })
   }
 
   const allowed = allowedOrigins()
   if (!allowed.includes(requestOrigin)) {
+    req.log?.warn({ reqId: req.id, method: req.method, path: req.path, ip: req.ip, origin: requestOrigin }, 'csrf.origin_rejected')
     return res.status(403).json({ error: 'Origen no permitido por CSRF' })
   }
 

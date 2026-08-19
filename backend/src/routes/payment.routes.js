@@ -10,6 +10,7 @@ import { isAuth } from "../middleware/auth.middleware.js";
 import { requireVerifiedEmail } from "../middleware/requireVerifiedEmail.middleware.js";
 import { discountStock } from "../services/stock.service.js";
 import { sendOrderConfirmation } from "../services/email.service.js";
+import { logger } from "../config/logger.js";
 
 const router = express.Router();
 
@@ -89,7 +90,7 @@ router.post("/create-preference", isAuth, requireVerifiedEmail, async (req, res)
       sandboxInitPoint: result.sandbox_init_point, // URL sandbox (pruebas)
     });
   } catch (error) {
-    console.error("Error creando preferencia MP:", error);
+    req.log?.error({ err: error, orderId }, 'payment.mp.create_preference_failed');
     return res.status(500).json({ error: "Error procesando el pago" });
   }
 });
@@ -105,7 +106,7 @@ router.post("/webhook", async (req, res) => {
     const xRequestId = req.headers["x-request-id"];
 
     if (!xSignature || !xRequestId) {
-      console.warn("Webhook recibido sin firma");
+      req.log?.warn({ provider: 'mercadopago', reason: 'missing_signature' }, 'payment.webhook.signature_missing');
       return res.status(401).json({ error: "Firma requerida" });
     }
 
@@ -129,7 +130,7 @@ router.post("/webhook", async (req, res) => {
       .digest("hex");
 
     if (expectedSignature !== v1) {
-      console.warn("Firma de webhook inválida");
+      req.log?.warn({ provider: 'mercadopago', reason: 'invalid_signature' }, 'payment.webhook.signature_invalid');
       return res.status(401).json({ error: "Firma inválida" });
     }
 
@@ -216,12 +217,19 @@ router.post("/webhook", async (req, res) => {
       },
     });
 
-    console.log(`✅ Orden ${orderId} actualizada a: ${newOrderStatus}`);
+    req.log?.info({
+      provider: 'mercadopago',
+      orderId,
+      paymentId,
+      mpStatus: status,
+      newOrderStatus,
+      paymentStatus,
+    }, 'payment.webhook.order_updated');
 
     // MP requiere 200 o reintenta por hasta 4 días
     return res.sendStatus(200);
   } catch (error) {
-    console.error("Error procesando webhook:", error);
+    req.log?.error({ err: error, provider: 'mercadopago' }, 'payment.webhook.processing_failed');
     // Retornar 200 igual para que MP no reintente indefinidamente en errores nuestros
     return res.sendStatus(200);
   }
@@ -256,7 +264,7 @@ router.get("/status/:orderId", isAuth, async (req, res) => {
 
     return res.json({ id: order.id, status: order.status, paidAt: order.paidAt, total: order.total });
   } catch (error) {
-    console.error("Error consultando estado:", error);
+    req.log?.error({ err: error, orderId }, 'payment.status_lookup_failed');
     return res.status(500).json({ error: "Error consultando el pago" });
   }
 });
@@ -318,7 +326,7 @@ router.post("/wompi/create-checkout", isAuth, requireVerifiedEmail, async (req, 
       paymentLink: transaction.redirect_url,
     })
   } catch (error) {
-    console.error("Error creando checkout Wompi:", error)
+    req.log?.error({ err: error, orderId }, 'payment.wompi.create_checkout_failed')
     return res.status(500).json({ error: "Error al crear el pago" })
   }
 })
@@ -341,7 +349,7 @@ router.post("/wompi/webhook", async (req, res) => {
     const wompiSignature = req.headers["x-wompi-signature"]
 
     if (!wompiId || !wompiTimestamp || !wompiSignature) {
-      console.warn("Webhook Wompi recibido sin firma o headers requeridos")
+      req.log?.warn({ provider: 'wompi', reason: 'missing_signature' }, 'payment.webhook.signature_missing')
       return res.status(401).json({ error: "Firma requerida" })
     }
 
@@ -361,12 +369,12 @@ router.post("/wompi/webhook", async (req, res) => {
     const receivedBuffer = Buffer.from(wompiSignature, "utf8")
 
     if (expectedBuffer.length !== receivedBuffer.length) {
-      console.warn("Webhook Wompi: firma inválida (longitud)")
+      req.log?.warn({ provider: 'wompi', reason: 'invalid_signature_length' }, 'payment.webhook.signature_invalid')
       return res.status(401).json({ error: "Firma inválida" })
     }
 
     if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
-      console.warn("Webhook Wompi: firma inválida")
+      req.log?.warn({ provider: 'wompi', reason: 'invalid_signature' }, 'payment.webhook.signature_invalid')
       return res.status(401).json({ error: "Firma inválida" })
     }
 
@@ -430,11 +438,18 @@ router.post("/wompi/webhook", async (req, res) => {
       },
     })
 
-    console.log(`✅ Orden ${orderId} actualizada a ${newOrderStatus} (Wompi: ${transactionId})`)
+    req.log?.info({
+      provider: 'wompi',
+      orderId,
+      transactionId,
+      wompiStatus: status,
+      newOrderStatus,
+      paymentStatus,
+    }, 'payment.webhook.order_updated')
 
     return res.sendStatus(200)
   } catch (error) {
-    console.error("Error procesando webhook Wompi:", error)
+    req.log?.error({ err: error, provider: 'wompi' }, 'payment.webhook.processing_failed')
     return res.sendStatus(200)
   }
 })
@@ -448,7 +463,7 @@ router.get("/wompi/acceptance-token", async (req, res) => {
     const acceptanceData = await wompi.getPresignedAcceptance()
     return res.json(acceptanceData)
   } catch (error) {
-    console.error("Error obteniendo acceptance token:", error)
+    req.log?.error({ err: error }, 'payment.wompi.acceptance_token_failed')
     return res.status(500).json({ error: "Error obteniendo token" })
   }
 })

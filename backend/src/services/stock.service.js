@@ -1,4 +1,7 @@
 import { prisma } from '../config/prisma.js'
+import { logger } from '../config/logger.js'
+
+const log = logger.child({ component: 'stock' })
 
 export const validateStock = async (orderId) => {
   const order = await prisma.order.findUnique({
@@ -112,7 +115,7 @@ export const discountStock = async (orderId) => {
       }
     }
 
-    console.log(`✅ Stock descontado para orden ${orderId}`)
+    log.info({ orderId, itemCount: order.items.length }, 'stock.decremented')
   })
 }
 
@@ -157,6 +160,6 @@ export const restoreStock = async (orderId) => {
       }
     }
 
-    console.log(`✅ Stock restaurado para orden ${orderId}`)
+    log.info({ orderId, itemCount: order.items.length }, 'stock.restored')
   })
 }

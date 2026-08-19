@@ -2,6 +2,14 @@ import { describe, it, expect, vi } from 'vitest'
 import multer from 'multer'
 import { errorHandler } from '../../src/middleware/error.middleware.js'
 
+const mockLog = () => ({
+  warn: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  child: vi.fn(),
+})
+
 const mockRes = () => {
   const res = {}
   res.status = vi.fn().mockReturnValue(res)
@@ -10,11 +18,11 @@ const mockRes = () => {
 }
 
 const call = (err, overrides = {}) => {
-  const req = { method: 'GET', path: '/api/v1/test', ...overrides }
+  const req = { method: 'GET', path: '/api/v1/test', id: 'test-req-id', log: mockLog(), ...overrides }
   const res = mockRes()
   const next = vi.fn()
   errorHandler(err, req, res, next)
-  return { res, next }
+  return { res, next, req }
 }
 
 describe('errorHandler — Multer errors', () => {

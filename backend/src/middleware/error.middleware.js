@@ -1,5 +1,6 @@
 import multer from 'multer'
 import { uploadConstants } from './upload.middleware.js'
+import { logger } from '../config/logger.js'
 
 const MULTER_MESSAGES = {
   LIMIT_FILE_SIZE: () => `El archivo excede el tamaño máximo permitido de 5 MB.`,
@@ -27,18 +28,28 @@ const resolveMulterMessage = (err) => {
   return factory ? factory(err) : `Error al procesar el archivo (${err.code}).`
 }
 
+const noopLog = { error() {}, warn() {}, info() {}, debug() {}, child: () => noopLog }
+
 // Middleware global de manejo de errores
 // Captura cualquier error que llegue aquí desde los controladores
 export const errorHandler = (err, req, res, next) => {
-  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message)
+  const log = req.log || logger
+  const ctx = {
+    reqId: req.id,
+    method: req.method,
+    path: req.path,
+    err,
+  }
 
   if (err instanceof multer.MulterError) {
     const status = MULTER_STATUS[err.code] ?? MULTER_FALLBACK_STATUS
+    log.warn({ ...ctx, code: err.code, status }, 'request.upload_multer_error')
     return res.status(status).json({ error: resolveMulterMessage(err) })
   }
 
   // Códigos personalizados del upload.middleware.js (no son MulterError nativos)
   if (CUSTOM_UPLOAD_STATUS[err.code] !== undefined && !err.status && !err.statusCode) {
+    log.warn({ ...ctx, code: err.code, status: CUSTOM_UPLOAD_STATUS[err.code] }, 'request.upload_validation_error')
     return res.status(CUSTOM_UPLOAD_STATUS[err.code]).json({
       error: err.message || 'Error de validación de archivo.',
     })
@@ -46,16 +57,27 @@ export const errorHandler = (err, req, res, next) => {
 
   // Error de validación de Prisma (registro duplicado, etc.)
   if (err.code === 'P2002') {
+    log.warn({ ...ctx, code: err.code }, 'request.prisma_unique_violation')
     return res.status(409).json({ error: 'Ya existe un registro con ese valor único' })
   }
 
   // Error de registro no encontrado en Prisma
   if (err.code === 'P2025') {
+    log.warn({ ...ctx, code: err.code }, 'request.prisma_not_found')
     return res.status(404).json({ error: 'Registro no encontrado' })
   }
 
   const status = err.status || err.statusCode || 500
   const message = err.message || 'Error interno del servidor'
+  const isServerError = status >= 500
+
+  if (isServerError) {
+    log.error({ ...ctx, status }, 'request.failed')
+  } else {
+    log.warn({ ...ctx, status }, 'request.client_error')
+  }
 
   res.status(status).json({ error: message })
 }
+
+export const _testing = { noopLog }

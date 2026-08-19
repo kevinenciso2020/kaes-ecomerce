@@ -1,4 +1,5 @@
 process.env.NODE_ENV = 'test'
+process.env.LOG_LEVEL = 'silent'
 process.env.JWT_SECRET = 'test-jwt-secret-do-not-use-in-prod'
 process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-do-not-use-in-prod'
 process.env.JWT_EXPIRES_IN = '15m'

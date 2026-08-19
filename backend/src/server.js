@@ -1,24 +1,41 @@
 import 'dotenv/config'
 import app from './app.js'
 import { prisma } from './config/prisma.js'
+import { logger } from './config/logger.js'
 
-const PORT = process.env.PORT || 8000
+const PORT = Number.parseInt(process.env.PORT, 10) || 8000
 
 const server = app.listen(PORT, () => {
-  console.log(`✅ Servidor corriendo en http://localhost:${PORT}`)
-  console.log(`📦 Entorno: ${process.env.NODE_ENV}`)
+  logger.info({ port: PORT }, 'server.started')
 })
 
-process.on('SIGTERM', async () => {
-  console.log('⚠️ SIGTERM recibido, cerrando servidor...')
+const shutdown = (signal) => {
+  logger.warn({ signal }, 'server.shutdown_initiated')
   server.close(async () => {
-    console.log('✅ Conexiones cerradas')
+    logger.info('server.connections_closed')
     try {
       await prisma.$disconnect()
-      console.log('✅ Prisma desconectado')
+      logger.info('server.prisma_disconnected')
     } catch (err) {
-      console.error('❌ Error al desconectar Prisma:', err.message)
+      logger.error({ err }, 'server.prisma_disconnect_failed')
     }
     process.exit(0)
   })
+
+  setTimeout(() => {
+    logger.error('server.shutdown_forced')
+    process.exit(1)
+  }, 10_000).unref()
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'process.unhandled_rejection')
+})
+
+process.on('uncaughtException', (err) => {
+  logger.fatal({ err }, 'process.uncaught_exception')
+  shutdown('uncaughtException')
 })

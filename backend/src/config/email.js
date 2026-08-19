@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import { logger } from './logger.js'
 
 const createTransporter = () => {
   const host = process.env.SMTP_HOST || 'smtp.gmail.com'
@@ -21,10 +22,10 @@ export const emailTransporter = createTransporter()
 export const verifyEmailConfig = async () => {
   try {
     await emailTransporter.verify()
-    console.log('✅ Email transporter configurado correctamente')
+    logger.info('email.transporter_verified')
     return true
   } catch (error) {
-    console.error('❌ Error configurando email:', error.message)
+    logger.error({ err: error }, 'email.transporter_verify_failed')
     return false
   }
 }

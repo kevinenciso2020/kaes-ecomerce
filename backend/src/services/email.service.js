@@ -1,5 +1,8 @@
 import { emailTransporter } from '../config/email.js'
 import { prisma } from '../config/prisma.js'
+import { logger } from '../config/logger.js'
+
+const log = logger.child({ component: 'email' })
 
 const FROM_NAME = 'KAES STORE'
 const FROM_EMAIL = process.env.SMTP_FROM_EMAIL || 'noreply@kaesstore.com'
@@ -24,7 +27,7 @@ export const sendOrderConfirmation = async (orderId) => {
     })
 
     if (!order) {
-      console.error(`Orden ${orderId} no encontrada para enviar email`)
+      log.error({ orderId }, 'email.order_not_found')
       return false
     }
 
@@ -121,10 +124,10 @@ export const sendOrderConfirmation = async (orderId) => {
       html: htmlContent,
     })
 
-    console.log(`✅ Email de confirmación enviado a ${order.user.email} (MessageID: ${result.messageId})`)
+    log.info({ orderId, to: order.user.email, messageId: result.messageId }, 'email.order_confirmation_sent')
     return true
   } catch (error) {
-    console.error('❌ Error enviando email de confirmación:', error.message)
+    log.error({ err: error, orderId }, 'email.order_confirmation_failed')
     return false
   }
 }
@@ -176,10 +179,10 @@ export const sendOrderCancelled = async (orderId) => {
       html: htmlContent,
     })
 
-    console.log(`✅ Email de cancelación enviado a ${order.user.email}`)
+    log.info({ orderId, to: order.user.email }, 'email.order_cancellation_sent')
     return true
   } catch (error) {
-    console.error('❌ Error enviando email de cancelación:', error.message)
+    log.error({ err: error, orderId }, 'email.order_cancellation_failed')
     return false
   }
 }
@@ -244,10 +247,10 @@ export const sendVerificationEmail = async (user, verificationToken) => {
       html: htmlContent,
     })
 
-    console.log(`✅ Email de verificación enviado a ${user.email} (MessageID: ${result.messageId})`)
+    log.info({ to: user.email, messageId: result.messageId }, 'email.verification_sent')
     return true
   } catch (error) {
-    console.error('❌ Error enviando email de verificación:', error.message)
+    log.error({ err: error, to: user.email }, 'email.verification_failed')
     return false
   }
 }
@@ -312,10 +315,10 @@ export const sendPasswordResetEmail = async (user, code) => {
       html: htmlContent,
     })
 
-    console.log(`✅ Email de reset enviado a ${user.email} (MessageID: ${result.messageId})`)
+    log.info({ to: user.email, messageId: result.messageId }, 'email.password_reset_sent')
     return true
   } catch (error) {
-    console.error('❌ Error enviando email de reset de contraseña:', error.message)
+    log.error({ err: error, to: user.email }, 'email.password_reset_failed')
     return false
   }
 }

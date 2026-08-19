@@ -4,6 +4,9 @@ import crypto from 'crypto'
 import { prisma } from '../config/prisma.js'
 import { generateTokens } from '../utils/jwt.utils.js'
 import { sendVerificationEmail, sendPasswordResetEmail } from './email.service.js'
+import { logger } from '../config/logger.js'
+
+const log = logger.child({ component: 'auth' })
 
 const VERIFICATION_TOKEN_BYTES = 32
 const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 horas
@@ -51,7 +54,7 @@ export const registerUser = async ({ name, email, password }) => {
 
   // Fire-and-forget: el usuario ya está creado, no bloqueamos el response si SMTP falla
   sendVerificationEmail({ name: user.name, email: user.email }, verificationToken)
-    .catch((err) => console.error('Background email error:', err.message))
+    .catch((err) => log.error({ err, context: 'register_verification' }, 'email.background_failed'))
 
   return {
     user,
@@ -213,7 +216,7 @@ export const resendVerificationEmail = async (email) => {
     ])
 
     sendVerificationEmail({ name: user.name, email: user.email }, verificationToken)
-      .catch((err) => console.error('Background email error:', err.message))
+      .catch((err) => log.error({ err, context: 'resend_verification' }, 'email.background_failed'))
   }
 
   // Siempre el mismo mensaje para no filtrar información
@@ -261,7 +264,7 @@ export const requestPasswordReset = async (email) => {
     ])
 
     sendPasswordResetEmail({ name: user.name, email: user.email }, code)
-      .catch((err) => console.error('Background email error:', err.message))
+      .catch((err) => log.error({ err, context: 'forgot_password' }, 'email.background_failed'))
   }
 
   // Mensaje neutro SIEMPRE — evita user-enumeration

@@ -76,18 +76,23 @@ function getRoleLevel(role) {
 export const authorize = (...requiredPermissions) => {
   return (req, res, next) => {
     if (!req.user) {
+      req.log?.warn({ reqId: req.id }, 'authz.unauthenticated')
       return res.status(401).json({ error: 'No autenticado' })
     }
 
     const userRole = req.user.role
     const userPermissions = ROLE_PERMISSIONS[userRole] || []
 
-    const hasPermission = requiredPermissions.some(perm => 
+    const hasPermission = requiredPermissions.some(perm =>
       userPermissions.includes(perm)
     )
 
     if (!hasPermission) {
-      return res.status(403).json({ 
+      req.log?.warn(
+        { reqId: req.id, userId: req.user.id, userRole, requiredPermissions },
+        'authz.permission_denied'
+      )
+      return res.status(403).json({
         error: 'Sin permisos suficientes',
         required: requiredPermissions,
         userRole,
@@ -101,6 +106,7 @@ export const authorize = (...requiredPermissions) => {
 export const authorizeRole = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
+      req.log?.warn({ reqId: req.id }, 'authz.unauthenticated')
       return res.status(401).json({ error: 'No autenticado' })
     }
 
@@ -113,6 +119,10 @@ export const authorizeRole = (...allowedRoles) => {
     })
 
     if (!hasAccess) {
+      req.log?.warn(
+        { reqId: req.id, userId: req.user.id, userRole, allowedRoles },
+        'authz.role_denied'
+      )
       return res.status(403).json({
         error: 'Rol insuficiente',
         required: allowedRoles,
@@ -126,6 +136,10 @@ export const authorizeRole = (...allowedRoles) => {
 
 export const canManageAdmins = (req, res, next) => {
   if (!req.user || req.user.role !== ROLES.SUPER_ADMIN) {
+    req.log?.warn(
+      { reqId: req.id, userId: req.user?.id, role: req.user?.role },
+      'authz.super_admin_required'
+    )
     return res.status(403).json({ error: 'Solo SUPER_ADMIN puede gestionar administradores' })
   }
   next()

@@ -28,8 +28,14 @@ const adminRateLimiter = rateLimit({
 
 // Middleware de logging para acciones administrativas
 const adminActionLogger = (req, res, next) => {
-  const timestamp = new Date().toISOString()
-  console.log(`[ADMIN ACTION] ${timestamp} | User: ${req.user?.id || 'unknown'} | IP: ${req.ip || req.connection.remoteAddress} | Method: ${req.method} | Path: ${req.originalUrl}`)
+  req.log?.info({
+    reqId: req.id,
+    userId: req.user?.id,
+    userRole: req.user?.role,
+    ip: req.ip || req.connection?.remoteAddress,
+    method: req.method,
+    path: req.originalUrl,
+  }, 'admin.action')
   next()
 }
 
