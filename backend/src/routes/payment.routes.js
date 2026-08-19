@@ -342,10 +342,12 @@ router.post("/wompi/webhook", async (req, res) => {
 
     if (!wompiId || !wompiTimestamp || !wompiSignature) {
       console.warn("Webhook Wompi recibido sin firma o headers requeridos")
-      return res.sendStatus(401).json({ error: "Firma requerida" })
+      return res.status(401).json({ error: "Firma requerida" })
     }
 
-    const bodyString = typeof req.body === "string" ? req.body : JSON.stringify(req.body)
+    const bodyString = Buffer.isBuffer(req.body)
+      ? req.body.toString('utf8')
+      : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body))
     const manifest  = `${wompiId}.${wompiTimestamp}.${bodyString}`
 
     const expectedSignature = crypto
@@ -360,12 +362,12 @@ router.post("/wompi/webhook", async (req, res) => {
 
     if (expectedBuffer.length !== receivedBuffer.length) {
       console.warn("Webhook Wompi: firma inválida (longitud)")
-      return res.sendStatus(401).json({ error: "Firma inválida" })
+      return res.status(401).json({ error: "Firma inválida" })
     }
 
     if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
       console.warn("Webhook Wompi: firma inválida")
-      return res.sendStatus(401).json({ error: "Firma inválida" })
+      return res.status(401).json({ error: "Firma inválida" })
     }
 
     const transaction = event.data.object
