@@ -11,21 +11,24 @@ datasource db {
 }
 
 model User {
-  id            String     @id @default(cuid())
-  email         String     @unique
-  password      String
-  name          String
-  role          Role       @default(CUSTOMER)
-  avatar        String?
-  phone         String?
-  isActive      Boolean    @default(true)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id              String    @id @default(cuid())
+  email           String    @unique
+  password        String
+  name            String
+  role            Role      @default(CUSTOMER)
+  avatar          String?
+  phone           String?
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  orders        Order[]
-  cartItems     CartItem[]
-  addresses     Address[]
-  refreshTokens RefreshToken[]
+  orders                    Order[]
+  cartItems                 CartItem[]
+  addresses                 Address[]
+  refreshTokens             RefreshToken[]
+  emailVerificationTokens   EmailVerificationToken[]
 
   @@map("users")
 }
@@ -40,6 +43,21 @@ model RefreshToken {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
 }
 
 model Category {

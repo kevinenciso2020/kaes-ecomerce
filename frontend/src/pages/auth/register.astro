@@ -6,66 +6,90 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   <div class="auth-page">
     <div class="auth-card">
 
-      <div class="auth-header">
-        <h1 class="auth-title">Crear cuenta</h1>
-        <p class="auth-subtitle">Únete y empieza a comprar</p>
+      <div id="state-form" class="auth-state">
+        <div class="auth-header">
+          <h1 class="auth-title">Crear cuenta</h1>
+          <p class="auth-subtitle">Únete y empieza a comprar</p>
+        </div>
+
+        <div id="auth-error" class="auth-error" role="alert" hidden></div>
+
+        <div class="auth-form">
+          <div class="form-group">
+            <label class="form-label" for="name">Nombre completo</label>
+            <input
+              type="text"
+              id="name"
+              class="form-input"
+              placeholder="Tu nombre"
+              autocomplete="name"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="email">Correo electrónico</label>
+            <input
+              type="email"
+              id="email"
+              class="form-input"
+              placeholder="tu@email.com"
+              autocomplete="email"
+              inputmode="email"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="password">Contraseña</label>
+            <input
+              type="password"
+              id="password"
+              class="form-input"
+              placeholder="Mínimo 6 caracteres"
+              autocomplete="new-password"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="confirm-password">Confirmar contraseña</label>
+            <input
+              type="password"
+              id="confirm-password"
+              class="form-input"
+              placeholder="Repite tu contraseña"
+              autocomplete="new-password"
+            />
+          </div>
+
+          <button type="button" class="btn btn-primary btn-full" id="register-btn">
+            Crear cuenta
+          </button>
+        </div>
+
+        <div class="auth-footer">
+          <p>¿Ya tienes cuenta? <a href="/auth/login">Inicia sesión</a></p>
+        </div>
       </div>
 
-      <div id="auth-error" class="auth-error" role="alert" hidden></div>
+      <div id="state-sent" class="auth-state" hidden>
+        <div class="state-icon state-icon-success" aria-hidden="true">✓</div>
+        <h1 class="auth-title">¡Revisa tu correo!</h1>
+        <p class="auth-subtitle">
+          Te enviamos un enlace de verificación a <strong id="sent-email"></strong>.
+        </p>
+        <p class="auth-hint">
+          Haz clic en el enlace del correo para activar tu cuenta. Si no lo ves, revisa la carpeta de spam.
+        </p>
 
-      <div class="auth-form">
-        <div class="form-group">
-          <label class="form-label" for="name">Nombre completo</label>
-          <input
-            type="text"
-            id="name"
-            class="form-input"
-            placeholder="Tu nombre"
-            autocomplete="name"
-          />
+        <div class="resend-block">
+          <p class="resend-label">¿No te llegó?</p>
+          <div class="resend-row">
+            <input type="email" id="resend-email" class="form-input" autocomplete="email" />
+            <button type="button" id="resend-btn" class="btn btn-outline">Reenviar</button>
+          </div>
+          <div id="resend-message" class="resend-message" hidden></div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label" for="email">Correo electrónico</label>
-          <input
-            type="email"
-            id="email"
-            class="form-input"
-            placeholder="tu@email.com"
-            autocomplete="email"
-            inputmode="email"
-          />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="password">Contraseña</label>
-          <input
-            type="password"
-            id="password"
-            class="form-input"
-            placeholder="Mínimo 6 caracteres"
-            autocomplete="new-password"
-          />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="confirm-password">Confirmar contraseña</label>
-          <input
-            type="password"
-            id="confirm-password"
-            class="form-input"
-            placeholder="Repite tu contraseña"
-            autocomplete="new-password"
-          />
-        </div>
-
-        <button type="button" class="btn btn-primary btn-full" id="register-btn">
-          Crear cuenta
-        </button>
-      </div>
-
-      <div class="auth-footer">
-        <p>¿Ya tienes cuenta? <a href="/auth/login">Inicia sesión</a></p>
+        <a href="/auth/login" class="auth-link">Ya verifiqué mi correo, iniciar sesión</a>
       </div>
 
     </div>
@@ -73,8 +97,10 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 </ShopLayout>
 
 <script>
-  import { api } from '../../lib/api.js'
-  import { setAuth } from '../../stores/auth.store.js'
+  import { api, ApiError } from '../../lib/api.js'
+
+  const formState = document.getElementById('state-form')
+  const sentState = document.getElementById('state-sent')
 
   const nameInput     = document.getElementById('name')
   const emailInput    = document.getElementById('email')
@@ -83,17 +109,25 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   const registerBtn   = document.getElementById('register-btn')
   const errorDiv      = document.getElementById('auth-error')
 
+  const sentEmailEl   = document.getElementById('sent-email')
+  const resendInput   = document.getElementById('resend-email')
+  const resendBtn     = document.getElementById('resend-btn')
+  const resendMsg     = document.getElementById('resend-message')
+
   const showError = (msg) => {
+    if (!errorDiv) return
     errorDiv.textContent = msg
     errorDiv.hidden = false
   }
 
   const setLoading = (loading) => {
+    if (!registerBtn) return
     registerBtn.disabled    = loading
     registerBtn.textContent = loading ? 'Creando cuenta...' : 'Crear cuenta'
   }
 
-  registerBtn.addEventListener('click', async () => {
+  registerBtn?.addEventListener('click', async () => {
+    if (!errorDiv) return
     errorDiv.hidden = true
 
     const name     = nameInput.value.trim()
@@ -120,12 +154,52 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
     try {
       const data = await api.auth.register({ name, email, password })
-      setAuth(data.user)
-      window.location.href = '/'
+
+      if (formState) formState.hidden = true
+      if (sentState) sentState.hidden = false
+      if (sentEmailEl) sentEmailEl.textContent = data?.user?.email || email
+      if (resendInput) resendInput.value = data?.user?.email || email
     } catch (err) {
-      showError(err.message || 'Error al crear la cuenta')
+      let msg = err?.message || 'Error al crear la cuenta'
+      if (err instanceof ApiError && err.status === 409) {
+        msg = 'Este correo ya está registrado. Inicia sesión o usa otro correo.'
+      }
+      showError(msg)
     } finally {
       setLoading(false)
+    }
+  })
+
+  resendBtn?.addEventListener('click', async () => {
+    const email = resendInput?.value.trim()
+    if (!email) {
+      if (resendMsg) {
+        resendMsg.textContent = 'Ingresa tu correo electrónico.'
+        resendMsg.hidden = false
+        resendMsg.className = 'resend-message error'
+      }
+      return
+    }
+
+    resendBtn.disabled    = true
+    resendBtn.textContent = 'Enviando...'
+
+    try {
+      const result = await api.auth.resendVerify(email)
+      if (resendMsg) {
+        resendMsg.textContent = result.message || 'Te enviamos un nuevo enlace.'
+        resendMsg.hidden = false
+        resendMsg.className = 'resend-message success'
+      }
+    } catch (err) {
+      if (resendMsg) {
+        resendMsg.textContent = err?.message || 'No se pudo reenviar el correo.'
+        resendMsg.hidden = false
+        resendMsg.className = 'resend-message error'
+      }
+    } finally {
+      resendBtn.disabled    = false
+      resendBtn.textContent = 'Reenviar'
     }
   })
 </script>
@@ -142,12 +216,18 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
   .auth-card {
     width:         100%;
-    max-width:     440px;
+    max-width:     480px;
     background:    var(--color-white);
     border-radius: var(--radius-lg);
     border:        1.5px solid var(--color-gray-200);
     padding:       1.5rem;
     box-shadow:    var(--shadow-sm);
+  }
+
+  .auth-state {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
   }
 
   .auth-header { text-align: center; margin-bottom: 1.5rem; }
@@ -157,10 +237,38 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
     font-size:     1.6rem;
     font-weight:   600;
     color:         var(--color-black);
-    margin-bottom: 0.4rem;
+    margin:        0;
   }
 
-  .auth-subtitle { font-size: 0.9rem; color: var(--color-gray-500); }
+  .auth-title.text-center,
+  .auth-state:not(#state-form) .auth-title { text-align: center; }
+
+  .auth-subtitle {
+    font-size:   0.9rem;
+    color:       var(--color-gray-500);
+    margin:      0;
+    text-align:  center;
+  }
+
+  .auth-hint {
+    font-size:   0.85rem;
+    color:       var(--color-gray-600);
+    text-align:  center;
+    margin:      0;
+  }
+
+  .state-icon {
+    width:           56px;
+    height:          56px;
+    border-radius:   50%;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    font-size:       1.6rem;
+    font-weight:     700;
+    margin:          0 auto 0.25rem;
+  }
+  .state-icon-success { background: #dcfce7; color: #166534; }
 
   .auth-error {
     background:    #fee2e2;
@@ -186,8 +294,46 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   .auth-footer a { color: var(--color-black); font-weight: 500; }
   .auth-footer a:hover { text-decoration: underline; }
 
+  .resend-block {
+    margin-top:    0.5rem;
+    padding:       1rem;
+    background:    var(--color-gray-50);
+    border:        1px solid var(--color-gray-200);
+    border-radius: var(--radius-md);
+  }
+
+  .resend-label {
+    font-size:   0.85rem;
+    color:       var(--color-gray-700);
+    margin:      0 0 0.6rem 0;
+  }
+
+  .resend-row {
+    display: flex;
+    gap:     0.5rem;
+  }
+
+  .resend-row .form-input { flex: 1; }
+
+  .resend-message {
+    margin-top: 0.6rem;
+    font-size:  0.85rem;
+  }
+  .resend-message.error   { color: #991b1b; }
+  .resend-message.success { color: #166534; }
+
+  .auth-link {
+    display:     inline-block;
+    margin-top:  0.5rem;
+    color:       var(--color-black);
+    font-size:   0.875rem;
+    font-weight: 500;
+    text-align:  center;
+  }
+  .auth-link:hover { text-decoration: underline; }
+
   @media (min-width: 768px) {
-    .auth-card { padding: 2.5rem; }
+    .auth-card  { padding: 2.5rem; }
     .auth-title { font-size: 2rem; }
   }
 

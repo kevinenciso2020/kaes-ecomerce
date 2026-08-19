@@ -1,110 +1,233 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
 import { prisma } from '../config/prisma.js'
 import { generateTokens } from '../utils/jwt.utils.js'
+import { sendVerificationEmail } from './email.service.js'
+
+const VERIFICATION_TOKEN_BYTES = 32
+const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 horas
+
+const hashToken = (token) =>
+  crypto.createHash('sha256').update(token).digest('hex')
+
+const reject = (message, status) => {
+  const err = new Error(message)
+  err.status = status
+  return err
+}
 
 export const registerUser = async ({ name, email, password }) => {
-  // Verificar si el email ya existe
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) {
-    const err = new Error('El email ya está registrado')
-    err.status = 409
-    throw err
+    throw reject('El email ya está registrado', 409)
   }
 
-  // Hashear la contraseña — nunca guardamos contraseñas en texto plano
   const hashedPassword = await bcrypt.hash(password, 12)
 
   const user = await prisma.user.create({
-    data: { name, email, password: hashedPassword },
-    select: { id: true, name: true, email: true, role: true }
-  })
-
-  const tokens = generateTokens(user)
-
-  // Guardar el refresh token en la base de datos
-  await prisma.refreshToken.create({
     data: {
-      token:     tokens.refreshToken,
-      userId:    user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    }
+      name,
+      email,
+      password: hashedPassword,
+      emailVerified: false,
+    },
+    select: { id: true, name: true, email: true, role: true, emailVerified: true },
   })
 
-  return { user, ...tokens }
+  const verificationToken = crypto.randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex')
+  const tokenHash = hashToken(verificationToken)
+
+  await prisma.emailVerificationToken.create({
+    data: {
+      userId: user.id,
+      tokenHash,
+      expiresAt: new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS),
+    },
+  })
+
+  // Fire-and-forget: el usuario ya está creado, no bloqueamos el response si SMTP falla
+  sendVerificationEmail({ name: user.name, email: user.email }, verificationToken)
+    .catch((err) => console.error('Background email error:', err.message))
+
+  return {
+    user,
+    message: 'Cuenta creada. Revisa tu correo para verificar tu cuenta.',
+  }
 }
 
 export const loginUser = async ({ email, password }) => {
   const user = await prisma.user.findUnique({ where: { email } })
 
   if (!user) {
-    const err = new Error('Credenciales incorrectas')
-    err.status = 401
-    throw err
+    throw reject('Credenciales incorrectas', 401)
   }
 
   const validPassword = await bcrypt.compare(password, user.password)
   if (!validPassword) {
-    const err = new Error('Credenciales incorrectas')
-    err.status = 401
-    throw err
+    throw reject('Credenciales incorrectas', 401)
   }
 
-  const safeUser = { id: user.id, email: user.email, role: user.role, name: user.name }
+  const safeUser = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    name: user.name,
+    emailVerified: user.emailVerified,
+  }
   const tokens = generateTokens(safeUser)
 
-  // Guardar el nuevo refresh token
   await prisma.refreshToken.create({
     data: {
-      token:     tokens.refreshToken,
-      userId:    user.id,
+      token: tokens.refreshToken,
+      userId: user.id,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    }
+    },
   })
 
   return { user: safeUser, ...tokens }
 }
 
 export const refreshAccessToken = async (refreshToken) => {
-  // Verificar que el token sea válido criptográficamente
   let decoded
   try {
     decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET)
   } catch {
-    const err = new Error('Refresh token inválido')
-    err.status = 401
-    throw err
+    throw reject('Refresh token inválido', 401)
   }
 
-  // Verificar que exista en la base de datos (no fue revocado)
   const stored = await prisma.refreshToken.findUnique({ where: { token: refreshToken } })
   if (!stored || stored.expiresAt < new Date()) {
-    const err = new Error('Refresh token expirado o revocado')
-    err.status = 401
-    throw err
+    throw reject('Refresh token expirado o revocado', 401)
   }
 
   const user = await prisma.user.findUnique({
-    where:  { id: decoded.id },
-    select: { id: true, email: true, role: true, name: true }
+    where: { id: decoded.id },
+    select: { id: true, email: true, role: true, name: true, emailVerified: true },
   })
+
+  if (!user) {
+    throw reject('Usuario no encontrado', 401)
+  }
 
   const tokens = generateTokens(user)
 
-  // Rotar el refresh token — el viejo se elimina y se crea uno nuevo
   await prisma.refreshToken.delete({ where: { token: refreshToken } })
   await prisma.refreshToken.create({
     data: {
-      token:     tokens.refreshToken,
-      userId:    user.id,
+      token: tokens.refreshToken,
+      userId: user.id,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    }
+    },
   })
 
   return { user, ...tokens }
 }
 
 export const logoutUser = async (refreshToken) => {
-  // Eliminar el refresh token de la DB — invalida la sesión
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } })
+}
+
+export const verifyEmailToken = async (plainToken) => {
+  if (!plainToken || typeof plainToken !== 'string') {
+    throw reject('Token de verificación requerido', 400)
+  }
+
+  const tokenHash = hashToken(plainToken)
+
+  const record = await prisma.emailVerificationToken.findUnique({
+    where: { tokenHash },
+    include: { user: true },
+  })
+
+  if (!record) {
+    throw reject('Token de verificación inválido', 400)
+  }
+
+  if (record.usedAt) {
+    throw reject('Este enlace de verificación ya fue utilizado', 400)
+  }
+
+  if (record.expiresAt < new Date()) {
+    throw reject('El enlace de verificación ha expirado. Solicita uno nuevo.', 410)
+  }
+
+  // Idempotente: si ya está verificado, devolvemos éxito sin tocar nada
+  if (record.user.emailVerified) {
+    return {
+      user: { id: record.user.id, name: record.user.name, email: record.user.email, emailVerified: true },
+      alreadyVerified: true,
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: record.userId },
+      data: { emailVerified: true, emailVerifiedAt: new Date() },
+    }),
+    prisma.emailVerificationToken.update({
+      where: { id: record.id },
+      data: { usedAt: new Date() },
+    }),
+    // Revocamos tokens pendientes del mismo usuario para evitar acumulación
+    prisma.emailVerificationToken.deleteMany({
+      where: { userId: record.userId, id: { not: record.id }, usedAt: null },
+    }),
+  ])
+
+  return {
+    user: {
+      id: record.user.id,
+      name: record.user.name,
+      email: record.user.email,
+      emailVerified: true,
+    },
+    alreadyVerified: false,
+  }
+}
+
+export const resendVerificationEmail = async (email) => {
+  const normalized = typeof email === 'string' ? email.toLowerCase().trim() : ''
+
+  // Por seguridad, no revelamos si el email existe o no
+  const user = await prisma.user.findUnique({ where: { email: normalized } })
+
+  if (user && !user.emailVerified) {
+    const verificationToken = crypto.randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex')
+    const tokenHash = hashToken(verificationToken)
+
+    await prisma.$transaction([
+      prisma.emailVerificationToken.deleteMany({
+        where: { userId: user.id, usedAt: null },
+      }),
+      prisma.emailVerificationToken.create({
+        data: {
+          userId: user.id,
+          tokenHash,
+          expiresAt: new Date(Date.now() + VERIFICATION_TOKEN_EXPIRY_MS),
+        },
+      }),
+    ])
+
+    sendVerificationEmail({ name: user.name, email: user.email }, verificationToken)
+      .catch((err) => console.error('Background email error:', err.message))
+  }
+
+  // Siempre el mismo mensaje para no filtrar información
+  return {
+    message: 'Si el correo existe y no está verificado, enviaremos un nuevo enlace.',
+  }
+}
+
+export const getVerificationStatus = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, emailVerified: true, emailVerifiedAt: true },
+  })
+
+  if (!user) {
+    throw reject('Usuario no encontrado', 404)
+  }
+
+  return user
 }

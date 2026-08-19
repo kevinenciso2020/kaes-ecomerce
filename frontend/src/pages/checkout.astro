@@ -128,7 +128,7 @@ import Icon from '../components/ui/Icon.astro'
 <script>
   import { cartItems, cartTotal, clearCart } from '../stores/cart.store.js'
   import { applyCoupon, removeCoupon, getCouponCode } from '../stores/coupon.store.js'
-  import { api } from '../lib/api.js'
+  import { api, ApiError } from '../lib/api.js'
   import { sanitizeCartItem, escapeHtml } from '../lib/sanitize.js'
 
   let currentDiscount = 0
@@ -365,7 +365,20 @@ import Icon from '../components/ui/Icon.astro'
       }
 
     } catch (err) {
-      if (errorEl) {
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        const userEmail = (() => {
+          try { return JSON.parse(user)?.email || '' } catch { return '' }
+        })()
+        if (errorEl) {
+          errorEl.innerHTML = `
+            ${err.message}.<br>
+            <a href="/auth/verify-email?email=${encodeURIComponent(userEmail)}" class="checkout-verify-link">
+              Reenviar enlace de verificación →
+            </a>
+          `
+          errorEl.hidden = false
+        }
+      } else if (errorEl) {
         errorEl.textContent = err.message || 'Error al procesar el pedido'
         errorEl.hidden = false
       }
@@ -503,6 +516,14 @@ import Icon from '../components/ui/Icon.astro'
     border-radius: var(--radius-md);
     font-size:     0.875rem;
     margin-bottom: 0.85rem;
+  }
+
+  .checkout-verify-link {
+    display:        inline-block;
+    margin-top:     0.4rem;
+    color:          #991b1b;
+    font-weight:    600;
+    text-decoration: underline;
   }
 
   .btn-full { width: 100%; padding: 0.95rem 1.5rem; }

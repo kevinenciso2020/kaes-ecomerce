@@ -40,3 +40,11 @@ export const logout = [
     .trim()
     .notEmpty().withMessage('El refresh token es requerido')
 ]
+
+export const resendVerification = [
+  body('email')
+    .trim()
+    .notEmpty().withMessage('El email es requerido')
+    .isEmail().withMessage('El email debe ser válido')
+    .normalizeEmail(),
+]

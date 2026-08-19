@@ -10,6 +10,20 @@ vi.mock('../../src/config/prisma.js', () => ({
       update: vi.fn(),
       create: vi.fn(),
     },
+    refreshToken: {
+      findUnique: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+      create: vi.fn(),
+    },
+    emailVerificationToken: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      deleteMany: vi.fn(),
+    },
+    $transaction: vi.fn(),
   },
 }))
 
@@ -17,6 +31,13 @@ vi.mock('../../src/middleware/upload.middleware.js', async () => {
   const { makeUploadMock } = await import('../mocks/upload.mock.js')
   return makeUploadMock()
 })
+
+vi.mock('../../src/config/email.js', () => ({
+  emailTransporter: {
+    sendMail: vi.fn().mockResolvedValue({ messageId: 'test-id' }),
+  },
+  verifyEmailConfig: vi.fn().mockResolvedValue(true),
+}))
 
 import request from 'supertest'
 import { prisma } from '../../src/config/prisma.js'
@@ -127,5 +148,170 @@ describe('POST /api/v1/auth/register', () => {
       .post('/api/v1/auth/register')
       .send({ name: 'Ada', email: 'a@b.com', password: '123' })
     expect(res.status).toBe(400)
+  })
+
+  it('returns 201, creates user with emailVerified=false, and does NOT issue tokens', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce(null) // email no existe
+    prisma.user.create.mockResolvedValueOnce({
+      id: 'u-new', name: 'Ada', email: 'a@b.com', role: 'CUSTOMER', emailVerified: false,
+    })
+    prisma.emailVerificationToken.create.mockResolvedValueOnce({ id: 'tok-1' })
+
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ name: 'Ada', email: 'a@b.com', password: 'secret123' })
+
+    expect(res.status).toBe(201)
+    expect(res.body.user.emailVerified).toBe(false)
+    expect(res.body.user).not.toHaveProperty('password')
+    expect(res.body).not.toHaveProperty('accessToken')
+    expect(res.body).not.toHaveProperty('refreshToken')
+    expect(res.body.message).toMatch(/verificar/i)
+    expect(prisma.emailVerificationToken.create).toHaveBeenCalledOnce()
+  })
+
+  it('returns 409 if email already exists', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com' })
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ name: 'Ada', email: 'a@b.com', password: 'secret123' })
+    expect(res.status).toBe(409)
+  })
+})
+
+describe('GET /api/v1/auth/verify-email', () => {
+  it('returns 400 without token', async () => {
+    const res = await request(app).get('/api/v1/auth/verify-email')
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for unknown token', async () => {
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce(null)
+    const res = await request(app)
+      .get('/api/v1/auth/verify-email?token=invalid')
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 for already-used token', async () => {
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce({
+      id: 'tok-1',
+      usedAt: new Date(),
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      user: { id: 'u1', name: 'Ada', email: 'a@b.com', emailVerified: true },
+    })
+    const res = await request(app)
+      .get('/api/v1/auth/verify-email?token=already-used')
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 410 for expired token', async () => {
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce({
+      id: 'tok-1',
+      usedAt: null,
+      expiresAt: new Date(Date.now() - 1000),
+      user: { id: 'u1', name: 'Ada', email: 'a@b.com', emailVerified: false },
+    })
+    const res = await request(app)
+      .get('/api/v1/auth/verify-email?token=expired-token')
+    expect(res.status).toBe(410)
+  })
+
+  it('returns 200 and marks user verified on valid token', async () => {
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce({
+      id: 'tok-1',
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      userId: 'u1',
+      user: { id: 'u1', name: 'Ada', email: 'a@b.com', emailVerified: false },
+    })
+    prisma.$transaction.mockResolvedValueOnce([])
+
+    const res = await request(app)
+      .get('/api/v1/auth/verify-email?token=valid-token')
+    expect(res.status).toBe(200)
+    expect(res.body.user.emailVerified).toBe(true)
+    expect(prisma.$transaction).toHaveBeenCalledOnce()
+  })
+
+  it('is idempotent if user already verified', async () => {
+    prisma.emailVerificationToken.findUnique.mockResolvedValueOnce({
+      id: 'tok-1',
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      userId: 'u1',
+      user: { id: 'u1', name: 'Ada', email: 'a@b.com', emailVerified: true },
+    })
+    const res = await request(app)
+      .get('/api/v1/auth/verify-email?token=valid-token')
+    expect(res.status).toBe(200)
+    expect(res.body.alreadyVerified).toBe(true)
+    expect(prisma.$transaction).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /api/v1/auth/resend-verification', () => {
+  it('always returns 200 (no info leak about email existence)', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce(null)
+    const res = await request(app)
+      .post('/api/v1/auth/resend-verification')
+      .send({ email: 'ghost@example.com' })
+    expect(res.status).toBe(200)
+  })
+
+  it('generates new token and revokes previous for unverified user', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u1', name: 'Ada', email: 'a@b.com', emailVerified: false,
+    })
+    prisma.$transaction.mockResolvedValueOnce([])
+
+    const res = await request(app)
+      .post('/api/v1/auth/resend-verification')
+      .send({ email: 'a@b.com' })
+    expect(res.status).toBe(200)
+    expect(prisma.$transaction).toHaveBeenCalledOnce()
+  })
+
+  it('does nothing for already-verified user', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u1', name: 'Ada', email: 'a@b.com', emailVerified: true,
+    })
+    const res = await request(app)
+      .post('/api/v1/auth/resend-verification')
+      .send({ email: 'a@b.com' })
+    expect(res.status).toBe(200)
+    expect(prisma.emailVerificationToken.create).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 with missing email', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/resend-verification')
+      .send({})
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 400 with invalid email', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/resend-verification')
+      .send({ email: 'not-an-email' })
+    expect(res.status).toBe(400)
+  })
+})
+
+describe('GET /api/v1/auth/verification-status', () => {
+  it('returns 401 without auth', async () => {
+    const res = await request(app).get('/api/v1/auth/verification-status')
+    expect(res.status).toBe(401)
+  })
+
+  it('returns verification status for authed user', async () => {
+    prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u1', email: 'a@b.com', emailVerified: false, emailVerifiedAt: null,
+    })
+    const token = tokenFor({ id: 'u1', email: 'a@b.com', role: 'CUSTOMER' })
+    const res = await request(app)
+      .get('/api/v1/auth/verification-status')
+      .set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(200)
+    expect(res.body.status.emailVerified).toBe(false)
   })
 })

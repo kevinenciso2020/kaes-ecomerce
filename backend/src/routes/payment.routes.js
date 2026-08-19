@@ -7,6 +7,7 @@ import mpClient from "../config/mercadopago.js";
 import wompi from "../config/wompi.js";
 import { prisma } from "../config/prisma.js";
 import { isAuth } from "../middleware/auth.middleware.js";
+import { requireVerifiedEmail } from "../middleware/requireVerifiedEmail.middleware.js";
 import { discountStock } from "../services/stock.service.js";
 import { sendOrderConfirmation } from "../services/email.service.js";
 
@@ -16,7 +17,7 @@ const router = express.Router();
 // POST /api/payments/create-preference
 // Crea la preferencia de pago y devuelve la URL de checkout
 // ─────────────────────────────────────────
-router.post("/create-preference", isAuth, async (req, res) => {
+router.post("/create-preference", isAuth, requireVerifiedEmail, async (req, res) => {
   try {
     const { orderId, items, payer } = req.body;
 
@@ -264,7 +265,7 @@ router.get("/status/:orderId", isAuth, async (req, res) => {
 // POST /api/payments/wompi/create-checkout
 // Crea una transacción en Wompi y devuelve la URL de pago
 // ─────────────────────────────────────────
-router.post("/wompi/create-checkout", isAuth, async (req, res) => {
+router.post("/wompi/create-checkout", isAuth, requireVerifiedEmail, async (req, res) => {
   try {
     const { orderId } = req.body;
 

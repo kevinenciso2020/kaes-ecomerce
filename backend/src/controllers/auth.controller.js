@@ -39,6 +39,7 @@ export const register = async (req, res, next) => {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' })
     }
 
+    // Tras registrarse el usuario NO está logueado — debe verificar su email primero
     const result = await AuthService.registerUser({ name, email, password })
     res.status(201).json(result)
   } catch (err) {
@@ -92,4 +93,43 @@ export const logout = async (req, res, next) => {
 export const me = async (req, res) => {
   // req.user lo inyecta el middleware isAuth
   res.json({ user: req.user })
+}
+
+export const verifyEmail = async (req, res, next) => {
+  try {
+    const { token } = req.query
+
+    if (!token) {
+      return res.status(400).json({ error: 'Token de verificación requerido' })
+    }
+
+    const result = await AuthService.verifyEmailToken(token)
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const resendVerification = async (req, res, next) => {
+  try {
+    const { email } = req.body
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email requerido' })
+    }
+
+    const result = await AuthService.resendVerificationEmail(email)
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export const checkVerification = async (req, res, next) => {
+  try {
+    const result = await AuthService.getVerificationStatus(req.user.id)
+    res.json({ status: result })
+  } catch (err) {
+    next(err)
+  }
 }

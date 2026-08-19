@@ -183,3 +183,71 @@ export const sendOrderCancelled = async (orderId) => {
     return false
   }
 }
+
+export const sendVerificationEmail = async (user, verificationToken) => {
+  try {
+    const verificationUrl = `${process.env.FRONTEND_URL}/auth/verify-email?token=${verificationToken}`
+    const expiresInHours = 24
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden;">
+    <div style="background: #1a1a1a; color: white; padding: 24px; text-align: center;">
+      <h1 style="margin: 0; font-size: 24px;">${FROM_NAME}</h1>
+    </div>
+    
+    <div style="padding: 24px;">
+      <h2 style="color: #333; margin-top: 0;">¡Bienvenido a ${FROM_NAME}! 👋</h2>
+      <p style="color: #666;">Hola <strong>${user.name}</strong>,</p>
+      <p style="color: #666;">Gracias por crear tu cuenta. Para empezar a comprar y acceder a todas las funciones, necesitamos confirmar tu correo electrónico.</p>
+      
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${verificationUrl}" style="display: inline-block; background: #1a1a1a; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+          Verificar mi correo
+        </a>
+      </div>
+      
+      <div style="background: #f9f9f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
+        <p style="margin: 0; color: #666; font-size: 14px;">
+          Este enlace expira en <strong>${expiresInHours} horas</strong>. Si no solicitaste esta cuenta, puedes ignorar este mensaje.
+        </p>
+      </div>
+      
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; margin: 0;">
+          Si el botón no funciona, copia y pega este enlace en tu navegador:
+        </p>
+        <p style="color: #666; font-size: 12px; word-break: break-all; margin: 8px 0 0 0;">
+          ${verificationUrl}
+        </p>
+      </div>
+    </div>
+    
+    <div style="background: #f5f5f5; padding: 16px; text-align: center; font-size: 12px; color: #999;">
+      <p style="margin: 0;">© ${new Date().getFullYear()} ${FROM_NAME}. Todos los derechos reservados.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim()
+
+    const result = await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: user.email,
+      subject: `Verifica tu correo - ${FROM_NAME}`,
+      html: htmlContent,
+    })
+
+    console.log(`✅ Email de verificación enviado a ${user.email} (MessageID: ${result.messageId})`)
+    return true
+  } catch (error) {
+    console.error('❌ Error enviando email de verificación:', error.message)
+    return false
+  }
+}

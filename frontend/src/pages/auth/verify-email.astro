@@ -1,0 +1,245 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+---
+
+<ShopLayout title="Verificar correo">
+  <div class="auth-page">
+    <div class="auth-card">
+
+      <div id="state-loading" class="auth-state">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1 class="auth-title">Verificando tu correo…</h1>
+        <p class="auth-subtitle">Espera un momento mientras confirmamos tu enlace.</p>
+      </div>
+
+      <div id="state-success" class="auth-state" hidden>
+        <div class="state-icon state-icon-success" aria-hidden="true">✓</div>
+        <h1 class="auth-title">¡Correo verificado!</h1>
+        <p class="auth-subtitle" id="success-email">Tu cuenta ha sido activada correctamente.</p>
+        <a href="/auth/login" class="btn btn-primary btn-full">Iniciar sesión</a>
+      </div>
+
+      <div id="state-error" class="auth-state" hidden>
+        <div class="state-icon state-icon-error" aria-hidden="true">!</div>
+        <h1 class="auth-title">No pudimos verificar tu correo</h1>
+        <p class="auth-subtitle" id="error-message">El enlace es inválido o ha expirado.</p>
+
+        <div class="resend-block">
+          <p class="resend-label">¿Quieres recibir un nuevo enlace?</p>
+          <div class="resend-row">
+            <input
+              type="email"
+              id="resend-email"
+              class="form-input"
+              placeholder="tu@email.com"
+              autocomplete="email"
+            />
+            <button type="button" id="resend-btn" class="btn btn-primary">Reenviar</button>
+          </div>
+          <div id="resend-message" class="resend-message" hidden></div>
+        </div>
+
+        <a href="/auth/register" class="auth-link">Crear una cuenta nueva</a>
+      </div>
+
+    </div>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, ApiError } from '../../lib/api.js'
+
+  const loadingEl = document.getElementById('state-loading')
+  const successEl = document.getElementById('state-success')
+  const errorEl   = document.getElementById('state-error')
+  const errorMsg  = document.getElementById('error-message')
+  const successEmail = document.getElementById('success-email')
+  const resendBtn = document.getElementById('resend-btn')
+  const resendInput = document.getElementById('resend-email')
+  const resendMsg = document.getElementById('resend-message')
+
+  const showOnly = (el) => {
+    for (const node of [loadingEl, successEl, errorEl]) {
+      if (node) node.hidden = node !== el
+    }
+  }
+
+  const params = new URLSearchParams(window.location.search)
+  const token = params.get('token')
+
+  const verify = async () => {
+    if (!token) {
+      if (errorMsg) errorMsg.textContent = 'No se proporcionó un token de verificación.'
+      showOnly(errorEl)
+      return
+    }
+
+    try {
+      const result = await api.auth.verifyEmail(token)
+      if (successEmail && result?.user?.email) {
+        successEmail.textContent = `${result.user.email} ha sido verificado. Ya puedes iniciar sesión.`
+      }
+      showOnly(successEl)
+    } catch (err) {
+      const msg = err instanceof ApiError
+        ? err.message
+        : (err?.message || 'Error desconocido al verificar el correo.')
+      if (errorMsg) errorMsg.textContent = msg
+      showOnly(errorEl)
+    }
+  }
+
+  verify()
+
+  resendBtn?.addEventListener('click', async () => {
+    const email = resendInput?.value.trim()
+    if (!email) {
+      if (resendMsg) {
+        resendMsg.textContent = 'Ingresa tu correo electrónico.'
+        resendMsg.hidden = false
+        resendMsg.className = 'resend-message error'
+      }
+      return
+    }
+
+    resendBtn.disabled = true
+    resendBtn.textContent = 'Enviando…'
+
+    try {
+      const result = await api.auth.resendVerify(email)
+      if (resendMsg) {
+        resendMsg.textContent = result.message || 'Si el correo existe, enviaremos un nuevo enlace.'
+        resendMsg.hidden = false
+        resendMsg.className = 'resend-message success'
+      }
+    } catch (err) {
+      if (resendMsg) {
+        resendMsg.textContent = err?.message || 'No se pudo reenviar el correo.'
+        resendMsg.hidden = false
+        resendMsg.className = 'resend-message error'
+      }
+    } finally {
+      resendBtn.disabled = false
+      resendBtn.textContent = 'Reenviar'
+    }
+  })
+</script>
+
+<style>
+  .auth-page {
+    min-height:      100dvh;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    padding:         calc(var(--header-height) + 1rem) 1rem 2rem;
+    background:      var(--color-gray-50);
+  }
+
+  .auth-card {
+    width:         100%;
+    max-width:     480px;
+    background:    var(--color-white);
+    border-radius: var(--radius-lg);
+    border:        1.5px solid var(--color-gray-200);
+    padding:       2rem 1.5rem;
+    box-shadow:    var(--shadow-sm);
+  }
+
+  .auth-state {
+    text-align: center;
+    display:     flex;
+    flex-direction: column;
+    align-items: center;
+    gap:         0.85rem;
+  }
+
+  .spinner {
+    width:        36px;
+    height:       36px;
+    border:       3px solid var(--color-gray-200);
+    border-top-color: var(--color-black);
+    border-radius: 50%;
+    animation:    spin 0.8s linear infinite;
+    margin-bottom: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .state-icon {
+    width:           56px;
+    height:          56px;
+    border-radius:   50%;
+    display:         flex;
+    align-items:     center;
+    justify-content: center;
+    font-size:       1.6rem;
+    font-weight:     700;
+    margin-bottom:   0.5rem;
+  }
+  .state-icon-success { background: #dcfce7; color: #166534; }
+  .state-icon-error   { background: #fee2e2; color: #991b1b; }
+
+  .auth-title {
+    font-family:   var(--font-serif);
+    font-size:     1.5rem;
+    font-weight:   600;
+    color:         var(--color-black);
+    margin:        0;
+  }
+
+  .auth-subtitle {
+    font-size:   0.95rem;
+    color:       var(--color-gray-600);
+    margin:      0 0 0.5rem 0;
+  }
+
+  .btn-full { width: 100%; padding: 0.85rem 1.5rem; }
+
+  .resend-block {
+    width:        100%;
+    margin-top:   1rem;
+    padding:      1rem;
+    background:   var(--color-gray-50);
+    border:       1px solid var(--color-gray-200);
+    border-radius: var(--radius-md);
+    text-align:   left;
+  }
+
+  .resend-label {
+    font-size: 0.85rem;
+    color:     var(--color-gray-700);
+    margin:    0 0 0.6rem 0;
+  }
+
+  .resend-row {
+    display: flex;
+    gap:     0.5rem;
+  }
+
+  .resend-row .form-input { flex: 1; }
+
+  .resend-message {
+    margin-top: 0.6rem;
+    font-size:  0.85rem;
+  }
+  .resend-message.error   { color: #991b1b; }
+  .resend-message.success { color: #166534; }
+
+  .auth-link {
+    display:     inline-block;
+    margin-top:  1rem;
+    color:       var(--color-black);
+    font-size:   0.875rem;
+    font-weight: 500;
+  }
+  .auth-link:hover { text-decoration: underline; }
+
+  @media (min-width: 768px) {
+    .auth-card  { padding: 2.5rem; }
+    .auth-title { font-size: 1.8rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spinner    { animation: none; }
+    .auth-card  { box-shadow: none; }
+  }
+</style>

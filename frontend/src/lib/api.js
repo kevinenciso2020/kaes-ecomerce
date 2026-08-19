@@ -47,6 +47,16 @@ const fetchWithRetry = async (url, config, maxRetries = 3, baseDelay = 1000) => 
   throw lastError
 }
 
+export class ApiError extends Error {
+  constructor(message, { status, code, body } = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+    this.body = body
+  }
+}
+
 const request = async (endpoint, options = {}) => {
   const isFormData = options.body instanceof FormData
 
@@ -79,8 +89,9 @@ const request = async (endpoint, options = {}) => {
   }
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({ error: 'Error del servidor' }))
-    throw new Error(error.error || 'Error del servidor')
+    const body = await res.json().catch(() => ({ error: 'Error del servidor' }))
+    const message = body.error || body.message || 'Error del servidor'
+    throw new ApiError(message, { status: res.status, code: body.code, body })
   }
 
   return res.json()
@@ -102,10 +113,13 @@ const bootstrapAuth = async () => {
 
 export const api = {
   auth: {
-    login:    (data) => request('/auth/login',    { method: 'POST', body: JSON.stringify(data) }),
-    register: (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
-    me:       ()     => request('/auth/me'),
-    logout:   ()     => request('/auth/logout',   { method: 'POST' }),
+    login:           (data) => request('/auth/login',    { method: 'POST', body: JSON.stringify(data) }),
+    register:        (data) => request('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
+    me:              ()     => request('/auth/me'),
+    logout:          ()     => request('/auth/logout',   { method: 'POST' }),
+    verifyEmail:     (token) => request(`/auth/verify-email?token=${encodeURIComponent(token)}`),
+    resendVerify:    (email) => request('/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
+    verifyStatus:    ()     => request('/auth/verification-status'),
   },
   products: {
     list:   (params = {}) => request(`/products?${new URLSearchParams(params)}`),

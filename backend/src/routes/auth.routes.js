@@ -1,17 +1,39 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
-import { register, login, refresh, logout, me } from '../controllers/auth.controller.js'
+import {
+  register,
+  login,
+  refresh,
+  logout,
+  me,
+  verifyEmail,
+  resendVerification,
+  checkVerification,
+} from '../controllers/auth.controller.js'
 import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
 import { canManageAdmins } from '../middleware/authorization.middleware.js'
+import { validate } from '../middleware/validate.js'
+import {
+  authLoginLimiter,
+  authRegisterLimiter,
+  authRefreshLimiter,
+  emailVerifyLimiter,
+} from '../middleware/rateLimit.middleware.js'
+import { resendVerification as resendVerificationValidator } from '../validators/auth.validator.js'
 import { prisma } from '../config/prisma.js'
 
 const router = Router()
 
-router.post('/register', register)
-router.post('/login',    login)
-router.post('/refresh',  refresh)
-router.post('/logout',   logout)
-router.get('/me',        isAuth, me)
+router.post('/register',            authRegisterLimiter, register)
+router.post('/login',               authLoginLimiter,    login)
+router.post('/refresh',             authRefreshLimiter,  refresh)
+router.post('/logout',              logout)
+router.get('/me',                   isAuth,              me)
+
+// Verificación de email — pública (el link del correo no requiere login)
+router.get('/verify-email',         verifyEmail)
+router.post('/resend-verification', emailVerifyLimiter, validate(resendVerificationValidator), resendVerification)
+router.get('/verification-status',  isAuth,              checkVerification)
 
 router.get('/admins', isAuth, isAdmin, async (req, res) => {
   const admins = await prisma.user.findMany({
