@@ -81,6 +81,40 @@ export const createCoupon = [
     .isISO8601().withMessage('La fecha de fin debe ser una fecha válida (ISO 8601)')
 ]
 
+export const updateCoupon = [
+  param('id')
+    .notEmpty().withMessage('El ID del cupón es requerido')
+    .isLength({ min: 1, max: 100 }).withMessage('ID inválido'),
+  body('code')
+    .optional()
+    .trim()
+    .escape()
+    .isLength({ min: 2, max: 50 }).withMessage('El código debe tener entre 2 y 50 caracteres'),
+  body('type')
+    .optional()
+    .trim()
+    .escape()
+    .isIn(['PERCENTAGE', 'FIXED']).withMessage('Tipo de cupón inválido'),
+  body('value')
+    .optional()
+    .isFloat({ min: 0 }).withMessage('El valor debe ser un número positivo'),
+  body('minPurchase')
+    .optional({ nullable: true })
+    .isFloat({ min: 0 }).withMessage('La compra mínima debe ser un número positivo'),
+  body('maxUses')
+    .optional({ nullable: true })
+    .isInt({ min: 1 }).withMessage('El número máximo de usos debe ser un entero positivo'),
+  body('startsAt')
+    .optional({ nullable: true })
+    .isISO8601().withMessage('La fecha de inicio debe ser una fecha válida (ISO 8601)'),
+  body('endsAt')
+    .optional({ nullable: true })
+    .isISO8601().withMessage('La fecha de fin debe ser una fecha válida (ISO 8601)'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive debe ser un valor booleano')
+]
+
 export const getAllUsers = [
   query('page')
     .optional()
@@ -120,7 +154,10 @@ export const updateUser = [
     .optional()
     .trim()
     .escape()
-    .isLength({ max: 30 }).withMessage('El teléfono no puede superar los 30 caracteres')
+    .isLength({ max: 30 }).withMessage('El teléfono no puede superar los 30 caracteres'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive debe ser un valor booleano')
 ]
 
 export const deleteUser = [

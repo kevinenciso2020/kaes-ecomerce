@@ -1,0 +1,264 @@
+---
+// DRAFT — debe ser revisado y aprobado por un abogado antes de publicarse.
+// Este texto es un borrador genérico para un ecommerce colombiano. Sustituye
+// los placeholders [ENTRE_CORCHETES] en lib/site-config.js con los datos
+// reales de tu empresa y valida especialmente: cláusulas de limitación de
+// responsabilidad, plazos de devolución, condiciones de la garantía legal y
+// política de tratamiento de datos (Ley 1581/2012). No constituye asesoría
+// jurídica.
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import { SITE_CONFIG } from '../../lib/site-config.js'
+---
+
+<ShopLayout
+  title="Términos y Condiciones"
+  description="Términos y condiciones de uso de Kaes Store."
+>
+  <article class="legal-page container">
+    <header class="legal-header">
+      <p class="legal-eyebrow">Documento legal</p>
+      <h1 class="legal-title">Términos y Condiciones</h1>
+      <p class="legal-meta">Última actualización: {SITE_CONFIG.legalUpdatedAt}</p>
+    </header>
+
+    <section class="legal-section">
+      <h2>1. Información de la empresa</h2>
+      <p>
+        El presente sitio web es operado por <strong>{SITE_CONFIG.legalName}</strong>,
+        identificada con NIT <strong>{SITE_CONFIG.nit}</strong>, con domicilio en
+        <strong>{SITE_CONFIG.address}</strong>, ciudad de <strong>{SITE_CONFIG.city}</strong>,
+        Colombia. Correo electrónico de contacto:
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a>. Teléfono:
+        <strong>{SITE_CONFIG.phone}</strong>.
+      </p>
+      <p>
+        La adquisición de productos a través de este sitio web implica la
+        aceptación plena y sin reservas de todas las disposiciones incluidas en
+        estos Términos y Condiciones.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. Objeto</h2>
+      <p>
+        <strong>{SITE_CONFIG.legalName}</strong> ofrece a través de este sitio web la
+        venta de prendas de vestir y accesorios de moda, en adelante
+        &ldquo;los productos&rdquo;, a personas naturales o jurídicas, en
+        adelante &ldquo;el cliente&rdquo; o &ldquo;el usuario&rdquo;.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. Proceso de compra</h2>
+      <ol>
+        <li>El cliente selecciona los productos y los agrega al carrito de compras.</li>
+        <li>El cliente registra sus datos de envío y facturación.</li>
+        <li>El cliente elige el método de pago: <strong>MercadoPago</strong> o <strong>Wompi</strong>.</li>
+        <li>Una vez confirmado el pago, <strong>{SITE_CONFIG.legalName}</strong> enviará un correo electrónico de confirmación con el número de pedido.</li>
+        <li>La orden pasará a estado de procesamiento y preparación para envío.</li>
+      </ol>
+    </section>
+
+    <section class="legal-section">
+      <h2>4. Precios y disponibilidad</h2>
+      <p>
+        Todos los precios están expresados en pesos colombianos (COP) e incluyen
+        IVA. Los gastos de envío se calculan durante el proceso de compra y
+        pueden variar según la dirección de entrega. La disponibilidad de los
+        productos está sujeta al inventario existente al momento del pedido.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>5. Métodos de pago</h2>
+      <p>
+        Los pagos se procesan a través de las siguientes pasarelas
+        certificadas:
+      </p>
+      <ul>
+        <li><strong>MercadoPago</strong> — tarjetas de crédito, débito, PSE y otros medios habilitados.</li>
+        <li><strong>Wompi</strong> — tarjetas de crédito, débito y Nequi.</li>
+      </ul>
+      <p>
+        <strong>{SITE_CONFIG.legalName}</strong> no almacena datos de tarjetas de
+        crédito ni débito. Toda la información financiera es procesada
+        directamente por las pasarelas de pago bajo sus propios términos y
+        políticas de seguridad.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>6. Derecho de retracto (Ley 1480 de 2011, Estatuto del Consumidor)</h2>
+      <p>
+        De conformidad con el artículo 47 de la Ley 1480 de 2011, el cliente
+        tiene derecho a retractarse de la compra dentro de los
+        <strong>cinco (5) días hábiles</strong> siguientes a la entrega del
+        producto, siempre que:
+      </p>
+      <ul>
+        <li>El producto no haya sido usado, lavado o dañado.</li>
+        <li>Conserve su empaque original, etiquetas y accesorios.</li>
+        <li>Se presente el comprobante de compra.</li>
+      </ul>
+      <p>
+        Para ejercer este derecho, el cliente debe comunicarlo por escrito al
+        correo <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a> dentro
+        del plazo indicado. Una vez recibido el producto devuelto y verificado
+        su estado, <strong>{SITE_CONFIG.legalName}</strong> reembolsará el valor
+        pagado en un plazo máximo de <strong>quince (15) días calendario</strong>
+        utilizando el mismo medio de pago empleado por el cliente.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>7. Garantía legal</h2>
+      <p>
+        Todos los productos comercializados en este sitio cuentan con la
+        garantía legal de conformidad establecida en los artículos 7 a 14 de
+        la Ley 1480 de 2011. En caso de defectos de fabricación o
+        inconformidad con las características ofrecidas, el cliente podrá
+        solicitar la reparación, sustitución o devolución del dinero dentro de
+        los plazos legales aplicables.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>8. Envíos y entregas</h2>
+      <p>
+        Los pedidos se procesan dentro de los <strong>[NÚMERO]</strong> días
+        hábiles siguientes a la confirmación del pago. Los tiempos de entrega
+        varían según la ciudad de destino y la transportadora seleccionada. El
+        cliente recibirá un número de guía para el seguimiento del envío.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>9. Política de devoluciones y cambios</h2>
+      <p>
+        Para cambios de talla, color o referencia por parte del cliente (no
+        derivados de defectos), <strong>{SITE_CONFIG.legalName}</strong> acepta
+        cambios dentro de los <strong>[NÚMERO]</strong> días calendario
+        siguientes a la entrega, siempre que el producto cumpla las
+        condiciones mencionadas en la sección de retracto. Los costos de
+        envío asociados al cambio corren por cuenta del cliente.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>10. Tratamiento de datos personales</h2>
+      <p>
+        El tratamiento de los datos personales recolectados a través de este
+        sitio se realiza conforme a la <strong>Ley 1581 de 2012</strong> y el
+        Decreto 1377 de 2013. El detalle de los derechos como titular y la
+        finalidad del tratamiento se describe en nuestra
+        <a href="/legal/politica-de-privacidad">Política de Privacidad</a>.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>11. Limitación de responsabilidad</h2>
+      <p>
+        <strong>{SITE_CONFIG.legalName}</strong> no será responsable por daños
+        derivados del uso indebido de los productos, ni por retrasos atribuibles
+        a la transportadora, fuerza mayor o caso fortuito.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>12. Propiedad intelectual</h2>
+      <p>
+        Todos los contenidos del sitio (textos, imágenes, logotipos, diseños)
+        son propiedad de <strong>{SITE_CONFIG.legalName}</strong> o de sus titulares
+        y están protegidos por las normas de propiedad intelectual. Queda
+        prohibida su reproducción total o parcial sin autorización previa y
+        por escrito.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>13. Legislación aplicable y jurisdicción</h2>
+      <p>
+        Estos términos se rigen por las leyes de la República de Colombia.
+        Cualquier controversia será resuelta por los jueces competentes de
+        <strong>{SITE_CONFIG.city}</strong>, conforme a las reglas de competencia
+        territorial aplicables.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>14. Contacto</h2>
+      <p>
+        Para cualquier solicitud relacionada con estos términos, el cliente
+        puede escribir a
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a>.
+      </p>
+    </section>
+
+    <p class="legal-draft-notice">
+      <strong>Borrador — pendiente de revisión legal.</strong> Este documento
+      es una plantilla genérica y debe ser validado por un abogado antes de su
+      publicación.
+    </p>
+  </article>
+</ShopLayout>
+
+<style>
+  .legal-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: calc(var(--header-height) + 2rem) var(--container-padding) 4rem;
+  }
+
+  .legal-header { margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--color-gray-200); }
+
+  .legal-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-gray-500);
+  }
+
+  .legal-title {
+    font-family: var(--font-serif);
+    font-size: clamp(2rem, 4vw, 2.5rem);
+    font-weight: 600;
+    color: var(--color-black);
+    margin: 0.5rem 0 0.5rem;
+    line-height: 1.2;
+  }
+
+  .legal-meta {
+    font-size: 0.875rem;
+    color: var(--color-gray-500);
+  }
+
+  .legal-section { margin-bottom: 2rem; }
+
+  .legal-section h2 {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-black);
+    margin-bottom: 0.75rem;
+  }
+
+  .legal-section p, .legal-section li {
+    font-size: 0.95rem;
+    color: var(--color-gray-700);
+    margin-bottom: 0.75rem;
+  }
+
+  .legal-section ol, .legal-section ul { padding-left: 1.5rem; }
+
+  .legal-section a { color: var(--color-black); text-decoration: underline; }
+
+  .legal-draft-notice {
+    margin-top: 2rem;
+    padding: 1rem 1.25rem;
+    background: #fef3c7;
+    color: #78350f;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+  }
+</style>

@@ -1,0 +1,225 @@
+---
+// DRAFT — debe ser revisado y aprobado por un abogado antes de publicarse.
+// Especialmente importante: plazos, condiciones de aceptación/rechazo,
+// reembolso de envío, casos especiales (ropa interior, productos en oferta).
+// No constituye asesoría jurídica.
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import { SITE_CONFIG } from '../../lib/site-config.js'
+---
+
+<ShopLayout
+  title="Política de Devoluciones"
+  description="Política de devoluciones, cambios y retracto de Kaes Store."
+>
+  <article class="legal-page container">
+    <header class="legal-header">
+      <p class="legal-eyebrow">Documento legal</p>
+      <h1 class="legal-title">Política de Devoluciones, Cambios y Retracto</h1>
+      <p class="legal-meta">Última actualización: {SITE_CONFIG.legalUpdatedAt}</p>
+    </header>
+
+    <section class="legal-section">
+      <h2>1. Alcance</h2>
+      <p>
+        Esta política aplica a todas las compras realizadas a través de este
+        sitio web, operado por <strong>{SITE_CONFIG.legalName}</strong>, NIT
+        <strong>{SITE_CONFIG.nit}</strong>, conforme a las disposiciones de la
+        <strong>Ley 1480 de 2011</strong> (Estatuto del Consumidor) y la
+        <strong>Ley 1581 de 2012</strong> (Habeas Data) en Colombia.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. Derecho de retracto (5 días hábiles)</h2>
+      <p>
+        De conformidad con el artículo 47 de la Ley 1480 de 2011, el cliente
+        puede ejercer el derecho de retracto sobre su compra dentro de los
+        <strong>cinco (5) días hábiles</strong> contados a partir de la fecha
+        de entrega del producto, sin penalización alguna y sin necesidad de
+        justificar su decisión.
+      </p>
+      <h3>Requisitos para aceptar el retracto:</h3>
+      <ul>
+        <li>El producto debe estar sin uso, sin lavar y sin señales de haber sido manipulado.</li>
+        <li>Debe conservar su empaque original, etiquetas y todos sus accesorios.</li>
+        <li>Se debe presentar el comprobante de compra (factura o correo de confirmación).</li>
+        <li>El producto no debe haber sido modificado, personalizado o intervenido por el cliente.</li>
+      </ul>
+      <h3>Productos no sujetos a retracto:</h3>
+      <ul>
+        <li>Prendas íntimas, ropa interior, medias o trajes de baño (por motivos de higiene y salud).</li>
+        <li>Productos elaborados a la medida o bajo pedido especial.</li>
+        <li>Productos que, por su naturaleza, no puedan devolverse o puedan deteriorarse (por ejemplo, perfumería abierta).</li>
+        <li>Productos en oferta o promoción identificados claramente como de &ldquo;venta final&rdquo;.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. Procedimiento para ejercer el retracto</h2>
+      <ol>
+        <li>El cliente envía una solicitud por escrito al correo <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a> dentro de los 5 días hábiles posteriores a la entrega, indicando: número de pedido, nombre del producto y motivo (opcional).</li>
+        <li><strong>{SITE_CONFIG.legalName}</strong> confirmará la solicitud y, en un plazo máximo de 3 días hábiles, indicará las instrucciones de devolución.</li>
+        <li>El cliente envía el producto en su empaque original a la dirección indicada. Los costos de envío por devolución corren por cuenta del cliente, salvo que se trate de un defecto de fábrica o un error nuestro, en cuyo caso asumiremos el costo.</li>
+        <li>Una vez recibido el producto y verificado su estado, <strong>{SITE_CONFIG.legalName}</strong> procesará el reembolso.</li>
+      </ol>
+    </section>
+
+    <section class="legal-section">
+      <h2>4. Reembolso</h2>
+      <p>
+        El reembolso se realizará por el mismo medio de pago utilizado por el
+        cliente, en un plazo máximo de <strong>quince (15) días calendario</strong>
+        contados a partir de la confirmación del retracto y la recepción
+        verificada del producto. El valor reembolsado corresponde al precio
+        del producto; los costos de envío originales no se reembolsan, salvo
+        en los casos en que la devolución se origine por un error o defecto
+        atribuible a <strong>{SITE_CONFIG.legalName}</strong>.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>5. Cambios por talla, color o referencia</h2>
+      <p>
+        Aceptamos cambios por talla, color o referencia dentro de los
+        <strong>[NÚMERO]</strong> días calendario siguientes a la entrega,
+        siempre que el producto cumpla las mismas condiciones descritas en la
+        sección de retracto (sin uso, empaque original, etiquetas).
+      </p>
+      <p>
+        El cliente deberá asumir los costos de envío asociados al cambio. Si
+        la diferencia de precio entre el producto original y el nuevo supera
+        el valor pagado, el cliente deberá cubrir la diferencia antes del
+        envío del nuevo producto.
+      </p>
+      <p>
+        Para iniciar un cambio, escríbenos a
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a> con el número
+        de pedido y la referencia/talla/color deseado.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>6. Garantía legal por defectos</h2>
+      <p>
+        Si el producto presenta un defecto de fabricación, inconformidad con
+        las características anunciadas o daños atribuibles al transporte, el
+        cliente tiene derecho a la garantía legal conforme a los artículos 7
+        a 14 de la Ley 1480 de 2011. En este caso, el cliente podrá elegir
+        entre:
+      </p>
+      <ul>
+        <li>Reparación gratuita del producto.</li>
+        <li>Cambio del producto por uno nuevo de iguales o superiores características.</li>
+        <li>Devolución del dinero pagado.</li>
+      </ul>
+      <p>
+        <strong>{SITE_CONFIG.legalName}</strong> asumirá todos los costos de envío
+        asociados a la garantía. El cliente debe notificar el defecto dentro
+        de los <strong>[NÚMERO]</strong> días calendario siguientes a la
+        entrega, enviando fotos del producto y el defecto al correo
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a>.
+      </p>
+      <p>
+        La garantía no cubre daños causados por uso indebido, lavado
+        incorrecto, exposición a sustancias químicas, modificaciones del
+        producto o desgaste natural de los materiales.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>7. Estado del producto al recibirlo</h2>
+      <p>
+        Si al recibir el pedido el empaque presenta señales de daño o
+        manipulación, el cliente debe:
+      </p>
+      <ol>
+        <li>Reportarlo de inmediato a la transportadora en el momento de la entrega.</li>
+        <li>Notificar a <strong>{SITE_CONFIG.legalName}</strong> en un plazo máximo de 48 horas escribiendo a <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a>, incluyendo fotos del empaque y del producto.</li>
+      </ol>
+      <p>
+        Esto es indispensable para gestionar el reclamo con la transportadora
+        y proceder con un cambio o reembolso.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>8. Contacto</h2>
+      <p>
+        Para cualquier solicitud relacionada con devoluciones, cambios o
+        garantía, escríbenos a
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a>. Responderemos
+        en un plazo máximo de <strong>dos (2) días hábiles</strong>.
+      </p>
+    </section>
+
+    <p class="legal-draft-notice">
+      <strong>Borrador — pendiente de revisión legal.</strong> Esta política
+      es una plantilla genérica y debe ser validada por un abogado antes de su
+      publicación.
+    </p>
+  </article>
+</ShopLayout>
+
+<style>
+  .legal-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: calc(var(--header-height) + 2rem) var(--container-padding) 4rem;
+  }
+
+  .legal-header { margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--color-gray-200); }
+
+  .legal-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-gray-500);
+  }
+
+  .legal-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 4vw, 2.5rem);
+    font-weight: 600;
+    color: var(--color-black);
+    margin: 0.5rem 0 0.5rem;
+    line-height: 1.2;
+  }
+
+  .legal-meta { font-size: 0.875rem; color: var(--color-gray-500); }
+
+  .legal-section { margin-bottom: 2rem; }
+
+  .legal-section h2 {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-black);
+    margin-bottom: 0.75rem;
+  }
+
+  .legal-section h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-black);
+    margin: 1rem 0 0.5rem;
+  }
+
+  .legal-section p, .legal-section li {
+    font-size: 0.95rem;
+    color: var(--color-gray-700);
+    margin-bottom: 0.5rem;
+  }
+
+  .legal-section ol, .legal-section ul { padding-left: 1.5rem; }
+  .legal-section a { color: var(--color-black); text-decoration: underline; }
+
+  .legal-draft-notice {
+    margin-top: 2rem;
+    padding: 1rem 1.25rem;
+    background: #fef3c7;
+    color: #78350f;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+  }
+</style>

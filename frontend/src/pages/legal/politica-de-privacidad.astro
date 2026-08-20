@@ -1,0 +1,244 @@
+---
+// DRAFT — debe ser revisado y aprobado por un abogado antes de publicarse.
+// Especialmente importante: derechos ARCO, finalidad del tratamiento,
+// transferencias internacionales, retención de datos y medidas de seguridad.
+// No constituye asesoría jurídica.
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import { SITE_CONFIG } from '../../lib/site-config.js'
+---
+
+<ShopLayout
+  title="Política de Privacidad"
+  description="Política de privacidad y tratamiento de datos personales de Kaes Store."
+>
+  <article class="legal-page container">
+    <header class="legal-header">
+      <p class="legal-eyebrow">Documento legal</p>
+      <h1 class="legal-title">Política de Privacidad y Tratamiento de Datos</h1>
+      <p class="legal-meta">Última actualización: {SITE_CONFIG.legalUpdatedAt}</p>
+    </header>
+
+    <section class="legal-section">
+      <h2>1. Identidad del responsable</h2>
+      <p>
+        <strong>{SITE_CONFIG.legalName}</strong>, identificada con NIT
+        <strong>{SITE_CONFIG.nit}</strong>, con domicilio en <strong>{SITE_CONFIG.address}</strong>,
+        <strong>{SITE_CONFIG.city}</strong>, Colombia, es la persona jurídica responsable
+        del tratamiento de los datos personales recolectados a través de este
+        sitio web.
+      </p>
+      <p>
+        Para efectos de la presente política, los términos &ldquo;titular&rdquo;,
+        &ldquo;tratamiento&rdquo;, &ldquo;dato personal&rdquo; y
+        &ldquo;responsable&rdquo; se interpretarán conforme a las definiciones
+        de la Ley 1581 de 2012.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>2. Datos que recolectamos</h2>
+      <p>Para cumplir con las finalidades descritas, recolectamos las siguientes categorías de datos personales:</p>
+      <ul>
+        <li><strong>Identificación:</strong> nombre completo, número de documento de identidad.</li>
+        <li><strong>Contacto:</strong> dirección de residencia, ciudad, departamento, código postal, teléfono, correo electrónico.</li>
+        <li><strong>Cuenta:</strong> contraseña (almacenada cifrada con bcrypt), historial de pedidos.</li>
+        <li><strong>Pago:</strong> procesado directamente por MercadoPago o Wompi. No almacenamos números de tarjeta.</li>
+        <li><strong>Navegación:</strong> dirección IP, tipo de navegador, páginas visitadas, cookies.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>3. Finalidades del tratamiento</h2>
+      <p>Los datos personales son tratados para las siguientes finalidades:</p>
+      <ul>
+        <li>Crear y gestionar la cuenta del usuario.</li>
+        <li>Procesar, despachar y entregar pedidos.</li>
+        <li>Gestionar pagos a través de las pasarelas MercadoPago y Wompi.</li>
+        <li>Enviar comunicaciones relacionadas con la compra, incluyendo confirmaciones, guías de envío y atención al cliente.</li>
+        <li>Atender peticiones, quejas, reclamos y solicitudes de retracto o garantía.</li>
+        <li>Cumplir obligaciones legales y fiscales (emisión de facturas, reportes a la DIAN).</li>
+        <li>Enviar información comercial sobre nuevos productos, promociones y novedades, únicamente si el titular otorgó su autorización expresa.</li>
+        <li>Realizar análisis internos para mejorar la experiencia del usuario y nuestros productos.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>4. Autorización del titular</h2>
+      <p>
+        Al registrarse en el sitio y/o al marcar las casillas correspondientes,
+        el titular otorga su consentimiento libre, expreso e informado para el
+        tratamiento de sus datos personales conforme a las finalidades
+        descritas. El titular puede revocar esta autorización en cualquier
+        momento, conforme al procedimiento descrito en la sección de derechos
+        ARCO.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>5. Derechos del titular (Ley 1581 de 2012, art. 8)</h2>
+      <p>El titular de los datos personales tiene derecho a:</p>
+      <ul>
+        <li><strong>Conocer</strong>, actualizar y rectificar sus datos personales.</li>
+        <li><strong>Solicitar prueba</strong> de la autorización otorgada.</li>
+        <li><strong>Ser informado</strong> sobre el uso dado a sus datos.</li>
+        <li><strong>Presentar quejas</strong> ante la Superintendencia de Industria y Comercio (SIC).</li>
+        <li><strong>Revocar</strong> la autorización y/o solicitar la supresión de sus datos, salvo cuando exista deber legal o contractual de mantenerlos.</li>
+        <li><strong>Acceder</strong> en forma gratuita a sus datos personales que hayan sido objeto de tratamiento.</li>
+      </ul>
+      <p>
+        Para ejercer cualquiera de estos derechos, el titular puede escribir al
+        correo
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a> indicando su
+        solicitud, nombre completo, documento de identidad y el derecho que
+        desea ejercer.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>6. Encargados del tratamiento</h2>
+      <p>
+        Para cumplir las finalidades del tratamiento, <strong>{SITE_CONFIG.legalName}</strong>
+        comparte datos con los siguientes encargados, quienes los tratan según
+        nuestras instrucciones y bajo contratos de encargo:
+      </p>
+      <ul>
+        <li><strong>MercadoPago</strong> — pasarela de pagos.</li>
+        <li><strong>Wompi</strong> — pasarela de pagos.</li>
+        <li><strong>Cloudinary</strong> — almacenamiento de imágenes del sitio.</li>
+        <li><strong>Empresa transportadora</strong> — para la entrega de pedidos.</li>
+        <li><strong>Proveedor de hosting y base de datos</strong> — infraestructura técnica.</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>7. Medidas de seguridad</h2>
+      <p>
+        Implementamos medidas técnicas, administrativas y físicas razonables
+        para proteger los datos personales contra acceso no autorizado,
+        pérdida, alteración o destrucción. Las contraseñas se almacenan
+        cifradas con algoritmos de hash (bcrypt) y la transmisión de datos
+        entre el navegador y el servidor se realiza sobre HTTPS/TLS.
+      </p>
+      <p>
+        Sin embargo, ningún sistema es completamente seguro. En caso de una
+        violación de seguridad que afecte sus datos, lo informaremos conforme
+        a la normativa aplicable.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>8. Cookies</h2>
+      <p>
+        Este sitio utiliza cookies propias y de terceros para mejorar la
+        experiencia de navegación, recordar el carrito de compras y analizar
+        el tráfico. Puede gestionar o deshabilitar las cookies desde la
+        configuración de su navegador. Algunas funcionalidades del sitio
+        podrían verse afectadas si las deshabilita.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>9. Conservación de los datos</h2>
+      <p>
+        Los datos personales se conservarán durante el plazo necesario para
+        cumplir las finalidades del tratamiento y, posteriormente, durante el
+        plazo que exija la ley para efectos fiscales, contables o de
+        prescripción de acciones legales.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>10. Transferencias internacionales</h2>
+      <p>
+        Algunos de nuestros encargados del tratamiento pueden almacenar o
+        procesar datos en servidores ubicados fuera de Colombia. Al aceptar
+        esta política, el titular autoriza dichas transferencias, las cuales
+        se realizan bajo estándares equivalentes a los exigidos por la
+        legislación colombiana.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>11. Modificaciones a esta política</h2>
+      <p>
+        <strong>{SITE_CONFIG.legalName}</strong> puede modificar esta política en
+        cualquier momento. Los cambios serán publicados en este mismo sitio y,
+        cuando proceda, notificados al titular por correo electrónico. Se
+        recomienda revisar periódicamente.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>12. Reclamaciones ante la autoridad</h2>
+      <p>
+        Si el titular considera que sus derechos han sido vulnerados o que el
+        tratamiento no se ajusta a la ley, puede presentar una queja ante la
+        <strong>Superintendencia de Industria y Comercio (SIC)</strong>,
+        autoridad de protección de datos personales en Colombia.
+      </p>
+    </section>
+
+    <p class="legal-draft-notice">
+      <strong>Borrador — pendiente de revisión legal.</strong> Esta política
+      es una plantilla genérica y debe ser validada por un abogado
+      especializado en protección de datos antes de su publicación.
+    </p>
+  </article>
+</ShopLayout>
+
+<style>
+  .legal-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: calc(var(--header-height) + 2rem) var(--container-padding) 4rem;
+  }
+
+  .legal-header { margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--color-gray-200); }
+
+  .legal-eyebrow {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-gray-500);
+  }
+
+  .legal-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 4vw, 2.5rem);
+    font-weight: 600;
+    color: var(--color-black);
+    margin: 0.5rem 0 0.5rem;
+    line-height: 1.2;
+  }
+
+  .legal-meta { font-size: 0.875rem; color: var(--color-gray-500); }
+
+  .legal-section { margin-bottom: 2rem; }
+
+  .legal-section h2 {
+    font-family: var(--font-serif);
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--color-black);
+    margin-bottom: 0.75rem;
+  }
+
+  .legal-section p, .legal-section li {
+    font-size: 0.95rem;
+    color: var(--color-gray-700);
+    margin-bottom: 0.75rem;
+  }
+
+  .legal-section ul { padding-left: 1.5rem; }
+  .legal-section a { color: var(--color-black); text-decoration: underline; }
+
+  .legal-draft-notice {
+    margin-top: 2rem;
+    padding: 1rem 1.25rem;
+    background: #fef3c7;
+    color: #78350f;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+  }
+</style>

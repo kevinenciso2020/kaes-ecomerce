@@ -1,16 +1,24 @@
 import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import { validate } from '../middleware/validate.js'
-import { 
-  getAllProducts, getAllOrders, updateOrderStatus, createDiscount, 
+import {
+  getAllProducts, getAllOrders, updateOrderStatus, createDiscount,
   createCoupon, getCoupons, getDiscounts, getDashboardStats,
-  getAllUsers, getUserById, updateUser, deleteUser, updateUserRole
+  getAllUsers, getUserById, updateUser, deleteUser, updateUserRole,
+  updateCoupon
 } from '../controllers/admin.controller.js'
-import { 
+import {
+  listContactMessages, readContactMessage, removeContactMessage,
+} from '../controllers/contact.controller.js'
+import {
   getAllUsers as getAllUsersValidator, getUserById as getUserByIdValidator,
   updateUser as updateUserValidator, deleteUser as deleteUserValidator,
-  updateUserRole as updateUserRoleValidator
+  updateUserRole as updateUserRoleValidator,
+  updateCoupon as updateCouponValidator
 } from '../validators/admin.validator.js'
+import {
+  getAllContactMessages, markContactMessageRead,
+} from '../validators/contact.validator.js'
 import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
 import { canManageAdmins } from '../middleware/authorization.middleware.js'
 
@@ -49,12 +57,18 @@ router.put('/orders/:id/status',  updateOrderStatus)
 router.get('/discounts',          getDiscounts)
 router.post('/discounts',         createDiscount)
 router.get('/coupons',            getCoupons)
-router.post('/coupons',          createCoupon)
+router.post('/coupons',           createCoupon)
+router.put('/coupons/:id',        validate(updateCouponValidator), updateCoupon)
 
 router.get('/users',              validate(getAllUsersValidator), getAllUsers)
 router.get('/users/:id',          validate(getUserByIdValidator), getUserById)
 router.put('/users/:id',          validate(updateUserValidator), updateUser)
 router.delete('/users/:id',       validate(deleteUserValidator), deleteUser)
 router.put('/users/:id/role',     validate(updateUserRoleValidator), canManageAdmins, updateUserRole)
+
+// Mensajes de contacto — gestión admin
+router.get('/messages',                          validate(getAllContactMessages), listContactMessages)
+router.put('/messages/:id/read',                 validate(markContactMessageRead), readContactMessage)
+router.delete('/messages/:id',                   removeContactMessage)
 
 export default router

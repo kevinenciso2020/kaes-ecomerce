@@ -11,7 +11,12 @@ export const getProducts = async ({ page = 1, limit = 12, category, minPrice, ma
 
   if (category)           where.category  = { slug: category }
   if (featured === 'true') where.isFeatured = true
-  if (search)             where.name      = { contains: search, mode: 'insensitive' }
+  if (search) {
+    where.OR = [
+      { name:        { contains: search, mode: 'insensitive' } },
+      { description: { contains: search, mode: 'insensitive' } },
+    ]
+  }
   if (minPrice || maxPrice) {
     where.price = {}
     if (minPrice) where.price.gte = parseFloat(minPrice)

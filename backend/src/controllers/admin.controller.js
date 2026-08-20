@@ -23,8 +23,9 @@ export const updateUser = async (req, res, next) => {
 
 export const deleteUser = async (req, res, next) => {
   try {
-    const user = await AdminService.deleteUser(req.params.id)
-    res.json(user)
+    const hard = req.query.hard === 'true' || req.body?.hard === true
+    const user = await AdminService.deleteUser(req.params.id, { hard })
+    res.json({ ...user, hardDelete: hard })
   } catch (err) { next(err) }
 }
 
@@ -74,6 +75,13 @@ export const getCoupons = async (req, res, next) => {
   try {
     const coupons = await AdminService.getCoupons()
     res.json(coupons)
+  } catch (err) { next(err) }
+}
+
+export const updateCoupon = async (req, res, next) => {
+  try {
+    const coupon = await AdminService.updateCoupon(req.params.id, req.body)
+    res.json(coupon)
   } catch (err) { next(err) }
 }
 

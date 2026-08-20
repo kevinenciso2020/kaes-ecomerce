@@ -14,6 +14,25 @@ import Icon from './Icon.astro'
       <a href="/productos?category=shorts" class="nav-link">Shorts</a>
     </nav>
 
+    <form class="header-search" role="search" action="/productos" method="get" aria-label="Buscar productos">
+      <label for="header-search-input" class="visually-hidden">Buscar productos</label>
+      <input
+        type="search"
+        id="header-search-input"
+        name="search"
+        class="header-search-input"
+        placeholder="Buscar productos..."
+        autocomplete="off"
+        minlength="1"
+      />
+      <button type="submit" class="header-search-btn" aria-label="Buscar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+      </button>
+    </form>
+
     <div class="header-actions">
       <div id="auth-section-desktop" class="auth-desktop"></div>
 
@@ -69,6 +88,24 @@ import Icon from './Icon.astro'
     <a href="/productos?category=pantalones" class="drawer-link">Pantalones</a>
     <a href="/productos?category=shorts" class="drawer-link">Shorts</a>
   </nav>
+
+  <form class="drawer-search" role="search" action="/productos" method="get" aria-label="Buscar productos">
+    <label for="drawer-search-input" class="visually-hidden">Buscar productos</label>
+    <input
+      type="search"
+      id="drawer-search-input"
+      name="search"
+      class="drawer-search-input"
+      placeholder="Buscar productos..."
+      autocomplete="off"
+    />
+    <button type="submit" class="drawer-search-btn" aria-label="Buscar">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </button>
+  </form>
 
   <div class="drawer-divider"></div>
 
@@ -239,6 +276,62 @@ import Icon from './Icon.astro'
     transform: translateX(-50%);
   }
 
+  .header-search {
+    display:     none;
+    align-items: center;
+    flex:        1;
+    max-width:   280px;
+    margin:      0 1rem;
+  }
+
+  .header-search-input {
+    width:           100%;
+    padding:         0.5rem 0.75rem;
+    padding-right:   2.25rem;
+    border:          1px solid var(--color-gray-200);
+    border-radius:   var(--radius-md);
+    font-size:       0.875rem;
+    background:      var(--color-gray-50);
+    transition:      border-color 150ms ease, background 150ms ease;
+  }
+
+  .header-search-input:focus {
+    outline:         none;
+    border-color:    var(--color-black);
+    background:      var(--color-white);
+  }
+
+  .header-search-btn {
+    position:    absolute;
+    right:       0.5rem;
+    top:         50%;
+    transform:   translateY(-50%);
+    background:  none;
+    border:      none;
+    padding:     0.35rem;
+    color:       var(--color-gray-500);
+    cursor:      pointer;
+    display:     flex;
+    align-items: center;
+    border-radius: var(--radius-sm);
+  }
+
+  .header-search-btn:hover { color: var(--color-black); }
+
+  .header-search { position: relative; }
+
+  .visually-hidden {
+    position:      absolute;
+    width:         1px;
+    height:        1px;
+    padding:       0;
+    margin:        -1px;
+    overflow:      hidden;
+    clip:          rect(0, 0, 0, 0);
+    white-space:   nowrap;
+    border:        0;
+  }
+
   .nav-link {
     font-size:      0.9rem;
     font-weight:    500;
@@ -378,6 +471,43 @@ import Icon from './Icon.astro'
     margin:     1rem 0;
   }
 
+  .drawer-search {
+    position:    relative;
+    margin:      1rem 0;
+    display:     flex;
+    align-items: center;
+  }
+
+  .drawer-search-input {
+    width:           100%;
+    padding:         0.65rem 0.85rem;
+    padding-right:   2.5rem;
+    border:          1px solid var(--color-gray-200);
+    border-radius:   var(--radius-md);
+    font-size:       0.95rem;
+    background:      var(--color-gray-50);
+  }
+
+  .drawer-search-input:focus {
+    outline:       none;
+    border-color:  var(--color-black);
+    background:    var(--color-white);
+  }
+
+  .drawer-search-btn {
+    position:    absolute;
+    right:       0.5rem;
+    top:         50%;
+    transform:   translateY(-50%);
+    background:  none;
+    border:      none;
+    padding:     0.35rem;
+    color:       var(--color-gray-500);
+    cursor:      pointer;
+    display:     flex;
+    align-items: center;
+  }
+
   .drawer-auth {
     margin-top: auto;
     display:        flex;
@@ -389,6 +519,7 @@ import Icon from './Icon.astro'
 
   @media (min-width: 1024px) {
     .nav-desktop { display: flex; }
+    .header-search { display: flex; }
     .auth-desktop { display: flex; }
     .menu-btn { display: none; }
   }

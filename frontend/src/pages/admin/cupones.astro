@@ -1,0 +1,419 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import '../../styles/admin.css'
+---
+
+<ShopLayout title="Admin - Cupones">
+  <div class="admin-page container" id="admin-content" style="display:none">
+
+    <div class="admin-header">
+      <div class="header-top">
+        <div>
+          <h1 class="admin-title">Cupones</h1>
+          <p class="admin-sub">Gestiona los códigos de descuento para los clientes</p>
+        </div>
+        <button class="btn btn-primary" id="add-coupon-btn">
+          + Nuevo cupón
+        </button>
+      </div>
+    </div>
+
+    <div class="coupons-table-wrap">
+      <table class="coupons-table">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Tipo</th>
+            <th>Valor</th>
+            <th>Compra mín.</th>
+            <th>Usos</th>
+            <th>Vigencia</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="coupons-tbody">
+          <tr><td colspan="8" class="loading">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <div id="no-access" style="display:none" class="no-access">
+    <p>No tienes permisos para ver esta página</p>
+    <a href="/" class="btn btn-primary">Volver al inicio</a>
+  </div>
+
+  <div id="coupon-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="coupon-modal-title">Nuevo cupón</h2>
+        <button class="modal-close" id="close-coupon-modal">&times;</button>
+      </div>
+      <form id="coupon-form" class="admin-form">
+        <input type="hidden" id="coupon-id" />
+
+        <div class="form-group">
+          <label class="form-label">Código</label>
+          <input type="text" id="coupon-code" class="form-input" required style="text-transform: uppercase" placeholder="Ej: KAES10" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Tipo</label>
+            <select id="coupon-type" class="form-input" required>
+              <option value="PERCENTAGE">Porcentaje (%)</option>
+              <option value="FIXED">Valor fijo ($)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Valor</label>
+            <input type="number" id="coupon-value" class="form-input" step="0.01" min="0" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Compra mínima</label>
+            <input type="number" id="coupon-min" class="form-input" step="0.01" min="0" placeholder="Opcional" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Usos máximos</label>
+            <input type="number" id="coupon-max" class="form-input" min="1" placeholder="Ilimitado" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Inicio de vigencia</label>
+            <input type="date" id="coupon-start" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fin de vigencia</label>
+            <input type="date" id="coupon-end" class="form-input" />
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" id="cancel-coupon-btn">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, bootstrapAuth } from '../../lib/api.js'
+  import { escapeHtml } from '../../lib/sanitize.js'
+
+  let coupons = []
+
+  async function init() {
+    const user = await bootstrapAuth()
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+      const noAccess = document.getElementById('no-access')
+      const adminContent = document.getElementById('admin-content')
+      if (noAccess) noAccess.style.display = 'flex'
+      if (adminContent) adminContent.style.display = 'none'
+      return
+    }
+
+    const adminContent = document.getElementById('admin-content')
+    if (adminContent) adminContent.style.display = 'block'
+
+    await loadCoupons()
+    setupEventListeners()
+  }
+
+  init()
+
+  async function loadCoupons() {
+    try {
+      coupons = await api.admin.coupons()
+      renderCoupons()
+    } catch (err) {
+      const tbody = document.getElementById('coupons-tbody')
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="error">' + escapeHtml(err.message) + '</td></tr>'
+    }
+  }
+
+  function renderCoupons() {
+    const tbody = document.getElementById('coupons-tbody')
+    if (!tbody) return
+
+    if (coupons.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No hay cupones todavía</td></tr>'
+      return
+    }
+
+    tbody.innerHTML = coupons.map(function (c) {
+      const code = escapeHtml(c.code)
+      const valueDisplay = c.type === 'PERCENTAGE'
+        ? Number(c.value) + '%'
+        : '$' + Number(c.value).toLocaleString('es-CO')
+
+      const minDisplay = c.minPurchase
+        ? '$' + Number(c.minPurchase).toLocaleString('es-CO')
+        : '—'
+
+      const usesDisplay = c.usedCount + (c.maxUses ? ' / ' + c.maxUses : '')
+
+      const startDate = c.startsAt ? new Date(c.startsAt).toLocaleDateString('es-CO') : null
+      const endDate   = c.endsAt   ? new Date(c.endsAt).toLocaleDateString('es-CO')   : null
+      const vigencia = (startDate || endDate)
+        ? (startDate || '∞') + ' — ' + (endDate || '∞')
+        : '—'
+
+      const statusBadge = c.isActive
+        ? '<span class="status-badge active">Activo</span>'
+        : '<span class="status-badge inactive">Inactivo</span>'
+
+      return (
+        '<tr>' +
+          '<td><code class="coupon-code">' + code + '</code></td>' +
+          '<td>' + (c.type === 'PERCENTAGE' ? 'Porcentaje' : 'Valor fijo') + '</td>' +
+          '<td>' + valueDisplay + '</td>' +
+          '<td>' + minDisplay + '</td>' +
+          '<td>' + usesDisplay + '</td>' +
+          '<td>' + vigencia + '</td>' +
+          '<td>' + statusBadge + '</td>' +
+          '<td>' +
+            '<div class="action-buttons">' +
+              '<button class="btn-icon edit-coupon-btn" data-id="' + c.id + '" title="Editar">✏️</button>' +
+              '<button class="btn-icon toggle-coupon-btn" data-id="' + c.id + '" data-active="' + (!c.isActive) + '" title="' + (c.isActive ? 'Desactivar' : 'Activar') + '">🔁</button>' +
+            '</div>' +
+          '</td>' +
+        '</tr>'
+      )
+    }).join('')
+
+    document.querySelectorAll('.edit-coupon-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openEditModal(btn.getAttribute('data-id'))
+      })
+    })
+
+    document.querySelectorAll('.toggle-coupon-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        toggleCoupon(btn.getAttribute('data-id'), btn.getAttribute('data-active') === 'true')
+      })
+    })
+  }
+
+  function setupEventListeners() {
+    document.getElementById('add-coupon-btn')?.addEventListener('click', openCreateModal)
+    document.getElementById('close-coupon-modal')?.addEventListener('click', closeModal)
+    document.getElementById('cancel-coupon-btn')?.addEventListener('click', closeModal)
+    document.getElementById('coupon-modal')?.addEventListener('click', function (e) {
+      if (e.target === e.currentTarget) closeModal()
+    })
+    document.getElementById('coupon-form')?.addEventListener('submit', handleSubmit)
+  }
+
+  function openCreateModal() {
+    document.getElementById('coupon-modal-title').textContent = 'Nuevo cupón'
+    document.getElementById('coupon-id').value = ''
+    document.getElementById('coupon-form').reset()
+    document.getElementById('coupon-modal').style.display = 'flex'
+  }
+
+  function openEditModal(id) {
+    const c = coupons.find(function (x) { return x.id === id })
+    if (!c) return
+
+    document.getElementById('coupon-modal-title').textContent = 'Editar cupón'
+    document.getElementById('coupon-id').value = c.id
+    document.getElementById('coupon-code').value = c.code
+    document.getElementById('coupon-type').value = c.type
+    document.getElementById('coupon-value').value = c.value
+    document.getElementById('coupon-min').value = c.minPurchase || ''
+    document.getElementById('coupon-max').value = c.maxUses || ''
+    document.getElementById('coupon-start').value = c.startsAt ? c.startsAt.split('T')[0] : ''
+    document.getElementById('coupon-end').value   = c.endsAt   ? c.endsAt.split('T')[0]   : ''
+
+    document.getElementById('coupon-modal').style.display = 'flex'
+  }
+
+  function closeModal() {
+    document.getElementById('coupon-modal').style.display = 'none'
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    const id = document.getElementById('coupon-id').value
+
+    const data = {
+      code:        document.getElementById('coupon-code').value.toUpperCase(),
+      type:        document.getElementById('coupon-type').value,
+      value:       document.getElementById('coupon-value').value,
+      minPurchase: document.getElementById('coupon-min').value || null,
+      maxUses:     document.getElementById('coupon-max').value || null,
+      startsAt:    document.getElementById('coupon-start').value || null,
+      endsAt:      document.getElementById('coupon-end').value   || null,
+    }
+
+    try {
+      if (id) {
+        await api.admin.updateCoupon(id, data)
+      } else {
+        await api.admin.createCoupon(data)
+      }
+      closeModal()
+      await loadCoupons()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  async function toggleCoupon(id, newActive) {
+    try {
+      await api.admin.updateCoupon(id, { isActive: newActive })
+      await loadCoupons()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+</script>
+
+<style>
+  .admin-page { padding-top: calc(60px + 2rem); padding-bottom: 4rem; }
+
+  .admin-header { margin-bottom: 2rem; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; }
+
+  .admin-title { font-family: var(--font-serif); font-size: 2rem; font-weight: 600; color: var(--color-black); }
+  .admin-sub { font-size: 0.875rem; color: var(--color-gray-400); margin-top: 0.25rem; }
+
+  .coupons-table-wrap {
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    overflow-x: auto;
+  }
+
+  .coupons-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+
+  .coupons-table th {
+    text-align: left;
+    padding: 1rem;
+    background: var(--color-gray-50);
+    font-weight: 600;
+    color: var(--color-gray-500);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .coupons-table td { padding: 1rem; border-top: 1px solid var(--color-gray-100); }
+
+  .coupon-code {
+    background: var(--color-gray-100);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .status-badge.active   { background: #dcfce7; color: #166534; }
+  .status-badge.inactive { background: #fee2e2; color: #991b1b; }
+
+  .action-buttons { display: flex; gap: 0.5rem; align-items: center; }
+
+  .btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 1rem;
+    transition: transform 150ms ease;
+  }
+
+  .btn-icon:hover { transform: scale(1.1); }
+
+  .loading, .error, .empty { text-align: center; padding: 2rem; color: var(--color-gray-400); }
+  .error { color: #991b1b; }
+
+  .modal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal-content {
+    background: var(--color-white);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--color-gray-200);
+  }
+
+  .modal-header h2 { font-size: 1.25rem; font-weight: 600; }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+
+  .admin-form { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+  .form-label { font-size: 0.875rem; font-weight: 500; }
+  .form-input { padding: 0.625rem 1rem; border: 1px solid var(--color-gray-200); border-radius: 8px; font-size: 0.875rem; }
+  .form-input:focus { outline: none; border-color: var(--color-black); }
+
+  .form-actions { display: flex; gap: 1rem; justify-content: flex-end; margin-top: 1rem; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary { background: var(--color-black); color: var(--color-white); border-color: var(--color-black); }
+  .btn-primary:hover { background: var(--color-gray-800); }
+  .btn-secondary { background: var(--color-white); color: var(--color-black); border-color: var(--color-gray-200); }
+  .btn-secondary:hover { border-color: var(--color-black); }
+
+  .no-access {
+    min-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    color: var(--color-gray-400);
+  }
+</style>

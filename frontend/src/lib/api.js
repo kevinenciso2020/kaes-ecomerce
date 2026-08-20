@@ -154,7 +154,15 @@ export const api = {
     discounts:      ()            => request('/admin/discounts'),
     createDiscount: (data)        => request('/admin/discounts', { method: 'POST', body: JSON.stringify(data) }),
     coupons:        ()            => request('/admin/coupons'),
-    createCoupon:   (data)      => request('/admin/coupons',   { method: 'POST', body: JSON.stringify(data) }),
+    createCoupon:   (data)        => request('/admin/coupons', { method: 'POST', body: JSON.stringify(data) }),
+    updateCoupon:   (id, data)    => request(`/admin/coupons/${id}`, { method: 'PUT',  body: JSON.stringify(data) }),
+    users:          (params = {}) => request(`/admin/users?${new URLSearchParams(params)}`),
+    updateUser:     (id, data)    => request(`/admin/users/${id}`,     { method: 'PUT',    body: JSON.stringify(data) }),
+    updateUserRole: (id, role)    => request(`/admin/users/${id}/role`, { method: 'PUT',    body: JSON.stringify({ role }) }),
+    deleteUser:     (id, params)  => request(`/admin/users/${id}${params ? `?${new URLSearchParams(params)}` : ''}`, { method: 'DELETE' }),
+    messages:       (params = {}) => request(`/admin/messages?${new URLSearchParams(params)}`),
+    markMessageRead:(id, isRead = true) => request(`/admin/messages/${id}/read`, { method: 'PUT', body: JSON.stringify({ isRead }) }),
+    deleteMessage:  (id)          => request(`/admin/messages/${id}`, { method: 'DELETE' }),
   },
   payments: {
     createPreference: (data) => request('/payments/create-preference', { method: 'POST', body: JSON.stringify(data) }),
@@ -166,6 +174,9 @@ export const api = {
   },
   coupons: {
     validate: (code, subtotal = 0) => request(`/coupons/${code}?subtotal=${subtotal}`),
+  },
+  contact: {
+    send: (data) => request('/contact', { method: 'POST', body: JSON.stringify(data) }),
   },
 }
 

@@ -1,0 +1,105 @@
+---
+import ShopLayout from '../layouts/ShopLayout.astro'
+---
+
+<ShopLayout title="Página no encontrada" description="La página que buscas no existe.">
+  <section class="not-found">
+    <div class="not-found-inner container">
+      <p class="not-found-eyebrow">Error 404</p>
+      <h1 class="not-found-title">Esta página se perdió entre las costuras.</h1>
+      <p class="not-found-sub">
+        La URL que buscas no existe o fue retirada del catálogo.
+        Pero todavía tenemos mucho estilo para mostrarte.
+      </p>
+      <div class="not-found-actions">
+        <a href="/" class="btn btn-primary">Volver al inicio</a>
+        <a href="/productos" class="btn btn-outline">Ir al catálogo</a>
+      </div>
+    </div>
+  </section>
+</ShopLayout>
+
+<style>
+  .not-found {
+    min-height: calc(100vh - var(--header-height));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(var(--header-height) + 4rem) var(--container-padding) 4rem;
+    background: var(--color-gray-50);
+  }
+
+  .not-found-inner {
+    max-width: 640px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .not-found-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--color-gray-500);
+    margin: 0;
+  }
+
+  .not-found-title {
+    font-family: var(--font-serif);
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 600;
+    color: var(--color-black);
+    line-height: 1.15;
+    margin: 0;
+  }
+
+  .not-found-sub {
+    font-size: 1rem;
+    color: var(--color-gray-500);
+    max-width: 480px;
+    margin: 0.5rem 0 1.5rem;
+  }
+
+  .not-found-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: var(--radius-md);
+    transition: all 150ms ease;
+    min-width: 160px;
+  }
+
+  .btn-primary {
+    background: var(--color-black);
+    color: var(--color-white);
+    border: 1px solid var(--color-black);
+  }
+
+  .btn-primary:hover {
+    background: var(--color-gray-800);
+  }
+
+  .btn-outline {
+    background: var(--color-white);
+    color: var(--color-black);
+    border: 1px solid var(--color-black);
+  }
+
+  .btn-outline:hover {
+    background: var(--color-black);
+    color: var(--color-white);
+  }
+</style>

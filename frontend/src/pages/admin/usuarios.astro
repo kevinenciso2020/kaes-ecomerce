@@ -1,0 +1,434 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import '../../styles/admin.css'
+---
+
+<ShopLayout title="Admin - Usuarios">
+  <div class="admin-page container" id="admin-content" style="display:none">
+
+    <div class="admin-header">
+      <div>
+        <h1 class="admin-title">Usuarios</h1>
+        <p class="admin-sub">Gestiona las cuentas y roles de la tienda</p>
+      </div>
+
+      <div class="filters">
+        <input type="text" id="search-input" class="search-input" placeholder="Buscar por nombre o email..." />
+        <select id="filter-role" class="filter-select">
+          <option value="">Todos los roles</option>
+          <option value="CUSTOMER">Cliente</option>
+          <option value="ADMIN">Admin</option>
+          <option value="SUPER_ADMIN">Super admin</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="users-table-wrap">
+      <table class="users-table">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Email</th>
+            <th>Rol</th>
+            <th>Órdenes</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody">
+          <tr><td colspan="6" class="loading">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="pagination"></div>
+
+  </div>
+
+  <div id="no-access" style="display:none" class="no-access">
+    <p>No tienes permisos para ver esta página</p>
+    <a href="/" class="btn btn-primary">Volver al inicio</a>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, bootstrapAuth } from '../../lib/api.js'
+  import { escapeHtml } from '../../lib/sanitize.js'
+
+  let users = []
+  let currentPage = 1
+  let totalPages = 1
+  let currentSearch = ''
+  let currentRole = ''
+  let loggedUser = null
+
+  const ROLE_LABELS = {
+    CUSTOMER:    'Cliente',
+    ADMIN:       'Admin',
+    SUPER_ADMIN: 'Super admin',
+  }
+
+  const ROLE_CLASSES = {
+    CUSTOMER:    'role-customer',
+    ADMIN:       'role-admin',
+    SUPER_ADMIN: 'role-super',
+  }
+
+  function debounce(fn, delay) {
+    let t
+    return function () {
+      const args = arguments
+      const self = this
+      clearTimeout(t)
+      t = setTimeout(() => fn.apply(self, args), delay)
+    }
+  }
+
+  async function init() {
+    const user = await bootstrapAuth()
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+      const noAccess = document.getElementById('no-access')
+      const adminContent = document.getElementById('admin-content')
+      if (noAccess) noAccess.style.display = 'flex'
+      if (adminContent) adminContent.style.display = 'none'
+      return
+    }
+
+    loggedUser = user
+    const adminContent = document.getElementById('admin-content')
+    if (adminContent) adminContent.style.display = 'block'
+
+    await loadUsers()
+    setupEventListeners()
+  }
+
+  init()
+
+  async function loadUsers(params = {}) {
+    try {
+      const merged = { page: currentPage, ...params }
+      const result = await api.admin.users(merged)
+      users = result.users
+      currentPage = result.page
+      totalPages = result.totalPages
+      renderUsers()
+      renderPagination()
+    } catch (err) {
+      const tbody = document.getElementById('users-tbody')
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="error">' + escapeHtml(err.message) + '</td></tr>'
+    }
+  }
+
+  function renderUsers() {
+    const tbody = document.getElementById('users-tbody')
+    if (!tbody) return
+
+    if (users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay usuarios con esos filtros</td></tr>'
+      return
+    }
+
+    const isSuper = loggedUser && loggedUser.role === 'SUPER_ADMIN'
+
+    tbody.innerHTML = users.map(function (u) {
+      const name = escapeHtml(u.name || '—')
+      const email = escapeHtml(u.email || '')
+      const role = u.role || 'CUSTOMER'
+      const roleLabel = ROLE_LABELS[role] || role
+      const roleClass = ROLE_CLASSES[role] || 'role-customer'
+
+      const statusBadge = u.isActive
+        ? '<span class="status-badge active">Activo</span>'
+        : '<span class="status-badge inactive">Inactivo</span>'
+
+      let actions = '<div class="action-buttons">'
+
+      if (isSuper) {
+        const nextRole = role === 'CUSTOMER' ? 'ADMIN' : 'CUSTOMER'
+        const nextLabel = role === 'CUSTOMER' ? 'Hacer admin' : 'Quitar admin'
+        actions +=
+          '<button class="btn-icon role-btn" data-id="' + u.id + '" data-role="' + nextRole + '" title="' + nextLabel + '">👑</button>'
+      }
+
+      const toggleLabel = u.isActive ? 'Desactivar' : 'Activar'
+      actions +=
+        '<button class="btn-icon toggle-btn" data-id="' + u.id + '" data-active="' + (!u.isActive) + '" title="' + toggleLabel + '">🔁</button>'
+
+      const deleteLabel = u.id === loggedUser.id ? 'No puedes eliminarte' : 'Eliminar'
+      actions +=
+        '<button class="btn-icon delete-btn" data-id="' + u.id + '" title="' + deleteLabel + '"' +
+        (u.id === loggedUser.id ? ' disabled' : '') + '>🗑️</button>'
+
+      actions += '</div>'
+
+      return (
+        '<tr>' +
+          '<td>' +
+            '<div class="user-cell">' +
+              '<span class="user-avatar">' + name.charAt(0).toUpperCase() + '</span>' +
+              '<div class="user-info">' +
+                '<span class="user-name">' + name + '</span>' +
+                (u.phone ? '<span class="user-phone">' + escapeHtml(u.phone) + '</span>' : '') +
+              '</div>' +
+            '</div>' +
+          '</td>' +
+          '<td>' + email + '</td>' +
+          '<td><span class="role-badge ' + roleClass + '">' + escapeHtml(roleLabel) + '</span></td>' +
+          '<td>' + (u._count && u._count.orders != null ? u._count.orders : 0) + '</td>' +
+          '<td>' + statusBadge + '</td>' +
+          '<td>' + actions + '</td>' +
+        '</tr>'
+      )
+    }).join('')
+
+    document.querySelectorAll('.role-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        changeRole(btn.getAttribute('data-id'), btn.getAttribute('data-role'))
+      })
+    })
+
+    document.querySelectorAll('.toggle-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        toggleActive(btn.getAttribute('data-id'), btn.getAttribute('data-active') === 'true')
+      })
+    })
+
+    document.querySelectorAll('.delete-btn:not([disabled])').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        const id = btn.getAttribute('data-id')
+        const choice = prompt(
+          '¿Cómo quieres eliminar este usuario?\n\n' +
+          '1 — Desactivar (soft delete, reversible)\n' +
+          '2 — Eliminar DEFINITIVAMENTE (no se puede deshacer)\n\n' +
+          'Escribe 1 o 2:',
+        )
+        if (choice === '1') {
+          deleteUser(id, false)
+        } else if (choice === '2') {
+          const confirmHard = confirm('¿Estás seguro? Esta acción NO se puede deshacer.')
+          if (confirmHard) deleteUser(id, true)
+        }
+      })
+    })
+  }
+
+  function renderPagination() {
+    const pag = document.getElementById('pagination')
+    if (!pag) return
+    if (totalPages <= 1) { pag.innerHTML = ''; return }
+
+    let html = ''
+    if (currentPage > 1) html += '<button class="page-btn" data-page="' + (currentPage - 1) + '">←</button>'
+    html += '<span class="page-info">Página ' + currentPage + ' de ' + totalPages + '</span>'
+    if (currentPage < totalPages) html += '<button class="page-btn" data-page="' + (currentPage + 1) + '">→</button>'
+
+    pag.innerHTML = html
+    pag.querySelectorAll('.page-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        loadUsers({ page: btn.getAttribute('data-page') })
+      })
+    })
+  }
+
+  function setupEventListeners() {
+    const searchInput = document.getElementById('search-input')
+    if (searchInput) {
+      searchInput.addEventListener('input', debounce(function () {
+        currentSearch = this.value
+        currentPage = 1
+        loadUsers({ search: currentSearch, role: currentRole })
+      }, 400))
+    }
+
+    const filterRole = document.getElementById('filter-role')
+    if (filterRole) {
+      filterRole.addEventListener('change', function () {
+        currentRole = this.value
+        currentPage = 1
+        loadUsers({ search: currentSearch, role: currentRole })
+      })
+    }
+  }
+
+  async function changeRole(userId, newRole) {
+    try {
+      await api.admin.updateUserRole(userId, newRole)
+      await loadUsers()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  async function toggleActive(userId, newActive) {
+    try {
+      await api.admin.updateUser(userId, { isActive: newActive })
+      await loadUsers()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  async function deleteUser(userId, hard) {
+    try {
+      await api.admin.deleteUser(userId, hard ? { hard: 'true' } : undefined)
+      await loadUsers()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+</script>
+
+<style>
+  .admin-page { padding-top: calc(60px + 2rem); padding-bottom: 4rem; }
+
+  .admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .admin-title { font-family: var(--font-serif); font-size: 2rem; font-weight: 600; color: var(--color-black); }
+
+  .admin-sub { font-size: 0.875rem; color: var(--color-gray-400); margin-top: 0.25rem; }
+
+  .filters { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+  .search-input {
+    flex: 1;
+    min-width: 220px;
+    padding: 0.625rem 1rem;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    font-size: 0.875rem;
+  }
+
+  .filter-select {
+    padding: 0.625rem 1rem;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    min-width: 160px;
+  }
+
+  .users-table-wrap {
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    overflow-x: auto;
+  }
+
+  .users-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+
+  .users-table th {
+    text-align: left;
+    padding: 1rem;
+    background: var(--color-gray-50);
+    font-weight: 600;
+    color: var(--color-gray-500);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .users-table td { padding: 1rem; border-top: 1px solid var(--color-gray-100); }
+
+  .user-cell { display: flex; align-items: center; gap: 0.75rem; }
+
+  .user-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--color-black);
+    color: var(--color-white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+  }
+
+  .user-info { display: flex; flex-direction: column; }
+  .user-name { font-weight: 500; color: var(--color-black); }
+  .user-phone { font-size: 0.75rem; color: var(--color-gray-400); }
+
+  .role-badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .role-customer { background: var(--color-gray-100); color: var(--color-gray-700); }
+  .role-admin    { background: #dbeafe; color: #1e40af; }
+  .role-super    { background: #fef3c7; color: #92400e; }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .status-badge.active   { background: #dcfce7; color: #166534; }
+  .status-badge.inactive { background: #fee2e2; color: #991b1b; }
+
+  .action-buttons { display: flex; gap: 0.5rem; align-items: center; }
+
+  .btn-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 1rem;
+    transition: transform 150ms ease;
+  }
+
+  .btn-icon:hover:not([disabled]) { transform: scale(1.1); }
+  .btn-icon[disabled] { opacity: 0.3; cursor: not-allowed; }
+
+  .loading, .error, .empty { text-align: center; padding: 2rem; color: var(--color-gray-400); }
+  .error { color: #991b1b; }
+
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+
+  .page-btn {
+    padding: 0.5rem 1rem;
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .page-btn:hover { border-color: var(--color-black); }
+  .page-info { font-size: 0.875rem; color: var(--color-gray-500); }
+
+  .no-access {
+    min-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    color: var(--color-gray-400);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.75rem 1.5rem;
+    background: var(--color-black);
+    color: var(--color-white);
+    border: 1px solid var(--color-black);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .btn-primary:hover { background: var(--color-gray-800); }
+</style>

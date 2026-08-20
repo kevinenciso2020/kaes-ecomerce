@@ -82,3 +82,14 @@ export const passwordResetConfirmLimiter = isTest
       message: { error: 'Demasiados intentos de código, intenta más tarde' },
       keyGenerator: (req) => `${req.ip}:${normalizeEmail(req.body?.email)}`,
     })
+
+export const contactLimiter = isTest
+  ? noop
+  : rateLimit({
+      ...standardOptions,
+      skipSuccessfulRequests: true,
+      windowMs: 60 * 60 * 1000,
+      max: 5,
+      message: { error: 'Has enviado demasiados mensajes, intenta más tarde' },
+      keyGenerator: (req) => `${req.ip}:${normalizeEmail(req.body?.email)}`,
+    })

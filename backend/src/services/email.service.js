@@ -322,3 +322,80 @@ export const sendPasswordResetEmail = async (user, code) => {
     return false
   }
 }
+
+export const sendContactNotification = async ({ name, email, subject, message }) => {
+  const adminEmail = process.env.SMTP_FROM_EMAIL || FROM_EMAIL
+
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden;">
+    <div style="background: #1a1a1a; color: white; padding: 24px; text-align: center;">
+      <h1 style="margin: 0; font-size: 24px;">${FROM_NAME}</h1>
+      <p style="margin: 4px 0 0; font-size: 14px; opacity: 0.8;">Nuevo mensaje de contacto</p>
+    </div>
+
+    <div style="padding: 24px;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 8px 0; color: #999; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; width: 90px;">Nombre</td>
+          <td style="padding: 8px 0; color: #333; font-weight: 500;">${escapeHtml(name)}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0; color: #999; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Email</td>
+          <td style="padding: 8px 0; color: #333;"><a href="mailto:${escapeHtml(email)}" style="color: #1a1a1a;">${escapeHtml(email)}</a></td>
+        </tr>
+        ${subject ? `
+        <tr>
+          <td style="padding: 8px 0; color: #999; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;">Asunto</td>
+          <td style="padding: 8px 0; color: #333;">${escapeHtml(subject)}</td>
+        </tr>
+        ` : ''}
+      </table>
+
+      <div style="margin-top: 20px; padding: 16px; background: #f9f9f9; border-radius: 8px; border-left: 3px solid #1a1a1a;">
+        <p style="margin: 0; color: #333; white-space: pre-wrap; line-height: 1.6;">${escapeHtml(message)}</p>
+      </div>
+
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; margin: 0;">
+          Para responder, simplemente contesta este correo. El mensaje fue enviado desde el formulario de contacto de la tienda.
+        </p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim()
+
+  try {
+    const result = await emailTransporter.sendMail({
+      from: `"${FROM_NAME} - Contacto" <${FROM_EMAIL}>`,
+      to: adminEmail,
+      replyTo: `"${name}" <${email}>`,
+      subject: `[Contacto] ${subject || 'Nuevo mensaje'} — de ${name}`,
+      html: htmlContent,
+    })
+
+    log.info({ from: email, to: adminEmail, messageId: result.messageId }, 'email.contact_notification_sent')
+    return true
+  } catch (error) {
+    log.error({ err: error, from: email }, 'email.contact_notification_failed')
+    return false
+  }
+}
+
+function escapeHtml(str) {
+  if (typeof str !== 'string') return String(str ?? '')
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}

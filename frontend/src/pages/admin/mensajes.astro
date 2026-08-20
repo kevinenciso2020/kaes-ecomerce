@@ -1,0 +1,422 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import '../../styles/admin.css'
+---
+
+<ShopLayout title="Admin - Mensajes">
+  <div class="admin-page container" id="admin-content" style="display:none">
+
+    <div class="admin-header">
+      <div class="header-top">
+        <div>
+          <h1 class="admin-title">Mensajes de contacto</h1>
+          <p class="admin-sub">Buzón de mensajes enviados desde el sitio</p>
+        </div>
+        <div class="stats-mini">
+          <span class="unread-badge" id="unread-count">0 sin leer</span>
+        </div>
+      </div>
+
+      <div class="filters">
+        <select id="filter-read" class="filter-select">
+          <option value="">Todos</option>
+          <option value="false">Sin leer</option>
+          <option value="true">Leídos</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="messages-list" id="messages-list">
+      <p class="loading">Cargando mensajes...</p>
+    </div>
+
+  </div>
+
+  <div id="no-access" style="display:none" class="no-access">
+    <p>No tienes permisos para ver esta página</p>
+    <a href="/" class="btn btn-primary">Volver al inicio</a>
+  </div>
+
+  <div id="message-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Detalle del mensaje</h2>
+        <button class="modal-close" id="close-modal">&times;</button>
+      </div>
+      <div class="modal-body" id="message-detail"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="delete-message-btn">Eliminar</button>
+        <button class="btn btn-primary" id="toggle-read-btn">Marcar como leído</button>
+      </div>
+    </div>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, bootstrapAuth } from '../../lib/api.js'
+  import { escapeHtml } from '../../lib/sanitize.js'
+
+  let messages = []
+  let currentFilter = ''
+  let activeMessageId = null
+
+  async function init() {
+    const user = await bootstrapAuth()
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
+      const noAccess = document.getElementById('no-access')
+      const adminContent = document.getElementById('admin-content')
+      if (noAccess) noAccess.style.display = 'flex'
+      if (adminContent) adminContent.style.display = 'none'
+      return
+    }
+
+    const adminContent = document.getElementById('admin-content')
+    if (adminContent) adminContent.style.display = 'block'
+
+    await loadMessages()
+    setupEventListeners()
+  }
+
+  init()
+
+  async function loadMessages() {
+    try {
+      const params = currentFilter ? { isRead: currentFilter } : {}
+      const result = await api.admin.messages(params)
+      messages = result.messages
+      renderMessages()
+      updateUnreadBadge(result.unread)
+    } catch (err) {
+      const list = document.getElementById('messages-list')
+      if (list) list.innerHTML = '<p class="error">' + escapeHtml(err.message) + '</p>'
+    }
+  }
+
+  function renderMessages() {
+    const list = document.getElementById('messages-list')
+    if (!list) return
+
+    if (messages.length === 0) {
+      list.innerHTML = '<p class="empty">No hay mensajes</p>'
+      return
+    }
+
+    list.innerHTML = messages.map(function (m) {
+      const date = new Date(m.createdAt).toLocaleString('es-CO')
+      const unread = !m.isRead
+      return (
+        '<div class="message-card ' + (unread ? 'unread' : '') + '" data-id="' + m.id + '">' +
+          '<div class="message-meta">' +
+            '<span class="message-name">' + escapeHtml(m.name) + '</span>' +
+            '<span class="message-email">' + escapeHtml(m.email) + '</span>' +
+            '<span class="message-date">' + date + '</span>' +
+            (unread ? '<span class="unread-dot" aria-label="Sin leer">●</span>' : '') +
+          '</div>' +
+          (m.subject ? '<p class="message-subject">' + escapeHtml(m.subject) + '</p>' : '') +
+          '<p class="message-preview">' + escapeHtml((m.message || '').slice(0, 160)) + ((m.message || '').length > 160 ? '…' : '') + '</p>' +
+        '</div>'
+      )
+    }).join('')
+
+    document.querySelectorAll('.message-card').forEach(function (card) {
+      card.addEventListener('click', function () {
+        openMessage(card.getAttribute('data-id'))
+      })
+    })
+  }
+
+  function updateUnreadBadge(unread) {
+    const el = document.getElementById('unread-count')
+    if (!el) return
+    if (!unread || unread === 0) {
+      el.textContent = 'Sin mensajes nuevos'
+      el.classList.add('empty')
+    } else {
+      el.textContent = unread + ' sin leer'
+      el.classList.remove('empty')
+    }
+  }
+
+  function setupEventListeners() {
+    document.getElementById('filter-read')?.addEventListener('change', function () {
+      currentFilter = this.value
+      loadMessages()
+    })
+
+    document.getElementById('close-modal')?.addEventListener('click', closeModal)
+    document.getElementById('message-modal')?.addEventListener('click', function (e) {
+      if (e.target === e.currentTarget) closeModal()
+    })
+
+    document.getElementById('toggle-read-btn')?.addEventListener('click', toggleRead)
+    document.getElementById('delete-message-btn')?.addEventListener('click', deleteMessage)
+  }
+
+  async function openMessage(id) {
+    const m = messages.find(function (x) { return x.id === id })
+    if (!m) return
+
+    activeMessageId = id
+
+    const detail = document.getElementById('message-detail')
+    detail.innerHTML =
+      '<div class="detail-row"><span class="detail-label">De</span><span>' + escapeHtml(m.name) + ' &lt;' + escapeHtml(m.email) + '&gt;</span></div>' +
+      (m.subject ? '<div class="detail-row"><span class="detail-label">Asunto</span><span>' + escapeHtml(m.subject) + '</span></div>' : '') +
+      '<div class="detail-row"><span class="detail-label">Fecha</span><span>' + new Date(m.createdAt).toLocaleString('es-CO') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-label">IP</span><span>' + escapeHtml(m.ip || '—') + '</span></div>' +
+      '<div class="detail-message">' + escapeHtml(m.message).replace(/\n/g, '<br>') + '</div>' +
+      '<div class="detail-actions">' +
+        '<a href="mailto:' + encodeURIComponent(m.email) + '?subject=' + encodeURIComponent('Re: ' + (m.subject || 'Tu mensaje a Kaes Store')) + '" class="link-action">↳ Responder por correo</a>' +
+      '</div>'
+
+    const toggleBtn = document.getElementById('toggle-read-btn')
+    toggleBtn.textContent = m.isRead ? 'Marcar como no leído' : 'Marcar como leído'
+
+    document.getElementById('message-modal').style.display = 'flex'
+
+    if (!m.isRead) {
+      try {
+        await api.admin.markMessageRead(id, true)
+        await loadMessages()
+      } catch (err) {
+        console.error(err)
+      }
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('message-modal').style.display = 'none'
+    activeMessageId = null
+  }
+
+  async function toggleRead() {
+    if (!activeMessageId) return
+    const m = messages.find(function (x) { return x.id === activeMessageId })
+    if (!m) return
+    try {
+      await api.admin.markMessageRead(activeMessageId, !m.isRead)
+      closeModal()
+      await loadMessages()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+
+  async function deleteMessage() {
+    if (!activeMessageId) return
+    if (!confirm('¿Eliminar este mensaje permanentemente?')) return
+    try {
+      await api.admin.deleteMessage(activeMessageId)
+      closeModal()
+      await loadMessages()
+    } catch (err) {
+      alert(err.message)
+    }
+  }
+</script>
+
+<style>
+  .admin-page { padding-top: calc(60px + 2rem); padding-bottom: 4rem; }
+
+  .admin-header { margin-bottom: 2rem; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; }
+
+  .admin-title { font-family: var(--font-serif); font-size: 2rem; font-weight: 600; color: var(--color-black); }
+  .admin-sub { font-size: 0.875rem; color: var(--color-gray-400); margin-top: 0.25rem; }
+
+  .stats-mini { display: flex; gap: 0.5rem; }
+
+  .unread-badge {
+    padding: 0.4rem 0.75rem;
+    background: #fef3c7;
+    color: #92400e;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .unread-badge.empty {
+    background: var(--color-gray-100);
+    color: var(--color-gray-500);
+  }
+
+  .filters { margin-top: 1.5rem; }
+
+  .filter-select {
+    padding: 0.625rem 1rem;
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    min-width: 180px;
+  }
+
+  .messages-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+  .message-card {
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .message-card:hover {
+    border-color: var(--color-black);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .message-card.unread {
+    border-left: 3px solid var(--color-black);
+    background: #fafafa;
+  }
+
+  .message-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .message-name { font-weight: 600; color: var(--color-black); }
+  .message-email { color: var(--color-gray-500); font-size: 0.8rem; }
+  .message-date { color: var(--color-gray-400); font-size: 0.75rem; margin-left: auto; }
+
+  .unread-dot { color: var(--color-black); font-size: 0.7rem; }
+
+  .message-subject {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--color-black);
+    margin-bottom: 0.25rem;
+  }
+
+  .message-preview {
+    font-size: 0.85rem;
+    color: var(--color-gray-600);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .loading, .empty, .error {
+    padding: 2rem;
+    text-align: center;
+    color: var(--color-gray-400);
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-200);
+    border-radius: 8px;
+  }
+
+  .error { color: #991b1b; }
+
+  .modal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal-content {
+    background: var(--color-white);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--color-gray-200);
+  }
+
+  .modal-header h2 { font-size: 1.25rem; font-weight: 600; }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+  }
+
+  .modal-body { padding: 1.5rem; }
+
+  .detail-row {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .detail-label {
+    min-width: 80px;
+    font-weight: 600;
+    color: var(--color-gray-500);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+  }
+
+  .detail-message {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: var(--color-gray-50);
+    border-radius: 8px;
+    border-left: 3px solid var(--color-black);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: var(--color-gray-800);
+    white-space: pre-wrap;
+  }
+
+  .detail-actions { margin-top: 1rem; }
+
+  .link-action {
+    color: var(--color-black);
+    text-decoration: underline;
+    font-size: 0.875rem;
+  }
+
+  .modal-actions {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--color-gray-200);
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+  }
+
+  .btn {
+    padding: 0.625rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+
+  .btn-primary { background: var(--color-black); color: var(--color-white); border-color: var(--color-black); }
+  .btn-primary:hover { background: var(--color-gray-800); }
+  .btn-secondary { background: var(--color-white); color: var(--color-black); border-color: var(--color-gray-200); }
+  .btn-secondary:hover { border-color: var(--color-black); }
+
+  .no-access {
+    min-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    color: var(--color-gray-400);
+  }
+</style>

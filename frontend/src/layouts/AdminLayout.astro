@@ -56,6 +56,34 @@ const currentPath = Astro.url.pathname
           </svg>
           <span>Descuentos</span>
         </a>
+
+        <a href="/admin/cupones" class={`nav-item ${currentPath.includes('/admin/cupones') ? 'active' : ''}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="20 12 20 22 4 22 4 12"/>
+            <rect x="2" y="7" width="20" height="5"/>
+            <line x1="12" y1="22" x2="12" y2="7"/>
+            <path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/>
+            <path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/>
+          </svg>
+          <span>Cupones</span>
+        </a>
+
+        <a href="/admin/usuarios" class={`nav-item ${currentPath.includes('/admin/usuarios') ? 'active' : ''}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+            <path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          <span>Usuarios</span>
+        </a>
+
+        <a href="/admin/mensajes" class={`nav-item ${currentPath.includes('/admin/mensajes') ? 'active' : ''}`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+          </svg>
+          <span>Mensajes</span>
+        </a>
       </nav>
 
       <div class="sidebar-footer">

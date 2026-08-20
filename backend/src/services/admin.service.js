@@ -62,6 +62,7 @@ export const updateUser = async (id, data) => {
       data: {
         ...(data.name && { name: data.name }),
         ...(data.phone !== undefined && { phone: data.phone }),
+        ...(data.isActive !== undefined && { isActive: Boolean(data.isActive) }),
       },
       select: {
         id: true, name: true, email: true, role: true, avatar: true, phone: true,
@@ -78,7 +79,30 @@ export const updateUser = async (id, data) => {
   }
 }
 
-export const deleteUser = async (id) => {
+export const deleteUser = async (id, { hard = false } = {}) => {
+  if (hard) {
+    try {
+      return await prisma.user.delete({
+        where: { id },
+        select: { id: true, name: true, email: true, role: true },
+      })
+    } catch (e) {
+      if (e.code === 'P2025') {
+        const err = new Error('Usuario no encontrado')
+        err.status = 404
+        throw err
+      }
+      if (e.code === 'P2003') {
+        const err = new Error(
+          'No se puede eliminar definitivamente: el usuario tiene órdenes, direcciones o registros asociados. Desactívelo en su lugar.',
+        )
+        err.status = 409
+        throw err
+      }
+      throw e
+    }
+  }
+
   try {
     return await prisma.user.update({
       where: { id },
@@ -190,6 +214,37 @@ export const createCoupon = async (data) => {
 
 export const getCoupons = async () => {
   return prisma.coupon.findMany({ orderBy: { createdAt: 'desc' } })
+}
+
+export const updateCoupon = async (id, data) => {
+  const updateData = {}
+  if (data.code)        updateData.code        = data.code.toUpperCase()
+  if (data.type)        updateData.type        = data.type
+  if (data.value !== undefined) updateData.value = parseFloat(data.value)
+  if (data.minPurchase !== undefined) updateData.minPurchase = data.minPurchase ? parseFloat(data.minPurchase) : null
+  if (data.maxUses !== undefined)     updateData.maxUses     = data.maxUses ? parseInt(data.maxUses) : null
+  if (data.startsAt !== undefined)    updateData.startsAt    = data.startsAt ? new Date(data.startsAt) : null
+  if (data.endsAt !== undefined)      updateData.endsAt      = data.endsAt ? new Date(data.endsAt) : null
+  if (data.isActive !== undefined)    updateData.isActive    = Boolean(data.isActive)
+
+  try {
+    return await prisma.coupon.update({
+      where: { id },
+      data: updateData,
+    })
+  } catch (e) {
+    if (e.code === 'P2025') {
+      const err = new Error('Cupón no encontrado')
+      err.status = 404
+      throw err
+    }
+    if (e.code === 'P2002') {
+      const err = new Error('Ya existe un cupón con ese código')
+      err.status = 409
+      throw err
+    }
+    throw e
+  }
 }
 
 export const getDiscounts = async () => {
