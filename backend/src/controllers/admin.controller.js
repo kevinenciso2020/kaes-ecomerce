@@ -36,6 +36,13 @@ export const updateUserRole = async (req, res, next) => {
   } catch (err) { next(err) }
 }
 
+export const resetUserPassword = async (req, res, next) => {
+  try {
+    const user = await AdminService.resetUserPassword(req.params.id, req.body.password)
+    res.json(user)
+  } catch (err) { next(err) }
+}
+
 export const getAllProducts = async (req, res, next) => {
   try {
     const result = await AdminService.getAllProducts(req.query)

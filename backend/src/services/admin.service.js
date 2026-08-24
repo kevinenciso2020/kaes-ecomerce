@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs'
 import { prisma } from '../config/prisma.js'
 
 export const getAllUsers = async ({ page = 1, limit = 20, search, role }) => {
@@ -126,6 +127,26 @@ export const updateUserRole = async (id, role) => {
     return await prisma.user.update({
       where: { id },
       data: { role },
+      select: {
+        id: true, name: true, email: true, role: true,
+      },
+    })
+  } catch (e) {
+    if (e.code === 'P2025') {
+      const err = new Error('Usuario no encontrado')
+      err.status = 404
+      throw err
+    }
+    throw e
+  }
+}
+
+export const resetUserPassword = async (id, password) => {
+  const hashedPassword = await bcrypt.hash(password, 12)
+  try {
+    return await prisma.user.update({
+      where: { id },
+      data: { password: hashedPassword },
       select: {
         id: true, name: true, email: true, role: true,
       },

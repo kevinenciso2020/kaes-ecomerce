@@ -16,7 +16,7 @@ router.get('/:slug',         getProductBySlug)
 // IMPORTANTE: multer debe ejecutarse ANTES del validator para que req.body tenga los datos
 router.post('/',             isAuth, isAdmin, productUpload.array('images', uploadConstants.MAX_FILES), createProductValidator, validate, createProduct)
 router.put('/:id',           isAuth, isAdmin, productUpload.array('images', uploadConstants.MAX_FILES), updateProductValidator, validate, updateProduct)
-router.delete('/:id',        deleteProductValidator, validate, isAuth, isAdmin, deleteProduct)
-router.post('/categories',    createCategoryValidator, validate, isAuth, isAdmin, createCategory)
+router.delete('/:id',        isAuth, isAdmin, deleteProductValidator, validate, deleteProduct)
+router.post('/categories',    isAuth, isAdmin, createCategoryValidator, validate, createCategory)
 
 export default router

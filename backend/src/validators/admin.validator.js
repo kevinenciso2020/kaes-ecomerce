@@ -177,6 +177,16 @@ export const updateUserRole = [
     .isIn(['CUSTOMER', 'ADMIN']).withMessage('Rol inválido')
 ]
 
+export const resetUserPassword = [
+  param('id')
+    .notEmpty().withMessage('El ID de usuario es requerido')
+    .isLength({ min: 1, max: 100 }).withMessage('ID inválido'),
+  body('password')
+    .trim()
+    .notEmpty().withMessage('La contraseña es requerida')
+    .isLength({ min: 6, max: 50 }).withMessage('La contraseña debe tener entre 6 y 50 caracteres')
+]
+
 export const getAllProducts = [
   query('page')
     .optional()

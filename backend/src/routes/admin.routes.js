@@ -5,7 +5,7 @@ import {
   getAllProducts, getAllOrders, updateOrderStatus, createDiscount,
   createCoupon, getCoupons, getDiscounts, getDashboardStats,
   getAllUsers, getUserById, updateUser, deleteUser, updateUserRole,
-  updateCoupon
+  resetUserPassword, updateCoupon
 } from '../controllers/admin.controller.js'
 import {
   listContactMessages, readContactMessage, removeContactMessage,
@@ -14,6 +14,7 @@ import {
   getAllUsers as getAllUsersValidator, getUserById as getUserByIdValidator,
   updateUser as updateUserValidator, deleteUser as deleteUserValidator,
   updateUserRole as updateUserRoleValidator,
+  resetUserPassword as resetUserPasswordValidator,
   updateCoupon as updateCouponValidator
 } from '../validators/admin.validator.js'
 import {
@@ -65,6 +66,7 @@ router.get('/users/:id',          validate(getUserByIdValidator), getUserById)
 router.put('/users/:id',          validate(updateUserValidator), updateUser)
 router.delete('/users/:id',       validate(deleteUserValidator), deleteUser)
 router.put('/users/:id/role',     validate(updateUserRoleValidator), canManageAdmins, updateUserRole)
+router.put('/users/:id/reset-password', validate(resetUserPasswordValidator), canManageAdmins, resetUserPassword)
 
 // Mensajes de contacto — gestión admin
 router.get('/messages',                          validate(getAllContactMessages), listContactMessages)

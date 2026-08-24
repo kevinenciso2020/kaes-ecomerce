@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import bcrypt from 'bcryptjs'
 import {
   register,
   login,
@@ -65,22 +64,6 @@ router.post('/make-admin', isAuth, isAdmin, canManageAdmins, async (req, res) =>
       select: { id: true, email: true, name: true, role: true }
     })
     res.json({ message: 'Usuario ahora es ADMIN', user })
-  } catch (e) {
-    res.status(404).json({ error: 'Usuario no encontrado' })
-  }
-})
-
-router.post('/reset-password', isAuth, isAdmin, canManageAdmins, async (req, res) => {
-  const { email, password } = req.body
-  if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' })
-  try {
-    const hashedPassword = await bcrypt.hash(password, 12)
-    const user = await prisma.user.update({
-      where: { email },
-      data: { password: hashedPassword },
-      select: { id: true, email: true, name: true, role: true }
-    })
-    res.json({ message: 'Contraseña actualizada', user })
   } catch (e) {
     res.status(404).json({ error: 'Usuario no encontrado' })
   }
