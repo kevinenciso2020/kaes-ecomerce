@@ -18,8 +18,12 @@ export const onRequest = async (context, next) => {
 
   const JWT_SECRET = process.env.JWT_SECRET
 
+  // Fail-closed: si falta la variable de entorno no dejamos pasar,
+  // bloqueamos el acceso a /admin. Antes esto hacía `next()` y dejaba
+  // pasar a cualquiera sin login si la env var no estaba seteada.
   if (!JWT_SECRET) {
-    return next()
+    console.error('middleware.admin: JWT_SECRET no está definida — bloqueando acceso a /admin')
+    return context.redirect('/auth/login')
   }
 
   const token = request.headers.get('cookie')?.match(/accessToken=([^;]+)/)?.[1]
