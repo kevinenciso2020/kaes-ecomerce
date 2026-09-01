@@ -39,8 +39,8 @@ vi.mock('../../src/config/mercadopago.js', () => ({
 }))
 
 vi.mock('mercadopago', () => ({
-  Preference: vi.fn().mockImplementation(() => ({ create: mocks.preferenceCreate })),
-  Payment: vi.fn().mockImplementation(() => ({ get: mocks.paymentGet })),
+  Preference: vi.fn().mockImplementation(function () { return { create: mocks.preferenceCreate } }),
+  Payment: vi.fn().mockImplementation(function () { return { get: mocks.paymentGet } }),
 }))
 
 vi.mock('../../src/config/wompi.js', () => ({

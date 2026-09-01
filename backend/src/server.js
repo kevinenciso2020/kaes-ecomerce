@@ -2,8 +2,15 @@ import 'dotenv/config'
 import app from './app.js'
 import { prisma } from './config/prisma.js'
 import { logger } from './config/logger.js'
+import { initSentry } from './config/sentry.js'
+
+const sentryEnabled = initSentry()
 
 const PORT = Number.parseInt(process.env.PORT, 10) || 8000
+
+const server = app.listen(PORT, () => {
+  logger.info({ port: PORT, sentry: sentryEnabled }, 'server.started')
+})
 
 const server = app.listen(PORT, () => {
   logger.info({ port: PORT }, 'server.started')

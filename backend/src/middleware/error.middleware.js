@@ -1,6 +1,7 @@
 import multer from 'multer'
 import { uploadConstants } from './upload.middleware.js'
 import { logger } from '../config/logger.js'
+import { captureError } from '../config/sentry.js'
 
 const MULTER_MESSAGES = {
   LIMIT_FILE_SIZE: () => `El archivo excede el tamaño máximo permitido de 5 MB.`,
@@ -73,6 +74,7 @@ export const errorHandler = (err, req, res, next) => {
 
   if (isServerError) {
     log.error({ ...ctx, status }, 'request.failed')
+    captureError(err, { reqId: req.id, method: req.method, path: req.path, status })
   } else {
     log.warn({ ...ctx, status }, 'request.client_error')
   }

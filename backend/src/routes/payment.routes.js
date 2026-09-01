@@ -129,7 +129,17 @@ router.post("/webhook", async (req, res) => {
       .update(manifest)
       .digest("hex");
 
-    if (expectedSignature !== v1) {
+    // timingSafeEqual requiere buffers de igual longitud — si difieren, rechazar
+    // sin throw. También eliminar el bloque "basic length check fallback" muerto.
+    const expectedBuffer = Buffer.from(expectedSignature, "utf8")
+    const receivedBuffer = Buffer.from(v1, "utf8")
+
+    if (expectedBuffer.length !== receivedBuffer.length) {
+      req.log?.warn({ provider: 'mercadopago', reason: 'invalid_signature_length' }, 'payment.webhook.signature_invalid');
+      return res.status(401).json({ error: "Firma inválida" });
+    }
+
+    if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
       req.log?.warn({ provider: 'mercadopago', reason: 'invalid_signature' }, 'payment.webhook.signature_invalid');
       return res.status(401).json({ error: "Firma inválida" });
     }
