@@ -20,6 +20,7 @@ import adminRoutes    from './routes/admin.routes.js'
 import cartRoutes     from './routes/cart.routes.js'
 import couponRoutes   from './routes/coupon.routes.js'
 import contactRoutes  from './routes/contact.routes.js'
+import catalogRoutes  from './routes/catalog.routes.js'
 
 const app = express()
 
@@ -115,6 +116,7 @@ app.use('/api/v1/admin',    adminRoutes)
 app.use('/api/v1/cart',     cartRoutes)
 app.use('/api/v1/coupons',  couponRoutes)
 app.use('/api/v1/contact',  contactRoutes)
+app.use('/api/v1',          catalogRoutes)   // /colors, /sizes — público
 
 // Health checks — verificar que el servidor y la DB están vivos con retry logic
 app.get('/api/health', async (req, res) => {

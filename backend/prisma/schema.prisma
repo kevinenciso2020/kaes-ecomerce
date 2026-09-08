@@ -1,7 +1,7 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
-  engineType = "library"
+  engineType    = "library"
 }
 
 datasource db {
@@ -24,13 +24,14 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  orders                    Order[]
-  cartItems                 CartItem[]
-  addresses                 Address[]
-  refreshTokens             RefreshToken[]
-  emailVerificationTokens   EmailVerificationToken[]
-  passwordResetTokens       PasswordResetToken[]
-  contactMessages           ContactMessage[]
+  orders                  Order[]
+  cartItems               CartItem[]
+  addresses               Address[]
+  refreshTokens           RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  contactMessages         ContactMessage[]
+  orderStatusChanges      OrderStatusLog[]
 
   @@map("users")
 }
@@ -42,7 +43,7 @@ model RefreshToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
@@ -55,7 +56,7 @@ model EmailVerificationToken {
   usedAt    DateTime?
   createdAt DateTime  @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -71,7 +72,7 @@ model PasswordResetToken {
   attempts  Int       @default(0)
   createdAt DateTime  @default(now())
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt])
@@ -79,66 +80,118 @@ model PasswordResetToken {
 }
 
 model Category {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  slug        String    @unique
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
   description String?
   image       String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 
-  products    Product[]
+  products Product[]
 
   @@map("categories")
 }
 
 model Product {
-  id          String         @id @default(cuid())
-  name        String
-  slug        String         @unique
-  description String
-  price       Decimal        @db.Decimal(10, 2)
-  stock       Int            @default(0)
-  isActive    Boolean        @default(true)
-  isFeatured  Boolean        @default(false)
-  categoryId  String
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  description       String
+  price             Decimal  @db.Decimal(10, 2)
+  stock             Int      @default(0)
+  lowStockThreshold Int      @default(5)
+  isActive          Boolean  @default(true)
+  isFeatured        Boolean  @default(false)
+  categoryId        String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  category    Category       @relation(fields: [categoryId], references: [id])
-  images      ProductImage[]
-  variants    ProductVariant[]
-  orderItems  OrderItem[]
-  cartItems   CartItem[]
-  discounts   ProductDiscount[]
+  category       Category               @relation(fields: [categoryId], references: [id])
+  images         ProductImage[]
+  variants       ProductVariant[]
+  orderItems     OrderItem[]
+  cartItems      CartItem[]
+  discounts      ProductDiscount[]
+  availableSizes ProductAvailableSize[]
 
   @@map("products")
 }
 
 model ProductImage {
-  id         String   @id @default(cuid())
-  url        String
-  publicId   String
-  alt        String?
-  isMain     Boolean  @default(false)
-  order      Int      @default(0)
-  productId  String
+  id        String  @id @default(cuid())
+  url       String
+  publicId  String
+  alt       String?
+  isMain    Boolean @default(false)
+  order     Int     @default(0)
+  productId String
 
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  @@index([productId])
   @@map("product_images")
 }
 
 model ProductVariant {
-  id        String   @id @default(cuid())
-  productId String
-  size      String?
-  color     String?
-  stock     Int      @default(0)
-  price     Decimal? @db.Decimal(10, 2)
+  id                String   @id @default(cuid())
+  productId         String
+  size              String?
+  color             String?
+  colorHex          String?
+  sku               String?  @unique
+  stock             Int      @default(0)
+  lowStockThreshold Int?
+  price             Decimal? @db.Decimal(10, 2)
 
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
 
+  @@unique([productId, size, color])
+  @@index([productId])
+  @@index([stock])
   @@map("product_variants")
+}
+
+model Color {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  hex       String
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@map("colors")
+}
+
+enum SizeScale {
+  LETTER
+  NUMERIC
+  SHOE
+}
+
+model Size {
+  id        String    @id @default(cuid())
+  value     String    @unique
+  scale     SizeScale
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  products ProductAvailableSize[]
+
+  @@index([scale, order])
+  @@map("sizes")
+}
+
+model ProductAvailableSize {
+  productId String
+  sizeId    String
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size    Size    @relation(fields: [sizeId], references: [id], onDelete: Cascade)
+
+  @@id([productId, sizeId])
+  @@index([sizeId])
+  @@map("product_available_sizes")
 }
 
 model CartItem {
@@ -150,8 +203,8 @@ model CartItem {
   color     String?
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId, size, color])
   @@map("cart_items")
@@ -173,27 +226,53 @@ model Order {
   updatedAt         DateTime    @updatedAt
   shippingAddressId String?
 
-  user              User        @relation(fields: [userId], references: [id])
-  items             OrderItem[]
-  payment           Payment?
-  shippingAddress   Address?    @relation(fields: [shippingAddressId], references: [id])
+  user            User             @relation(fields: [userId], references: [id])
+  items           OrderItem[]
+  payment         Payment?
+  shippingAddress Address?         @relation(fields: [shippingAddressId], references: [id])
+  statusLogs      OrderStatusLog[]
 
+  @@index([status])
+  @@index([userId])
+  @@index([createdAt])
   @@map("orders")
 }
 
 model OrderItem {
-  id        String  @id @default(cuid())
-  orderId   String
-  productId String
-  quantity  Int
-  price     Decimal @db.Decimal(10, 2)
-  size      String?
-  color     String?
+  id              String  @id @default(cuid())
+  orderId         String
+  productId       String
+  variantId       String?
+  quantity        Int
+  price           Decimal @db.Decimal(10, 2)
+  size            String?
+  color           String?
+  variantSnapshot Json?
 
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id])
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
 
+  @@index([orderId])
+  @@index([productId])
+  @@index([variantId])
   @@map("order_items")
+}
+
+model OrderStatusLog {
+  id          String       @id @default(cuid())
+  orderId     String
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  changedById String?
+  note        String?
+  createdAt   DateTime     @default(now())
+
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  changedBy User? @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_logs")
 }
 
 model Payment {
@@ -207,22 +286,22 @@ model Payment {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
-  order             Order           @relation(fields: [orderId], references: [id])
+  order Order @relation(fields: [orderId], references: [id])
 
   @@map("payments")
 }
 
 model Discount {
-  id        String            @id @default(cuid())
+  id        String       @id @default(cuid())
   name      String
   type      DiscountType
-  value     Decimal           @db.Decimal(10, 2)
-  isActive  Boolean           @default(true)
+  value     Decimal      @db.Decimal(10, 2)
+  isActive  Boolean      @default(true)
   startsAt  DateTime?
   endsAt    DateTime?
-  createdAt DateTime          @default(now())
+  createdAt DateTime     @default(now())
 
-  products  ProductDiscount[]
+  products ProductDiscount[]
 
   @@map("discounts")
 }
@@ -231,8 +310,8 @@ model ProductDiscount {
   productId  String
   discountId String
 
-  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  discount   Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  discount Discount @relation(fields: [discountId], references: [id], onDelete: Cascade)
 
   @@id([productId, discountId])
   @@map("product_discounts")
@@ -268,8 +347,8 @@ model Address {
   phone        String?
   isDefault    Boolean @default(false)
 
-  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  orders       Order[]
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
 
   @@map("addresses")
 }
@@ -286,7 +365,7 @@ model ContactMessage {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([isRead])

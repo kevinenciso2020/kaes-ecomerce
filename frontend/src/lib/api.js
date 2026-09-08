@@ -149,8 +149,31 @@ export const api = {
   admin: {
     stats:          ()            => request('/admin/stats'),
     products:      (params = {}) => request(`/admin/products?${new URLSearchParams(params)}`),
+    productDetail:  (id)          => request(`/admin/products/${id}`),
+    createProduct:  (formData)    => request('/admin/products', { method: 'POST',  body: formData, headers: {} }),
+    updateProduct:  (id, formData)=> request(`/admin/products/${id}`, { method: 'PUT', body: formData, headers: {} }),
+    deleteProduct:  (id)          => request(`/admin/products/${id}`, { method: 'DELETE' }),
+    deleteProductImage: (productId, imageId) => request(`/admin/products/${productId}/images/${imageId}`, { method: 'DELETE' }),
+    setMainImage:   (productId, imageId) => request(`/admin/products/${productId}/images/${imageId}/main`, { method: 'PATCH' }),
+    upsertVariants: (productId, variants) => request(`/admin/products/${productId}/variants`, { method: 'PATCH', body: JSON.stringify({ variants }) }),
+    lowStock:       (params = {}) => request(`/admin/products/low-stock?${new URLSearchParams(params)}`),
+
     orders:         (params = {}) => request(`/admin/orders?${new URLSearchParams(params)}`),
-    updateOrder:    (id, status)  => request(`/admin/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+    orderDetail:    (id)          => request(`/admin/orders/${id}`),
+    updateOrder:    (id, status, note) => request(`/admin/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
+
+    dashboard: {
+      overview:     ()              => request('/admin/dashboard/overview'),
+      sales:        (params = {})   => request(`/admin/dashboard/sales?${new URLSearchParams(params)}`),
+      topProducts:  (params = {})   => request(`/admin/dashboard/top-products?${new URLSearchParams(params)}`),
+      byCategory:   (params = {})   => request(`/admin/dashboard/by-category?${new URLSearchParams(params)}`),
+      recentOrders: (params = {})   => request(`/admin/dashboard/recent-orders?${new URLSearchParams(params)}`),
+      lowStock:     (params = {})   => request(`/admin/dashboard/low-stock?${new URLSearchParams(params)}`),
+    },
+
+    colors: ()         => request('/admin/colors'),
+    sizes:  (scale)    => request(`/admin/sizes${scale ? `?scale=${scale}` : ''}`),
+
     discounts:      ()            => request('/admin/discounts'),
     createDiscount: (data)        => request('/admin/discounts', { method: 'POST', body: JSON.stringify(data) }),
     coupons:        ()            => request('/admin/coupons'),
@@ -177,6 +200,13 @@ export const api = {
   },
   contact: {
     send: (data) => request('/contact', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  // Catálogo canónico — público (sin auth), usado por la tienda.
+  // Equivale a `api.admin.colors()` / `api.admin.sizes()` pero accesible
+  // desde páginas no-admin (productos/index.astro renderiza en SSR).
+  catalog: {
+    colors: ()         => request('/colors'),
+    sizes:  (scale)    => request(`/sizes${scale ? `?scale=${scale}` : ''}`),
   },
 }
 

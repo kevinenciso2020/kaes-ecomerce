@@ -12,10 +12,6 @@ const server = app.listen(PORT, () => {
   logger.info({ port: PORT, sentry: sentryEnabled }, 'server.started')
 })
 
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, 'server.started')
-})
-
 const shutdown = (signal) => {
   logger.warn({ signal }, 'server.shutdown_initiated')
   server.close(async () => {

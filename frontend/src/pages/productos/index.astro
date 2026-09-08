@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js'
 
 let products = []
 let categories = []
+let sizes = []
 let pagination = {}
 
 const { searchParams } = Astro.url
@@ -23,13 +24,15 @@ if (maxPrice) queryParams.maxPrice = maxPrice
 if (size)     queryParams.size     = size
 
 try {
-  const [productsData, categoriesData] = await Promise.all([
+  const [productsData, categoriesData, sizesData] = await Promise.all([
     api.products.list(queryParams),
-    api.categories.list()
+    api.categories.list(),
+    api.catalog.sizes('LETTER'),  // Solo tallas LETTER para el filtro principal de ropa
   ])
   products   = Array.isArray(productsData.products) ? productsData.products : []
   pagination = productsData.pagination || {}
   categories = Array.isArray(categoriesData) ? categoriesData : []
+  sizes      = Array.isArray(sizesData) ? sizesData : []
 } catch (e) {
   console.error('Error:', e)
 }
@@ -87,12 +90,12 @@ const activeFiltersCount = [category, search, minPrice, maxPrice, size].filter(B
           <div class="filter-group">
             <span class="filter-label">Talla</span>
             <div class="size-options">
-              {['XS','S','M','L','XL','XXL'].map((s) => {
-                const isActive = size === s
-                const url = `/productos?size=${s}`
+              {sizes.map((s) => {
+                const isActive = size === s.value
+                const url = `/productos?size=${encodeURIComponent(s.value)}`
                 return (
                   <a href={url} class={isActive ? 'size-btn active' : 'size-btn'}>
-                    {s}
+                    {s.value}
                   </a>
                 )
               })}
