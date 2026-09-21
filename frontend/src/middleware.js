@@ -42,7 +42,9 @@ export const onRequest = async (context, next) => {
         ...(process.env.SSR_API_KEY ? { 'x-ssr-key': process.env.SSR_API_KEY } : {}),
       },
     })
-    if (!res.ok) return context.redirect(loginUrl)
+    // 401 puede ser sólo el access token vencido (15 min) con refresh válido:
+    // fuera de "strict" se deja pasar para que el cliente refresque la sesión.
+    if (!res.ok) return strict ? context.redirect(loginUrl) : next()
     const { user } = await res.json()
     if (!isAdminRole(user?.role)) return context.redirect('/')
 

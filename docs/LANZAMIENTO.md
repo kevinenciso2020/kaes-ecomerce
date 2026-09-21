@@ -54,10 +54,17 @@ Puedes **borrar** `JWT_SECRET` de Vercel: el middleware ya no lo usa.
 ## 4. Dominio propio (muy recomendado)
 
 Con `*.vercel.app` + `*.railway.app` las cookies de sesión son de terceros y **Safari/iPhone las bloquea**.
-- [ ] Compra el dominio (p. ej. `kaes.co`). Vercel: `kaes.co` y `www`. Railway: `api.kaes.co`.
-- [ ] Railway: `FRONTEND_URL=https://kaes.co`, `BACKEND_URL=https://api.kaes.co`, `ALLOWED_ORIGINS=https://www.kaes.co`, `COOKIE_DOMAIN=.kaes.co`.
-- [ ] Vercel: `PUBLIC_API_URL=https://api.kaes.co/api/v1`, `ADMIN_SSR_GUARD=strict`.
-- [ ] Actualiza las URLs de webhook en Wompi/MercadoPago.
+Sigue este orden:
+
+- [ ] Compra el dominio (p. ej. `kaes.co`).
+- [ ] Vercel → Settings → Domains: agrega `kaes.co` y `www.kaes.co` (deja `www` redirigiendo a `kaes.co`). Crea en tu proveedor DNS los registros que Vercel indique (normalmente `A @ → 76.76.21.21` y `CNAME www → cname.vercel-dns.com`).
+- [ ] Railway (servicio del API, proyecto `soothing-comfort`) → Settings → Networking → Custom Domain: `api.kaes.co`. Crea el `CNAME api → <valor que muestra Railway>` y el `TXT` de verificación si lo pide.
+- [ ] Espera a que ambos muestren el certificado SSL como activo.
+- [ ] Railway: `FRONTEND_URL=https://kaes.co`, `BACKEND_URL=https://api.kaes.co`, `ALLOWED_ORIGINS=https://www.kaes.co`, `COOKIE_DOMAIN=.kaes.co`. Redeploy.
+- [ ] Vercel: `PUBLIC_API_URL=https://api.kaes.co/api/v1`, `ADMIN_SSR_GUARD=strict`. `JWT_SECRET` ya no se usa en Vercel: bórrala. Redeploy (las `PUBLIC_*` se fijan en el build).
+- [ ] Actualiza las URLs de webhook en Wompi/MercadoPago a `https://api.kaes.co/...`.
+- [ ] Verifica en un iPhone (Safari): iniciar sesión, recargar, agregar al carrito y entrar a `/admin`. Deja pasar 15 min y vuelve a `/admin`: el login debe reanudar la sesión solo, sin pedir la contraseña.
+- [ ] Cierra sesión y confirma que `/admin` vuelve a pedir login.
 
 ## 5. Región y rendimiento
 
