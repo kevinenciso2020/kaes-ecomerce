@@ -91,7 +91,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
       const data = await api.auth.login({ email, password })
       setAuth(data.user)
 
-      const redirectUrl = data.user.role === 'ADMIN' ? '/admin' : '/perfil'
+      const redirectUrl = (data.user.role === 'ADMIN' || data.user.role === 'SUPER_ADMIN') ? '/admin' : '/perfil'
       window.location.href = redirectUrl
     } catch (err) {
       showError(err.message || 'Error al iniciar sesión')

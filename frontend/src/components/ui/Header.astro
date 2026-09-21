@@ -95,8 +95,8 @@ import Icon from './Icon.astro'
     const el = document.getElementById('auth-section-desktop')
     if (!el) return
     if (user) {
-      const profileLink = user.role === 'ADMIN' ? '/admin' : '/perfil'
-      const displayName = user.role === 'ADMIN' ? 'Admin' : (user.name?.split(' ')[0] || 'Perfil')
+      const profileLink = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? '/admin' : '/perfil'
+      const displayName = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? 'Admin' : (user.name?.split(' ')[0] || 'Perfil')
       el.innerHTML = `
         <a href="${profileLink}" class="nav-link">${displayName}</a>
         <button id="header-logout-desktop" class="icon-btn" type="button" aria-label="Cerrar sesión">
@@ -115,8 +115,8 @@ import Icon from './Icon.astro'
     const el = document.getElementById('auth-section-mobile')
     if (!el) return
     if (user) {
-      const profileLink = user.role === 'ADMIN' ? '/admin' : '/perfil'
-      const displayName = user.role === 'ADMIN' ? 'Admin' : (user.name?.split(' ')[0] || 'Perfil')
+      const profileLink = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? '/admin' : '/perfil'
+      const displayName = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? 'Admin' : (user.name?.split(' ')[0] || 'Perfil')
       el.innerHTML = `
         <a href="${profileLink}" class="drawer-link drawer-link-strong">${displayName}</a>
         <button id="header-logout-mobile" class="drawer-link drawer-link-action" type="button">Cerrar sesión</button>

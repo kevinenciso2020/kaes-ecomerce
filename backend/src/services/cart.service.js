@@ -17,7 +17,10 @@ export const getCart = async (userId) => {
   return { items, total: total.toFixed(2), count: items.length }
 }
 
+const MAX_QTY = 10
+
 export const addToCart = async (userId, { productId, quantity = 1, size, color }) => {
+  quantity = Math.min(MAX_QTY, Math.max(1, Number.parseInt(quantity, 10) || 1))
   const product = await prisma.product.findFirst({ where: { id: productId, isActive: true } })
   if (!product) {
     const err = new Error('Producto no encontrado')
@@ -33,16 +36,17 @@ export const addToCart = async (userId, { productId, quantity = 1, size, color }
   if (existing) {
     return prisma.cartItem.update({
       where: { id: existing.id },
-      data:  { quantity: existing.quantity + quantity }
+      data:  { quantity: Math.min(MAX_QTY, existing.quantity + quantity) }
     })
   }
 
   return prisma.cartItem.create({
-    data: { userId, productId, quantity, size, color }
+    data: { userId, productId, quantity, size: size || null, color: color || null }
   })
 }
 
 export const updateCartItem = async (userId, itemId, quantity) => {
+  quantity = Math.min(MAX_QTY, Number.parseInt(quantity, 10) || 0)
   const item = await prisma.cartItem.findFirst({ where: { id: itemId, userId } })
   if (!item) {
     const err = new Error('Item no encontrado en el carrito')

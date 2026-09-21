@@ -16,7 +16,7 @@ export const getUserById = async (req, res, next) => {
 
 export const updateUser = async (req, res, next) => {
   try {
-    const user = await AdminService.updateUser(req.params.id, req.body)
+    const user = await AdminService.updateUser(req.params.id, req.body, req.user)
     res.json(user)
   } catch (err) { next(err) }
 }
@@ -24,14 +24,14 @@ export const updateUser = async (req, res, next) => {
 export const deleteUser = async (req, res, next) => {
   try {
     const hard = req.query.hard === 'true' || req.body?.hard === true
-    const user = await AdminService.deleteUser(req.params.id, { hard })
+    const user = await AdminService.deleteUser(req.params.id, { hard }, req.user)
     res.json({ ...user, hardDelete: hard })
   } catch (err) { next(err) }
 }
 
 export const updateUserRole = async (req, res, next) => {
   try {
-    const user = await AdminService.updateUserRole(req.params.id, req.body.role)
+    const user = await AdminService.updateUserRole(req.params.id, req.body.role, req.user)
     res.json(user)
   } catch (err) { next(err) }
 }
@@ -40,27 +40,6 @@ export const resetUserPassword = async (req, res, next) => {
   try {
     const user = await AdminService.resetUserPassword(req.params.id, req.body.password)
     res.json(user)
-  } catch (err) { next(err) }
-}
-
-export const getAllProducts = async (req, res, next) => {
-  try {
-    const result = await AdminService.getAllProducts(req.query)
-    res.json(result)
-  } catch (err) { next(err) }
-}
-
-export const getAllOrders = async (req, res, next) => {
-  try {
-    const result = await AdminService.getAllOrders(req.query)
-    res.json(result)
-  } catch (err) { next(err) }
-}
-
-export const updateOrderStatus = async (req, res, next) => {
-  try {
-    const order = await AdminService.updateOrderStatus(req.params.id, req.body.status)
-    res.json(order)
   } catch (err) { next(err) }
 }
 

@@ -11,6 +11,23 @@ const STATUS_LABELS = {
   REFUNDED:   { label: 'Reembolsado', cls: 'refunded'   },
 }
 
+// Debe coincidir con ALLOWED_TRANSITIONS del backend (admin-orders.service.js)
+const ALLOWED_TRANSITIONS = {
+  PENDING:    ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED:  ['PROCESSING', 'SHIPPED', 'CANCELLED', 'REFUNDED'],
+  PROCESSING: ['SHIPPED', 'CANCELLED', 'REFUNDED'],
+  SHIPPED:    ['DELIVERED', 'REFUNDED'],
+  DELIVERED:  ['REFUNDED'],
+  CANCELLED:  [],
+  REFUNDED:   [],
+}
+
+const TRANSITION_HINTS = {
+  CONFIRMED: 'Confirmar manualmente (p. ej. pago por transferencia): descuenta el stock.',
+  CANCELLED: 'Si la orden estaba pagada, el stock se devuelve. El reembolso del dinero se hace en el panel de Wompi/MercadoPago.',
+  REFUNDED: 'Marca la orden como reembolsada y devuelve el stock. Haz el reembolso en el panel de la pasarela.',
+}
+
 const PAYMENT_LABELS = {
   PENDING:   { label: 'Pendiente', cls: 'pending' },
   COMPLETED: { label: 'Completado', cls: 'completed' },
@@ -18,8 +35,9 @@ const PAYMENT_LABELS = {
   REFUNDED:  { label: 'Reembolsado', cls: 'refunded' },
 }
 
-export default function OrderDetailModal({ order, onClose, onStatusChange, showToast }) {
-  const [newStatus, setNewStatus] = useState(order.status)
+export default function OrderDetailModal({ order, onClose, onStatusChange, onResolveReview, showToast }) {
+  const allowed = ALLOWED_TRANSITIONS[order.status] || []
+  const [newStatus, setNewStatus] = useState(allowed[0] || order.status)
   const [note, setNote]           = useState('')
   const [busy, setBusy]           = useState(false)
 
@@ -56,6 +74,22 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, showT
         </div>
 
         <div className="order-detail-body">
+          {order.needsReview && (
+            <section className="review-alert" role="alert">
+              <strong>⚠️ Requiere revisión</strong>
+              <p>{order.reviewNote || 'Esta orden necesita revisión manual.'}</p>
+              {onResolveReview && (
+                <button type="button" className="btn btn-secondary" disabled={busy} onClick={async () => {
+                  const resolution = prompt('¿Cómo se resolvió? (queda en el historial)')
+                  if (resolution === null) return
+                  setBusy(true)
+                  try { await onResolveReview(order.id, resolution) } catch (err) {
+                    showToast?.({ type: 'error', message: err.message })
+                  } finally { setBusy(false) }
+                }}>Marcar como resuelta</button>
+              )}
+            </section>
+          )}
           <section className="detail-section">
             <div className="detail-grid">
               <div>
@@ -159,10 +193,14 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, showT
 
           <section className="detail-section">
             <h3>Cambiar estado</h3>
+            {allowed.length === 0 ? (
+              <p className="muted">Esta orden está {sInfo.label.toLowerCase()} y no admite más cambios de estado.</p>
+            ) : (
+            <>
             <div className="status-control">
               <select value={newStatus} onChange={(e) => setNewStatus(e.target.value)} disabled={busy}>
-                {Object.entries(STATUS_LABELS).map(([key, info]) => (
-                  <option key={key} value={key}>{info.label}</option>
+                {allowed.map((key) => (
+                  <option key={key} value={key}>{STATUS_LABELS[key]?.label || key}</option>
                 ))}
               </select>
               <input
@@ -182,6 +220,9 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, showT
                 {busy ? 'Guardando…' : 'Actualizar estado'}
               </button>
             </div>
+            {TRANSITION_HINTS[newStatus] && <p className="muted hint">{TRANSITION_HINTS[newStatus]}</p>}
+            </>
+            )}
           </section>
 
           <section className="detail-section">
@@ -193,6 +234,11 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, showT
 
       <style>{`
         .modal-content.large { max-width: 820px; }
+        .review-alert { background: #fff7ed; border: 1px solid #fb923c; color: #9a3412; border-radius: 8px; padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+        .review-alert p { margin: 0; font-size: 0.85rem; }
+        .review-alert button { align-self: flex-start; }
+        .muted { color: #777; font-size: 0.8rem; }
+        .hint { margin-top: 0.5rem; }
         .modal-header h2 { display: flex; align-items: center; gap: 0.75rem; font-size: 1.1rem; margin: 0; }
         .status-badge.large { font-size: 0.75rem; padding: 0.25rem 0.7rem; }
         .order-detail-body { padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; max-height: 75vh; overflow-y: auto; }

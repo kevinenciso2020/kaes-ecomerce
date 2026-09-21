@@ -20,28 +20,24 @@ beforeEach(() => {
 })
 
 describe('GET /api/health', () => {
-  it('returns 200 when DB ping succeeds on first try', async () => {
+  it('returns 200 when the DB answers', async () => {
     prisma.$queryRaw.mockResolvedValueOnce(1)
     const res = await request(app).get('/api/health')
     expect(res.status).toBe(200)
-    expect(res.body).toMatchObject({ status: 'ok', db: 'connected', env: 'test' })
-  }, 10_000)
+    expect(res.body).toEqual({ status: 'ok', db: 'connected' })
+  })
 
-  it('returns 503 after 3 failed attempts', async () => {
-    prisma.$queryRaw.mockRejectedValue(new Error('connection refused'))
+  it('returns 503 without leaking the internal error', async () => {
+    prisma.$queryRaw.mockRejectedValue(new Error('connection refused at 10.0.0.3'))
     const res = await request(app).get('/api/health')
     expect(res.status).toBe(503)
-    expect(res.body.db).toBe('disconnected')
-    expect(res.body.attempts).toBe(3)
-  }, 10_000)
+    expect(res.body).toEqual({ status: 'error', db: 'disconnected' })
+    expect(JSON.stringify(res.body)).not.toContain('10.0.0.3')
+  })
 
-  it('retries before succeeding', async () => {
-    prisma.$queryRaw
-      .mockRejectedValueOnce(new Error('fail 1'))
-      .mockRejectedValueOnce(new Error('fail 2'))
-      .mockResolvedValueOnce(1)
-    const res = await request(app).get('/api/health')
-    expect(res.status).toBe(200)
-    expect(prisma.$queryRaw).toHaveBeenCalledTimes(3)
-  }, 10_000)
+  it('unknown /api routes return JSON 404', async () => {
+    const res = await request(app).get('/api/payments/webhook')
+    expect(res.status).toBe(404)
+    expect(res.body.error).toBeDefined()
+  })
 })

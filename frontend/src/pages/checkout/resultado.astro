@@ -1,0 +1,189 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+---
+
+<ShopLayout title="Estado de tu pago">
+  <div class="payment-result-page container">
+    <div class="result-card" id="result-card" data-state="checking" aria-live="polite">
+      <div class="result-icon" id="result-icon" aria-hidden="true">
+        <span class="spinner"></span>
+      </div>
+      <h1 class="result-title" id="result-title">Verificando tu pago…</h1>
+      <p class="result-message" id="result-message">
+        Estamos confirmando el pago con la pasarela. No cierres esta página, tarda unos segundos.
+      </p>
+      <div id="order-info" class="order-info"></div>
+      <div class="result-actions" id="result-actions"></div>
+    </div>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, ApiError, bootstrapAuth } from '../../lib/api.js'
+  import { resetLocalCart } from '../../stores/cart.store.js'
+
+  const params = new URLSearchParams(window.location.search)
+  // Wompi agrega ?id=<transacción>; MercadoPago agrega payment_id / external_reference.
+  const orderId = params.get('orderId') || params.get('external_reference')
+  const provider = params.get('provider') || (params.get('payment_id') || params.get('collection_id') ? 'mercadopago' : 'wompi')
+  const transactionId = params.get('id')
+  const paymentId = params.get('payment_id') || params.get('collection_id')
+
+  const $ = (id) => document.getElementById(id)
+  const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
+
+  const MAX_WAIT_MS = 2 * 60 * 1000
+  const started = Date.now()
+
+  const STATES = {
+    approved: {
+      icon: '✓',
+      title: '¡Pago aprobado!',
+      message: 'Tu pedido quedó confirmado. Te enviamos el detalle por correo electrónico.',
+    },
+    pending: {
+      icon: '⏳',
+      title: 'Pago en proceso',
+      message: 'La pasarela aún no confirma tu pago (algunos medios como PSE o efectivo tardan). Tu pedido está guardado: te avisaremos por correo apenas se confirme. No necesitas pagar de nuevo.',
+    },
+    declined: {
+      icon: '✕',
+      title: 'El pago no se completó',
+      message: 'Tu pago fue rechazado o cancelado. No se hizo ningún cobro. Puedes intentarlo de nuevo con el mismo pedido.',
+    },
+    review: {
+      icon: '!',
+      title: 'Recibimos tu pago',
+      message: 'Tu pago llegó, pero necesitamos revisar tu pedido manualmente (por ejemplo, un producto se agotó mientras pagabas). Te contactaremos en menos de 24 horas por correo o WhatsApp.',
+    },
+    error: {
+      icon: '?',
+      title: 'No pudimos verificar el pago',
+      message: 'Hubo un problema consultando el estado. Si ya pagaste, NO pagues de nuevo: revisa el estado en "Mis pedidos" en unos minutos o escríbenos.',
+    },
+  }
+
+  const setState = (state, order) => {
+    const cfg = STATES[state]
+    $('result-card').dataset.state = state
+    $('result-icon').textContent = cfg.icon
+    $('result-title').textContent = cfg.title
+    $('result-message').textContent = cfg.message
+
+    if (order) {
+      $('order-info').innerHTML = `
+        <p class="order-id">Pedido #${String(order.id).slice(-8).toUpperCase()}</p>
+        <p class="order-total">Total: ${money(order.total)}</p>`
+    }
+
+    const actions = []
+    if (orderId) actions.push(`<a href="/perfil/ordenes/${encodeURIComponent(orderId)}" class="btn btn-primary">Ver mi pedido</a>`)
+    if (state === 'declined' && orderId) actions.push(`<a href="/perfil/ordenes/${encodeURIComponent(orderId)}?pagar=1" class="btn btn-outline">Reintentar pago</a>`)
+    if (state === 'approved') actions.push('<a href="/productos" class="btn btn-outline">Seguir comprando</a>')
+    if (state === 'error' || state === 'review') actions.push('<a href="/contacto" class="btn btn-outline">Contactar a la tienda</a>')
+    $('result-actions').innerHTML = actions.join('')
+  }
+
+  const classify = (order) => {
+    if (!order) return null
+    if (order.status === 'CONFIRMED' || ['PROCESSING', 'SHIPPED', 'DELIVERED'].includes(order.status)) {
+      return order.needsReview ? 'review' : 'approved'
+    }
+    if (order.needsReview) return 'review'
+    if (order.payment?.status === 'FAILED') return 'declined'
+    if (order.status === 'CANCELLED') return 'declined'
+    return null // sigue pendiente → seguir consultando
+  }
+
+  const check = async () => {
+    const body = { provider }
+    if (transactionId) body.transactionId = transactionId
+    if (paymentId) body.paymentId = paymentId
+    return api.payments.verify(orderId, body)
+  }
+
+  const poll = async () => {
+    let order = null
+    try {
+      order = await check()
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 404)) {
+        return setState('error')
+      }
+      // errores de red: reintentar
+    }
+
+    const state = classify(order)
+    if (state) {
+      if (state === 'approved' || state === 'review') resetLocalCart()
+      return setState(state, order)
+    }
+
+    if (Date.now() - started > MAX_WAIT_MS) {
+      return setState('pending', order)
+    }
+    const delay = Date.now() - started < 30_000 ? 3000 : 6000
+    setTimeout(poll, delay)
+  }
+
+  ;(async () => {
+    if (!orderId) {
+      window.location.href = '/perfil/ordenes'
+      return
+    }
+    const user = await bootstrapAuth()
+    if (!user) {
+      window.location.href = `/auth/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
+      return
+    }
+    poll()
+  })()
+</script>
+
+<style>
+  .payment-result-page {
+    padding-top: calc(var(--header-height) + 2rem);
+    padding-bottom: 4rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 60vh;
+  }
+  .result-card {
+    background: var(--color-white);
+    border: 1.5px solid var(--color-gray-200);
+    border-radius: var(--radius-lg);
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    max-width: 520px;
+    width: 100%;
+  }
+  .result-card[data-state='approved'] { border-color: #22c55e; background: #f0fdf4; }
+  .result-card[data-state='pending']  { border-color: #f59e0b; background: #fffbeb; }
+  .result-card[data-state='declined'] { border-color: #ef4444; background: #fef2f2; }
+  .result-card[data-state='review']   { border-color: #3b82f6; background: #eff6ff; }
+  .result-icon {
+    width: 72px; height: 72px; border-radius: 50%;
+    margin: 0 auto 1.25rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.2rem; font-weight: 700; color: white;
+    background: var(--color-gray-300);
+  }
+  .result-card[data-state='approved'] .result-icon { background: #22c55e; }
+  .result-card[data-state='pending']  .result-icon { background: #f59e0b; }
+  .result-card[data-state='declined'] .result-icon { background: #ef4444; }
+  .result-card[data-state='review']   .result-icon { background: #3b82f6; }
+  .result-card[data-state='error']    .result-icon { background: #6b7280; }
+  .spinner {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.4); border-top-color: white;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .result-title { font-family: var(--font-serif); font-size: 1.6rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .result-message { color: var(--color-gray-600); margin-bottom: 1.25rem; line-height: 1.55; }
+  .order-info { margin-bottom: 1.25rem; font-size: 0.9rem; }
+  .order-info .order-id { font-weight: 600; }
+  .result-actions { display: flex; flex-direction: column; gap: 0.6rem; align-items: stretch; }
+  @media (min-width: 480px) { .result-actions { flex-direction: row; justify-content: center; } }
+</style>

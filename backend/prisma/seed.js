@@ -1,56 +1,47 @@
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
+import { BASIC_COLORS } from '../src/data/basic-colors.js'
 
 const prisma = new PrismaClient()
 
 async function main() {
   console.log('🌱 Iniciando seed...')
+  const isProduction = process.env.NODE_ENV === 'production'
 
-  // Crear usuario administrador
-  const hashedPassword = await bcrypt.hash('admin123', 12)
-
-  const admin = await prisma.user.upsert({
-    where:  { email: 'admin@ecommerce.com' },
-    update: {},
-    create: {
-      name:     'Administrador',
-      email:    'admin@ecommerce.com',
-      password: hashedPassword,
-      role:     'ADMIN',
+  // Admin inicial: SOLO si se pasan credenciales explícitas por variables de
+  // entorno. Nunca se crea un admin con contraseña por defecto.
+  //   SEED_ADMIN_EMAIL=tu@correo.com SEED_ADMIN_PASSWORD='…' npm run db:seed
+  const adminEmail = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase()
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD
+  if (adminEmail && adminPassword) {
+    if (adminPassword.length < 12 || !/[A-Za-z]/.test(adminPassword) || !/\d/.test(adminPassword)) {
+      throw new Error('SEED_ADMIN_PASSWORD debe tener al menos 12 caracteres, letras y números')
     }
-  })
+    const admin = await prisma.user.upsert({
+      where:  { email: adminEmail },
+      update: {},
+      create: {
+        name:          'Administrador',
+        email:         adminEmail,
+        password:      await bcrypt.hash(adminPassword, 12),
+        role:          'SUPER_ADMIN',
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+      },
+    })
+    console.log('✅ Admin inicial:', admin.email, `(${admin.role})`)
+  } else {
+    console.log('ℹ️  Sin SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD: no se crea admin.')
+  }
 
-  console.log('✅ Admin creado:', admin.email)
-
-  // Colores canónicos — fuente única de verdad para swatches
-  // Los 15 colores base que el admin puede asignar a productos.
-  // Si en el futuro se agregan más, se hace por seed o por endpoint admin.
-  const colores = [
-    { name: 'Negro',         slug: 'negro',         hex: '#000000', order: 1  },
-    { name: 'Blanco',        slug: 'blanco',        hex: '#FFFFFF', order: 2  },
-    { name: 'Gris',          slug: 'gris',          hex: '#808080', order: 3  },
-    { name: 'Azul',          slug: 'azul',          hex: '#1E40FF', order: 4  },
-    { name: 'Azul marino',   slug: 'azul-marino',   hex: '#1E3A8A', order: 5  },
-    { name: 'Verde',         slug: 'verde',         hex: '#15803D', order: 6  },
-    { name: 'Verde militar', slug: 'verde-militar', hex: '#4B5320', order: 7  },
-    { name: 'Amarillo',      slug: 'amarillo',      hex: '#FACC15', order: 8  },
-    { name: 'Rojo',          slug: 'rojo',          hex: '#DC2626', order: 9  },
-    { name: 'Naranja',       slug: 'naranja',       hex: '#F97316', order: 10 },
-    { name: 'Rosado',        slug: 'rosado',        hex: '#F472B6', order: 11 },
-    { name: 'Morado',        slug: 'morado',        hex: '#7C3AED', order: 12 },
-    { name: 'Café',          slug: 'cafe',          hex: '#78350F', order: 13 },
-    { name: 'Beige',         slug: 'beige',         hex: '#E7D7B7', order: 14 },
-    { name: 'Vinotinto',     slug: 'vinotinto',     hex: '#722F37', order: 15 },
-  ]
-
-  for (const c of colores) {
+  for (const [idx, c] of BASIC_COLORS.entries()) {
     await prisma.color.upsert({
       where:  { slug: c.slug },
-      update: { hex: c.hex, order: c.order, name: c.name },
-      create: c,
+      update: { hex: c.hex, name: c.name },
+      create: { ...c, order: idx + 1 },
     })
   }
-  console.log('✅ Colores canónicos:', colores.length)
+  console.log('✅ Colores básicos:', BASIC_COLORS.length)
 
   // Tallas canónicas — LETTER (camisetas), NUMERIC (pantalones), SHOE (zapatos)
   const tallas = [
@@ -109,7 +100,12 @@ async function main() {
 
   console.log('✅ Categorías creadas:', categorias.length)
 
-  // Crear productos de ejemplo
+  // Datos de demostración: sólo en desarrollo y si se piden explícitamente.
+  if (isProduction || process.env.SEED_DEMO !== 'true') {
+    console.log('🎉 Seed completado (sin datos de demostración)')
+    return
+  }
+
   const camisetas = await prisma.category.findUnique({ where: { slug: 'camisetas' } })
 
   await prisma.product.upsert({
@@ -120,7 +116,7 @@ async function main() {
       slug:        'camiseta-basica-blanca',
       description: 'Camiseta básica de algodón 100%, perfecta para el día a día.',
       price:       49900,
-      stock:       50,
+      stock:       0,
       categoryId:  camisetas.id,
       isFeatured:  true,
       variants: {
@@ -134,50 +130,13 @@ async function main() {
     }
   })
 
-  await prisma.product.upsert({
-    where:  { slug: 'camiseta-oversize-negra' },
-    update: {},
-    create: {
-      name:        'Camiseta Oversize Negra',
-      slug:        'camiseta-oversize-negra',
-      description: 'Camiseta oversize de algodón premium, estilo urbano.',
-      price:       65900,
-      stock:       30,
-      categoryId:  camisetas.id,
-      isFeatured:  true,
-      variants: {
-        create: [
-          { size: 'S',  color: 'Negro', colorHex: '#000000', stock: 8  },
-          { size: 'M',  color: 'Negro', colorHex: '#000000', stock: 12 },
-          { size: 'L',  color: 'Negro', colorHex: '#000000', stock: 10 },
-        ]
-      }
-    }
-  })
-
-  console.log('✅ Productos de ejemplo creados')
-
-  // Crear cupón de bienvenida
   await prisma.coupon.upsert({
     where:  { code: 'BIENVENIDO10' },
     update: {},
-    create: {
-      code:        'BIENVENIDO10',
-      type:        'PERCENTAGE',
-      value:       10,
-      minPurchase: 50000,
-      maxUses:     100,
-      isActive:    true,
-    }
+    create: { code: 'BIENVENIDO10', type: 'PERCENTAGE', value: 10, minPurchase: 50000, maxUses: 100, isActive: true },
   })
 
-  console.log('✅ Cupón BIENVENIDO10 creado (10% de descuento)')
-  console.log('')
-  console.log('🎉 Seed completado exitosamente')
-  console.log('')
-  console.log('📋 Credenciales de admin:')
-  console.log('   Email:    admin@ecommerce.com')
-  console.log('   Password: admin123')
+  console.log('🎉 Seed completado con datos de demostración (desarrollo)')
 }
 
 main()

@@ -44,7 +44,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
               type="password"
               id="password"
               class="form-input"
-              placeholder="Mínimo 6 caracteres"
+              placeholder="Mínimo 8 caracteres, con letras y números"
               autocomplete="new-password"
             />
           </div>
@@ -59,6 +59,16 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
               autocomplete="new-password"
             />
           </div>
+
+          <label class="consent-row">
+            <input type="checkbox" id="accept-privacy" />
+            <span>
+              Autorizo el tratamiento de mis datos personales conforme a la
+              <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener">Política de tratamiento de datos</a>
+              (Ley 1581 de 2012) y acepto los
+              <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener">Términos y condiciones</a>.
+            </span>
+          </label>
 
           <button type="button" class="btn btn-primary btn-full" id="register-btn">
             Crear cuenta
@@ -140,8 +150,14 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
       return
     }
 
-    if (password.length < 6) {
-      showError('La contraseña debe tener al menos 6 caracteres')
+    if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
+      showError('La contraseña debe tener al menos 8 caracteres, con letras y números')
+      return
+    }
+
+    const acceptPrivacy = document.getElementById('accept-privacy')?.checked === true
+    if (!acceptPrivacy) {
+      showError('Debes autorizar el tratamiento de tus datos personales para crear la cuenta')
       return
     }
 
@@ -153,7 +169,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
     setLoading(true)
 
     try {
-      const data = await api.auth.register({ name, email, password })
+      const data = await api.auth.register({ name, email, password, acceptPrivacy })
 
       if (formState) formState.hidden = true
       if (sentState) sentState.hidden = false
@@ -282,6 +298,9 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   .auth-form { display: flex; flex-direction: column; gap: 0.85rem; }
 
   .form-input { font-size: 16px; }
+  .consent-row { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.8rem; color: var(--color-gray-600); margin: 0.25rem 0 1rem; line-height: 1.45; cursor: pointer; }
+  .consent-row input { margin-top: 0.2rem; width: 18px; height: 18px; flex-shrink: 0; }
+  .consent-row a { text-decoration: underline; }
 
   .btn-full { width: 100%; padding: 0.85rem 1.5rem; }
 

@@ -1,6 +1,26 @@
 import bcrypt from 'bcryptjs'
 import { prisma } from '../config/prisma.js'
 
+const httpError = (status, message) => Object.assign(new Error(message), { status })
+
+const isAdminRole = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN'
+
+/**
+ * Jerarquía: sólo un SUPER_ADMIN puede modificar/desactivar/eliminar a otro
+ * ADMIN o SUPER_ADMIN, y nadie puede desactivarse o eliminarse a sí mismo.
+ */
+const loadTargetFor = async (actor, id, { selfAllowed = true } = {}) => {
+  const target = await prisma.user.findUnique({ where: { id }, select: { id: true, role: true } })
+  if (!target) throw httpError(404, 'Usuario no encontrado')
+  if (!selfAllowed && actor?.id === id) throw httpError(400, 'No puedes realizar esta acción sobre tu propia cuenta')
+  if (isAdminRole(target.role) && actor?.role !== 'SUPER_ADMIN' && actor?.id !== id) {
+    throw httpError(403, 'Solo un SUPER_ADMIN puede modificar a otros administradores')
+  }
+  return target
+}
+
+const revokeSessions = (userId) => prisma.refreshToken.deleteMany({ where: { userId } })
+
 export const getAllUsers = async ({ page = 1, limit = 20, search, role }) => {
   const where = { isActive: true }
   if (search) {
@@ -56,14 +76,22 @@ export const getUserById = async (id) => {
   return user
 }
 
-export const updateUser = async (id, data) => {
+export const updateUser = async (id, data, actor) => {
+  const updated = await updateUserRecord(id, data, actor)
+  if (!updated.isActive) await revokeSessions(id)
+  return updated
+}
+
+const updateUserRecord = async (id, data, actor) => {
+  const deactivating = data.isActive !== undefined && !(data.isActive === true || data.isActive === 'true')
+  await loadTargetFor(actor, id, { selfAllowed: !deactivating })
   try {
     return await prisma.user.update({
       where: { id },
       data: {
         ...(data.name && { name: data.name }),
         ...(data.phone !== undefined && { phone: data.phone }),
-        ...(data.isActive !== undefined && { isActive: Boolean(data.isActive) }),
+        ...(data.isActive !== undefined && { isActive: data.isActive === true || data.isActive === 'true' }),
       },
       select: {
         id: true, name: true, email: true, role: true, avatar: true, phone: true,
@@ -80,7 +108,9 @@ export const updateUser = async (id, data) => {
   }
 }
 
-export const deleteUser = async (id, { hard = false } = {}) => {
+export const deleteUser = async (id, { hard = false } = {}, actor) => {
+  await loadTargetFor(actor, id, { selfAllowed: false })
+  await revokeSessions(id)
   if (hard) {
     try {
       return await prisma.user.delete({
@@ -122,15 +152,20 @@ export const deleteUser = async (id, { hard = false } = {}) => {
   }
 }
 
-export const updateUserRole = async (id, role) => {
+export const updateUserRole = async (id, role, actor) => {
+  if (actor?.id === id) throw httpError(400, 'No puedes cambiar tu propio rol')
   try {
-    return await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id },
       data: { role },
       select: {
         id: true, name: true, email: true, role: true,
       },
     })
+    // El rol viaja en el access token: se revocan las sesiones para que el
+    // cambio aplique en el próximo refresh (máx. 15 min).
+    await revokeSessions(id)
+    return updated
   } catch (e) {
     if (e.code === 'P2025') {
       const err = new Error('Usuario no encontrado')
@@ -144,13 +179,15 @@ export const updateUserRole = async (id, role) => {
 export const resetUserPassword = async (id, password) => {
   const hashedPassword = await bcrypt.hash(password, 12)
   try {
-    return await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id },
       data: { password: hashedPassword },
       select: {
         id: true, name: true, email: true, role: true,
       },
     })
+    await revokeSessions(id)
+    return updated
   } catch (e) {
     if (e.code === 'P2025') {
       const err = new Error('Usuario no encontrado')
@@ -159,43 +196,6 @@ export const resetUserPassword = async (id, password) => {
     }
     throw e
   }
-}
-
-export const getAllOrders = async ({ page = 1, limit = 20, status }) => {
-  const where = status ? { status } : {}
-  const skip  = (page - 1) * limit
-
-  const [orders, total] = await Promise.all([
-    prisma.order.findMany({
-      where,
-      skip,
-      take:    Number(limit),
-      include: { user: { select: { name: true, email: true } }, payment: true },
-      orderBy: { createdAt: 'desc' }
-    }),
-    prisma.order.count({ where })
-  ])
-
-  return { orders, total, page: Number(page), totalPages: Math.ceil(total / limit) }
-}
-
-import { restoreStock } from './stock.service.js'
-
-export const updateOrderStatus = async (orderId, status) => {
-  const order = await prisma.order.findUnique({ where: { id: orderId } })
-  
-  if (!order) {
-    throw Object.assign(new Error('Orden no encontrada'), { status: 404 })
-  }
-
-  const wasPendingOrConfirmed = order.status === 'PENDING' || order.status === 'CONFIRMED'
-  const isNowCancelled = status === 'CANCELLED'
-
-  if (wasPendingOrConfirmed && isNowCancelled) {
-    await restoreStock(orderId)
-  }
-
-  return prisma.order.update({ where: { id: orderId }, data: { status } })
 }
 
 export const createDiscount = async ({ name, type, value, startsAt, endsAt, productIds }) => {
@@ -273,31 +273,6 @@ export const getDiscounts = async () => {
     include: { products: { include: { product: { select: { name: true } } } } },
     orderBy: { createdAt: 'desc' }
   })
-}
-
-export const getAllProducts = async ({ page = 1, limit = 20, search, category, isActive }) => {
-  const where = {}
-  if (search) where.name = { contains: search, mode: 'insensitive' }
-  if (category) where.category = { slug: category }
-  if (isActive !== undefined) where.isActive = isActive === 'true'
-
-  const skip = (page - 1) * limit
-  const [products, total] = await Promise.all([
-    prisma.product.findMany({
-      where,
-      skip,
-      take:    Number(limit),
-      orderBy: { createdAt: 'desc' },
-      include: {
-        category: { select: { name: true, slug: true } },
-        images:   { where: { isMain: true }, take: 1 },
-        variants: { select: { size: true, color: true, stock: true } }
-      }
-    }),
-    prisma.product.count({ where })
-  ])
-
-  return { products, total, page: Number(page), totalPages: Math.ceil(total / limit) }
 }
 
 export const getDashboardStats = async () => {

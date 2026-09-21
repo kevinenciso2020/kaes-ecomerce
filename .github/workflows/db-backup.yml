@@ -1,0 +1,49 @@
+name: Backup diario de la base de datos
+
+# Respaldo lógico diario de Neon, CIFRADO con una clave propia, guardado 14
+# días como artefacto del workflow. Complementa (no reemplaza) el PITR de Neon.
+#
+# Secrets requeridos (Settings → Secrets and variables → Actions):
+#   BACKUP_DATABASE_URL   URL directa (no pooler) de Neon, idealmente un rol de sólo lectura
+#   BACKUP_PASSPHRASE     frase larga para cifrar el respaldo (guárdala fuera de GitHub)
+#
+# Restaurar:
+#   gpg --decrypt kaes-AAAA-MM-DD.dump.gpg > kaes.dump
+#   pg_restore --no-owner --clean --if-exists -d "$DATABASE_URL_DESTINO" kaes.dump
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 03:00 hora Colombia
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar secrets
+        env:
+          URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$PASS" ]; then
+            echo "::error::Configura BACKUP_DATABASE_URL y BACKUP_PASSPHRASE"; exit 1
+          fi
+      - name: Instalar cliente PostgreSQL 16
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y postgresql-client-16 || sudo apt-get install -y postgresql-client
+      - name: pg_dump cifrado
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          FILE="kaes-$(date -u +%F).dump"
+          pg_dump --format=custom --no-owner --no-privileges "$BACKUP_DATABASE_URL" \
+            | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" -o "$FILE.gpg"
+          ls -lh "$FILE.gpg"
+          echo "FILE=$FILE.gpg" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.FILE }}
+          path: ${{ env.FILE }}
+          retention-days: 14

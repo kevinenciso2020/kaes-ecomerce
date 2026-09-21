@@ -18,9 +18,10 @@ vi.mock('../../src/config/prisma.js', () => ({
     },
     productAvailableSize: { deleteMany: vi.fn(), createMany: vi.fn() },
     category: { findUnique: vi.fn(), findMany: vi.fn() },
-    color: { findMany: vi.fn(), findUnique: vi.fn() },
+    color: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), aggregate: vi.fn(), delete: vi.fn() },
     size: { findMany: vi.fn(), findUnique: vi.fn() },
     orderItem: { count: vi.fn() },
+    cartItem: { deleteMany: vi.fn() },
     $transaction: vi.fn(),
     $queryRaw: vi.fn(),
   },
@@ -217,14 +218,12 @@ describe('PATCH /api/v1/admin/products/:id/images/:imageId/main', () => {
   })
 })
 
-describe('DELETE /api/v1/admin/products/:id (soft delete)', () => {
-  it('sets isActive=false and destroys Cloudinary images', async () => {
+describe('DELETE /api/v1/admin/products/:id', () => {
+  it('por defecto ARCHIVA (isActive=false) y conserva las imágenes', async () => {
     prisma.product.findUnique.mockResolvedValueOnce({
       id: 'p1', isActive: true,
-      images: [
-        { id: 'i1', publicId: 'pid1' },
-        { id: 'i2', publicId: 'pid2' },
-      ],
+      images: [{ id: 'i1', publicId: 'pid1' }],
+      _count: { orderItems: 3 },
     })
     prisma.product.update.mockResolvedValueOnce({ id: 'p1', isActive: false })
 
@@ -233,21 +232,129 @@ describe('DELETE /api/v1/admin/products/:id (soft delete)', () => {
       .set('Authorization', `Bearer ${adminToken()}`)
 
     expect(res.status).toBe(200)
-    expect(res.body).toMatchObject({ id: 'p1', softDeleted: true })
-    expect(prisma.product.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { isActive: false },
+    expect(res.body).toMatchObject({ id: 'p1', archived: true })
+    expect(prisma.product.update).toHaveBeenCalledWith({ where: { id: 'p1' }, data: { isActive: false } })
+    // Los pedidos antiguos siguen mostrando la foto
+    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled()
+  })
+
+  it('hard=true elimina definitivamente y borra las imágenes si nunca se vendió', async () => {
+    prisma.product.findUnique.mockResolvedValueOnce({
+      id: 'p1', images: [{ id: 'i1', publicId: 'pid1' }, { id: 'i2', publicId: 'pid2' }],
+      _count: { orderItems: 0 },
     })
+    prisma.$transaction.mockResolvedValueOnce([])
+
+    const res = await request(app)
+      .delete('/api/v1/admin/products/p1?hard=true')
+      .set('Authorization', `Bearer ${adminToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ id: 'p1', deleted: true })
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('pid1')
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('pid2')
+  })
+
+  it('hard=true responde 409 si el producto tiene ventas', async () => {
+    prisma.product.findUnique.mockResolvedValueOnce({ id: 'p1', images: [], _count: { orderItems: 2 } })
+    const res = await request(app)
+      .delete('/api/v1/admin/products/p1?hard=true')
+      .set('Authorization', `Bearer ${adminToken()}`)
+    expect(res.status).toBe(409)
+    expect(prisma.product.delete).not.toHaveBeenCalled()
   })
 
   it('returns 404 when product does not exist', async () => {
     prisma.product.findUnique.mockResolvedValueOnce(null)
     const res = await request(app)
-      .delete('/api/v1/admin/products/ghost')
+      .delete('/api/v1/admin/products/nope')
       .set('Authorization', `Bearer ${adminToken()}`)
     expect(res.status).toBe(404)
+  })
+})
+
+describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () => {
+  const setupCreate = () => {
+    prisma.category.findUnique.mockResolvedValue({ id: 'cat1' })
+    prisma.product.findUnique
+      .mockResolvedValueOnce(null) // slug libre
+      .mockResolvedValue({ id: 'p-new', name: 'Camiseta', images: [], variants: [], availableSizes: [], discounts: [] })
+    prisma.product.create.mockResolvedValueOnce({ id: 'p-new' })
+    prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
+  }
+
+  it('crea el producto con las URLs de Cloudinary como imágenes (la primera es la principal)', async () => {
+    setupCreate()
+    const res = await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      // (multer está mockeado en los tests; el form llega como JSON)
+      .send({
+        name: 'Camiseta', price: '59900', categorySlug: 'camisetas',
+        imageUrls: JSON.stringify([
+          'https://res.cloudinary.com/test_cloud/image/upload/v1/ecommerce-ropa/products/a.jpg',
+          'https://res.cloudinary.com/test_cloud/image/upload/w_800,c_fill/b.png',
+        ]),
+      })
+
+    expect(res.status).toBe(201)
+    const data = prisma.product.create.mock.calls[0][0].data
+    expect(data.images.create).toEqual([
+      expect.objectContaining({ url: expect.stringContaining('/a.jpg'), publicId: 'ecommerce-ropa/products/a', isMain: true, order: 0 }),
+      expect.objectContaining({ url: expect.stringContaining('/b.png'), publicId: 'b', isMain: false, order: 1 }),
+    ])
+    expect(cloudinary.uploader.upload).not.toHaveBeenCalled()
+  })
+
+  it('rechaza URLs que no son de res.cloudinary.com', async () => {
+    prisma.category.findUnique.mockResolvedValue({ id: 'cat1' })
+    const res = await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify(['https://evil.example.com/x.jpg']) })
+    expect(res.status).toBe(400)
+    expect(prisma.product.create).not.toHaveBeenCalled()
+  })
+
+  it('genera un slug único si el nombre ya existe', async () => {
+    prisma.category.findUnique.mockResolvedValue({ id: 'cat1' })
+    prisma.product.findUnique
+      .mockResolvedValueOnce({ id: 'otro' })   // "camiseta" ocupado
+      .mockResolvedValueOnce(null)             // "camiseta-2" libre
+      .mockResolvedValue({ id: 'p-new', images: [], variants: [], availableSizes: [], discounts: [] })
+    prisma.product.create.mockResolvedValueOnce({ id: 'p-new' })
+    prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
+
+    const res = await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas' })
+    expect(res.status).toBe(201)
+    expect(prisma.product.create.mock.calls[0][0].data.slug).toBe('camiseta-2')
+  })
+})
+
+describe('POST /api/v1/admin/colors', () => {
+  it('crea un color nuevo con hex válido', async () => {
+    prisma.color.findFirst.mockResolvedValueOnce(null)
+    prisma.color.aggregate.mockResolvedValueOnce({ _max: { order: 36 } })
+    prisma.color.create.mockResolvedValueOnce({ id: 'c99', name: 'Terracota', hex: '#E2725B', order: 37 })
+    const res = await request(app)
+      .post('/api/v1/admin/colors')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Terracota', hex: '#e2725b' })
+    expect(res.status).toBe(201)
+    expect(prisma.color.create).toHaveBeenCalledWith({
+      data: { name: 'Terracota', slug: 'terracota', hex: '#E2725B', order: 37 },
+    })
+  })
+
+  it('rechaza hex inválido', async () => {
+    const res = await request(app)
+      .post('/api/v1/admin/colors')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Raro', hex: 'rojo' })
+    expect(res.status).toBe(400)
   })
 })
 

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import { prisma } from '../config/prisma.js'
-import { generateTokens } from '../utils/jwt.utils.js'
+import { generateTokens, hashRefreshToken, REFRESH_TOKEN_TTL_MS } from '../utils/jwt.utils.js'
 import { sendVerificationEmail, sendPasswordResetEmail } from './email.service.js'
 import { logger } from '../config/logger.js'
 
@@ -17,13 +17,31 @@ const RESET_MAX_ATTEMPTS = 5
 const hashToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex')
 
+export const PRIVACY_POLICY_VERSION = process.env.PRIVACY_POLICY_VERSION || '2026-09-21'
+
+const normalizeEmail = (email) => (typeof email === 'string' ? email.trim().toLowerCase() : '')
+
+// Hash bcrypt de relleno para igualar el tiempo de respuesta cuando el email
+// no existe (evita enumerar usuarios por timing).
+const DUMMY_HASH = '$2a$12$L80fgnd.upFx09OVjkTdAO6dAjwOJXSRtZt5KHCF4C9c3v.B2XfFG'
+
+const storeRefreshToken = (db, userId, refreshToken) =>
+  db.refreshToken.create({
+    data: {
+      token: hashRefreshToken(refreshToken),
+      userId,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+    },
+  })
+
 const reject = (message, status) => {
   const err = new Error(message)
   err.status = status
   return err
 }
 
-export const registerUser = async ({ name, email, password }) => {
+export const registerUser = async ({ name, email, password, acceptPrivacy }) => {
+  email = normalizeEmail(email)
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) {
     throw reject('El email ya está registrado', 409)
@@ -37,6 +55,7 @@ export const registerUser = async ({ name, email, password }) => {
       email,
       password: hashedPassword,
       emailVerified: false,
+      ...(acceptPrivacy ? { privacyAcceptedAt: new Date(), privacyPolicyVersion: PRIVACY_POLICY_VERSION } : {}),
     },
     select: { id: true, name: true, email: true, role: true, emailVerified: true },
   })
@@ -63,15 +82,15 @@ export const registerUser = async ({ name, email, password }) => {
 }
 
 export const loginUser = async ({ email, password }) => {
-  const user = await prisma.user.findUnique({ where: { email } })
+  const user = await prisma.user.findUnique({ where: { email: normalizeEmail(email) } })
 
-  if (!user) {
+  const validPassword = await bcrypt.compare(String(password ?? ''), user?.password || DUMMY_HASH)
+  if (!user || !validPassword) {
     throw reject('Credenciales incorrectas', 401)
   }
 
-  const validPassword = await bcrypt.compare(password, user.password)
-  if (!validPassword) {
-    throw reject('Credenciales incorrectas', 401)
+  if (user.isActive === false) {
+    throw reject('Tu cuenta está desactivada. Escríbenos si crees que es un error.', 403)
   }
 
   const safeUser = {
@@ -82,14 +101,7 @@ export const loginUser = async ({ email, password }) => {
     emailVerified: user.emailVerified,
   }
   const tokens = generateTokens(safeUser)
-
-  await prisma.refreshToken.create({
-    data: {
-      token: tokens.refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    },
-  })
+  await storeRefreshToken(prisma, user.id, tokens.refreshToken)
 
   return { user: safeUser, ...tokens }
 }
@@ -102,36 +114,48 @@ export const refreshAccessToken = async (refreshToken) => {
     throw reject('Refresh token inválido', 401)
   }
 
-  const stored = await prisma.refreshToken.findUnique({ where: { token: refreshToken } })
-  if (!stored || stored.expiresAt < new Date()) {
+  const tokenHash = hashRefreshToken(refreshToken)
+  const stored = await prisma.refreshToken.findUnique({ where: { token: tokenHash } })
+
+  if (!stored) {
+    // JWT válido pero no está en BD: ya fue rotado o revocado. Si alguien lo
+    // reutiliza puede ser un token robado → se revocan todas las sesiones.
+    await prisma.refreshToken.deleteMany({ where: { userId: decoded.id } })
+    log.warn({ userId: decoded.id }, 'auth.refresh_token_reuse_detected')
+    throw reject('Sesión inválida, inicia sesión de nuevo', 401)
+  }
+
+  if (stored.expiresAt < new Date()) {
+    await prisma.refreshToken.delete({ where: { id: stored.id } }).catch(() => {})
     throw reject('Refresh token expirado o revocado', 401)
   }
 
   const user = await prisma.user.findUnique({
     where: { id: decoded.id },
-    select: { id: true, email: true, role: true, name: true, emailVerified: true },
+    select: { id: true, email: true, role: true, name: true, emailVerified: true, isActive: true },
   })
 
-  if (!user) {
-    throw reject('Usuario no encontrado', 401)
+  if (!user || user.isActive === false) {
+    await prisma.refreshToken.deleteMany({ where: { userId: decoded.id } })
+    throw reject('Usuario no encontrado o desactivado', 401)
   }
 
-  const tokens = generateTokens(user)
+  const { isActive, ...safeUser } = user
+  const tokens = generateTokens(safeUser)
 
-  await prisma.refreshToken.delete({ where: { token: refreshToken } })
-  await prisma.refreshToken.create({
-    data: {
-      token: tokens.refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    },
+  // Rotación atómica: borrar el viejo sólo si sigue existiendo (dos refresh
+  // concurrentes con el mismo token: sólo uno gana).
+  await prisma.$transaction(async (tx) => {
+    const { count } = await tx.refreshToken.deleteMany({ where: { id: stored.id } })
+    if (count !== 1) throw reject('Sesión inválida, inicia sesión de nuevo', 401)
+    await storeRefreshToken(tx, user.id, tokens.refreshToken)
   })
 
-  return { user, ...tokens }
+  return { user: safeUser, ...tokens }
 }
 
 export const logoutUser = async (refreshToken) => {
-  await prisma.refreshToken.deleteMany({ where: { token: refreshToken } })
+  await prisma.refreshToken.deleteMany({ where: { token: hashRefreshToken(refreshToken) } })
 }
 
 export const verifyEmailToken = async (plainToken) => {
@@ -277,8 +301,8 @@ export const requestPasswordReset = async (email) => {
 export const resetPasswordWithOtp = async ({ email, code, newPassword }) => {
   const normalized = typeof email === 'string' ? email.toLowerCase().trim() : ''
 
-  if (typeof newPassword !== 'string' || newPassword.length < 6 || newPassword.length > 50) {
-    throw reject('La contraseña debe tener entre 6 y 50 caracteres', 400)
+  if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 72) {
+    throw reject('La contraseña debe tener entre 8 y 72 caracteres', 400)
   }
 
   const tokenHash = hashToken(code)

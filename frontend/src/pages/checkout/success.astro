@@ -1,39 +1,7 @@
 ---
-import ShopLayout from '../../layouts/ShopLayout.astro'
-import '../../styles/checkout-result.css'
+// Ruta antigua: redirige a la página única de resultado conservando los
+// parámetros que agregan las pasarelas (orderId, id, payment_id, external_reference…).
+const target = new URL('/checkout/resultado', Astro.url)
+Astro.url.searchParams.forEach((value, key) => target.searchParams.set(key, value))
+return Astro.redirect(`${target.pathname}${target.search}`, 302)
 ---
-
-<ShopLayout title="Pago exitoso">
-  <div class="payment-result-page container">
-    <div class="result-card success">
-      <div class="result-icon">✓</div>
-      <h1 class="result-title">¡Pago exitoso!</h1>
-      <p class="result-message">Tu pedido ha sido confirmado correctamente.</p>
-      <div id="order-info" class="order-info"></div>
-      <a href="/perfil/ordenes" class="btn btn-primary">Ver mis pedidos</a>
-    </div>
-  </div>
-</ShopLayout>
-
-<script>
-  import { api } from '../../lib/api.js'
-
-  const params = new URLSearchParams(window.location.search)
-  const paymentStatus     = params.get('payment_status')
-  const externalReference = params.get('external_reference')
-
-  const orderInfoEl = document.getElementById('order-info')
-
-  if (externalReference && orderInfoEl) {
-    api.orders.detail(externalReference)
-      .then(order => {
-        orderInfoEl.innerHTML = `
-          <p class="order-id">Pedido #${order.id.slice(-8).toUpperCase()}</p>
-          <p class="order-total">Total: $${Number(order.total).toLocaleString('es-CO')}</p>
-        `
-      })
-      .catch(err => {
-        console.error('Error cargando orden:', err)
-      })
-  }
-</script>

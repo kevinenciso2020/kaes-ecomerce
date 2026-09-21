@@ -5,6 +5,7 @@
 // No constituye asesoría jurídica.
 import ShopLayout from '../../layouts/ShopLayout.astro'
 import { SITE_CONFIG } from '../../lib/site-config.js'
+import LegalPlaceholderNotice from '../../components/ui/LegalPlaceholderNotice.astro'
 ---
 
 <ShopLayout
@@ -17,6 +18,8 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
       <h1 class="legal-title">Política de Privacidad y Tratamiento de Datos</h1>
       <p class="legal-meta">Última actualización: {SITE_CONFIG.legalUpdatedAt}</p>
     </header>
+
+    <LegalPlaceholderNotice />
 
     <section class="legal-section">
       <h2>1. Identidad del responsable</h2>

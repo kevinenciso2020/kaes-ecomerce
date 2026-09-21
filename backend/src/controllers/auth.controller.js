@@ -2,45 +2,40 @@ import * as AuthService from '../services/auth.service.js'
 
 const isProduction = process.env.NODE_ENV === 'production'
 
+// Opciones de cookie:
+//  • Con dominio propio (COOKIE_DOMAIN=.kaes.co, front en kaes.co y API en
+//    api.kaes.co) las cookies son "first-party": sameSite=lax, funcionan en
+//    Safari/iOS y el middleware SSR de Astro también las ve.
+//  • Sin dominio propio (vercel.app ↔ railway.app) son cross-site: se necesita
+//    sameSite=none; Safari (ITP) puede bloquearlas.
+//  • En desarrollo (localhost) sameSite=lax.
+const cookieBaseOptions = () => {
+  const domain = process.env.COOKIE_DOMAIN || undefined
+  const sameSite = domain || !isProduction ? 'lax' : 'none'
+  return { httpOnly: true, secure: true, sameSite, path: '/', ...(domain ? { domain } : {}) }
+}
+
 const setAuthCookies = (res, accessToken, refreshToken) => {
-  // En producción front (Vercel) y back (Railway) viven en dominios distintos,
-  // así que el cookie debe cruzar el cross-origin XHR. Eso exige
-  // `sameSite: 'none' + secure: true`. En desarrollo local todo va por
-  // `localhost` same-site, así que `sameSite: 'lax'` basta y evita fricciones
-  // con herramientas que no envían `secure` (curl, supertest, etc).
-  const sameSite = isProduction ? 'none' : 'lax'
-
-  const baseOptions = {
-    httpOnly: true,
-    secure:   true,
-    sameSite,
-    path:     '/',
-  }
-
-  res.cookie('accessToken',  accessToken,  { ...baseOptions, maxAge: 15 * 60 * 1000 })
-  res.cookie('refreshToken', refreshToken, { ...baseOptions, maxAge: 7 * 24 * 60 * 60 * 1000 })
+  const base = cookieBaseOptions()
+  res.cookie('accessToken',  accessToken,  { ...base, maxAge: 15 * 60 * 1000 })
+  // El refresh token sólo viaja a /api/v1/auth (refresh/logout).
+  res.cookie('refreshToken', refreshToken, { ...base, path: '/api/v1/auth', maxAge: 7 * 24 * 60 * 60 * 1000 })
 }
 
 const clearAuthCookies = (res) => {
-  const clearOptions = { path: '/' }
-  res.clearCookie('accessToken',  clearOptions)
-  res.clearCookie('refreshToken', clearOptions)
+  const base = cookieBaseOptions()
+  res.clearCookie('accessToken',  base)
+  res.clearCookie('refreshToken', { ...base, path: '/api/v1/auth' })
+  // Cookie antigua con path "/" (antes del cambio de path)
+  res.clearCookie('refreshToken', base)
 }
 
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body
-
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Nombre, email y contraseña son requeridos' })
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' })
-    }
+    const { name, email, password, acceptPrivacy } = req.body
 
     // Tras registrarse el usuario NO está logueado — debe verificar su email primero
-    const result = await AuthService.registerUser({ name, email, password })
+    const result = await AuthService.registerUser({ name, email, password, acceptPrivacy: acceptPrivacy === true || acceptPrivacy === 'true' })
     res.status(201).json(result)
   } catch (err) {
     next(err)
@@ -51,13 +46,10 @@ export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseña son requeridos' })
-    }
-
     const result = await AuthService.loginUser({ email, password })
     setAuthCookies(res, result.accessToken, result.refreshToken)
-    res.json({ user: result.user, accessToken: result.accessToken })
+    // Los tokens sólo viajan en cookies httpOnly (no en el body).
+    res.json({ user: result.user })
   } catch (err) {
     next(err)
   }
@@ -65,23 +57,24 @@ export const login = async (req, res, next) => {
 
 export const refresh = async (req, res, next) => {
   try {
-    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken
+    const refreshToken = req.cookies?.refreshToken
 
     if (!refreshToken) {
-      return res.status(400).json({ error: 'Refresh token requerido' })
+      return res.status(401).json({ error: 'Sesión expirada' })
     }
 
     const result = await AuthService.refreshAccessToken(refreshToken)
     setAuthCookies(res, result.accessToken, result.refreshToken)
-    res.json({ user: result.user, accessToken: result.accessToken })
+    res.json({ user: result.user })
   } catch (err) {
+    if (err.status === 401) clearAuthCookies(res)
     next(err)
   }
 }
 
 export const logout = async (req, res, next) => {
   try {
-    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken
+    const refreshToken = req.cookies?.refreshToken
     if (refreshToken) await AuthService.logoutUser(refreshToken)
     clearAuthCookies(res)
     res.json({ message: 'Sesión cerrada correctamente' })

@@ -1,5 +1,5 @@
 import { prisma } from '../config/prisma.js'
-import { restoreStock } from './stock.service.js'
+import { tryDeductStockForItems, restoreStockForItems } from './stock.service.js'
 
 const ORDER_INCLUDE = {
   user: {
@@ -24,9 +24,10 @@ const ORDER_INCLUDE = {
   },
 }
 
-const buildListWhere = ({ status, userId, dateFrom, dateTo, search }) => {
+const buildListWhere = ({ status, userId, dateFrom, dateTo, search, needsReview }) => {
   const where = {}
   if (status) where.status = status
+  if (needsReview === 'true' || needsReview === true) where.needsReview = true
   if (userId) where.userId = userId
 
   if (dateFrom || dateTo) {
@@ -55,8 +56,9 @@ export const listOrders = async ({
   dateFrom,
   dateTo,
   search,
+  needsReview,
 } = {}) => {
-  const where = buildListWhere({ status, userId, dateFrom, dateTo, search })
+  const where = buildListWhere({ status, userId, dateFrom, dateTo, search, needsReview })
   const skip  = (page - 1) * limit
 
   const [orders, total] = await Promise.all([
@@ -91,80 +93,102 @@ export const getOrderById = async (id) => {
   return order
 }
 
+// Transiciones permitidas desde el admin.
+export const ALLOWED_TRANSITIONS = {
+  PENDING:    ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED:  ['PROCESSING', 'SHIPPED', 'CANCELLED', 'REFUNDED'],
+  PROCESSING: ['SHIPPED', 'CANCELLED', 'REFUNDED'],
+  SHIPPED:    ['DELIVERED', 'REFUNDED'],
+  DELIVERED:  ['REFUNDED'],
+  CANCELLED:  [],
+  REFUNDED:   [],
+}
+
+const conflict = (message) => Object.assign(new Error(message), { status: 409 })
+
 /**
- * Cambia el estado de una orden y registra el cambio en OrderStatusLog
- * dentro de la misma transacción. Si la transición es a CANCELLED desde
- * PENDING/CONFIRMED, restaura el stock.
+ * Cambia el estado de una orden y registra el cambio en OrderStatusLog, todo
+ * en una transacción con la orden bloqueada.
  *
- * Cambios respecto a la versión anterior:
- *  - Crea OrderStatusLog (auditoría)
- *  - Acepta una nota opcional
- *  - Mantiene la restauración de stock
+ *  - PENDING → CONFIRMED (pago manual, p. ej. transferencia): descuenta stock.
+ *  - → CANCELLED / REFUNDED: devuelve stock SÓLO si se había descontado
+ *    (stockDeducted). Cancelar una orden sin pagar no toca el inventario.
+ *  - El reembolso del dinero se hace en el panel de Wompi/MercadoPago.
  */
 export const updateOrderStatus = async (orderId, toStatus, { changedById, note } = {}) => {
   return prisma.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id: orderId } })
-    if (!order) {
+    const locked = await tx.$queryRaw`SELECT "id" FROM "orders" WHERE "id" = ${orderId} FOR UPDATE`
+    if (locked.length === 0) {
       const err = new Error('Orden no encontrada')
       err.status = 404
       throw err
     }
+    const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } })
 
     if (order.status === toStatus) {
-      // No-op, no registrar log redundante
       return tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
     }
 
-    const fromStatus = order.status
-    const wasPendingOrConfirmed = fromStatus === 'PENDING' || fromStatus === 'CONFIRMED'
-    const isNowCancelled = toStatus === 'CANCELLED'
+    const allowed = ALLOWED_TRANSITIONS[order.status] || []
+    if (!allowed.includes(toStatus)) {
+      throw conflict(`No se puede pasar una orden de ${order.status} a ${toStatus}`)
+    }
 
-    // Actualizar status
-    await tx.order.update({
-      where: { id: orderId },
-      data: { status: toStatus },
-    })
+    const data = { status: toStatus }
 
-    // Registrar log
+    if (toStatus === 'CONFIRMED' && !order.stockDeducted) {
+      const stock = await tryDeductStockForItems(tx, order.items)
+      if (!stock.ok) {
+        throw Object.assign(conflict('No hay stock suficiente para confirmar esta orden'), {
+          code: 'INSUFFICIENT_STOCK', details: stock.shortages,
+        })
+      }
+      data.stockDeducted = true
+      data.paidAt = order.paidAt ?? new Date()
+    }
+
+    if ((toStatus === 'CANCELLED' || toStatus === 'REFUNDED') && order.stockDeducted) {
+      await restoreStockForItems(tx, order.items)
+      data.stockDeducted = false
+    }
+
+    if (toStatus === 'CANCELLED' || toStatus === 'REFUNDED' || toStatus === 'DELIVERED') {
+      data.needsReview = false
+    }
+
+    await tx.order.update({ where: { id: orderId }, data })
+
     await tx.orderStatusLog.create({
       data: {
         orderId,
-        fromStatus,
+        fromStatus: order.status,
         toStatus,
         changedById: changedById || null,
         note: note || null,
       },
     })
 
-    // Si vamos a CANCELLED desde PENDING/CONFIRMED, restaurar stock.
-    // Hacemos esto aquí mismo dentro de la transacción usando $executeRaw-like
-    // para evitar una segunda conexión.
-    if (wasPendingOrConfirmed && isNowCancelled) {
-      const items = await tx.orderItem.findMany({ where: { orderId } })
-      for (const item of items) {
-        if (item.size && item.color) {
-          const variant = await tx.productVariant.findFirst({
-            where: {
-              productId: item.productId,
-              size: item.size,
-              color: item.color,
-            },
-          })
-          if (variant) {
-            await tx.productVariant.update({
-              where: { id: variant.id },
-              data: { stock: { increment: item.quantity } },
-            })
-            continue
-          }
-        }
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        })
-      }
-    }
-
     return tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
-  })
+  }, { timeout: 15_000 })
+}
+
+/** Marca una orden como revisada (quita la alerta needsReview). */
+export const resolveReview = async (orderId, { changedById, note } = {}) => {
+  const order = await prisma.order.findUnique({ where: { id: orderId } })
+  if (!order) {
+    const err = new Error('Orden no encontrada')
+    err.status = 404
+    throw err
+  }
+  await prisma.$transaction([
+    prisma.order.update({ where: { id: orderId }, data: { needsReview: false } }),
+    prisma.orderStatusLog.create({
+      data: {
+        orderId, fromStatus: order.status, toStatus: order.status,
+        changedById: changedById || null,
+        note: `Revisión resuelta${note ? `: ${note}` : ''} (motivo original: ${order.reviewNote || '—'})`,
+      },
+    }),
+  ])
+  return prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
 }

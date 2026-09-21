@@ -20,13 +20,28 @@ const WEBHOOK_PATHS = [
   '/api/v1/payments/wompi/webhook',
 ]
 
-const isWebhook = (req) => WEBHOOK_PATHS.some((p) => req.path.startsWith(p))
+export const isWebhookPath = (path) => WEBHOOK_PATHS.some((p) => path === p || path.startsWith(`${p}/`) || path.startsWith(`${p}?`))
 
-const allowedOrigins = () => [
-  process.env.FRONTEND_URL,
-  'http://localhost:4321',
-  'http://127.0.0.1:4321',
-]
+const isWebhook = (req) => isWebhookPath(req.path)
+
+/**
+ * Orígenes permitidos (CORS + CSRF):
+ *  - FRONTEND_URL
+ *  - ALLOWED_ORIGINS (lista separada por comas, p. ej. https://www.kaes.co)
+ *  - localhost sólo fuera de producción
+ */
+export const getAllowedOrigins = () => {
+  const list = [process.env.FRONTEND_URL]
+  if (process.env.ALLOWED_ORIGINS) {
+    list.push(...process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()))
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    list.push('http://localhost:4321', 'http://127.0.0.1:4321')
+  }
+  return list.filter(Boolean).map((o) => o.replace(/\/$/, ''))
+}
+
+const allowedOrigins = getAllowedOrigins
 
 const originFromUrl = (url) => {
   try {

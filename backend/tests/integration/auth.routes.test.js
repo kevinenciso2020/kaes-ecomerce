@@ -81,65 +81,11 @@ describe('GET /api/v1/auth/me', () => {
   })
 })
 
-describe('GET /api/v1/auth/admins', () => {
-  it('returns 401 without auth', async () => {
-    const res = await request(app).get('/api/v1/auth/admins')
-    expect(res.status).toBe(401)
-  })
-
-  it('returns 403 for CUSTOMER role', async () => {
-    const token = tokenFor({ id: 'u1', email: 'c@d.com', role: 'CUSTOMER' })
-    const res = await request(app)
-      .get('/api/v1/auth/admins')
-      .set('Authorization', `Bearer ${token}`)
-    expect(res.status).toBe(403)
-  })
-
-  it('returns 200 and the admin list for ADMIN role', async () => {
-    prisma.user.findMany.mockResolvedValueOnce([
-      { id: 'a1', email: 'admin@a.com', name: 'Admin', role: 'ADMIN' },
-    ])
-    const token = tokenFor({ id: 'a1', email: 'admin@a.com', role: 'ADMIN' })
-    const res = await request(app)
-      .get('/api/v1/auth/admins')
-      .set('Authorization', `Bearer ${token}`)
-    expect(res.status).toBe(200)
-    expect(res.body).toHaveLength(1)
-    expect(res.body[0]).not.toHaveProperty('password')
-  })
-})
-
-describe('POST /api/v1/auth/make-admin', () => {
-  it('returns 403 for non-SUPER_ADMIN even if ADMIN', async () => {
-    const token = tokenFor({ id: 'a1', email: 'admin@a.com', role: 'ADMIN' })
-    const res = await request(app)
-      .post('/api/v1/auth/make-admin')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ email: 'someone@example.com' })
-    expect(res.status).toBe(403)
-  })
-
-  it('updates the user role for SUPER_ADMIN', async () => {
-    prisma.user.update.mockResolvedValueOnce({
-      id: 'u2', email: 'someone@example.com', name: 'Someone', role: 'ADMIN',
-    })
+describe('Endpoints de rol antiguos eliminados', () => {
+  it('GET /auth/admins y POST /auth/make-admin ya no existen (404)', async () => {
     const token = tokenFor({ id: 'sa1', email: 'sa@a.com', role: 'SUPER_ADMIN' })
-    const res = await request(app)
-      .post('/api/v1/auth/make-admin')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ email: 'someone@example.com' })
-    expect(res.status).toBe(200)
-    expect(res.body.user.role).toBe('ADMIN')
-  })
-
-  it('returns 404 when target user does not exist', async () => {
-    prisma.user.update.mockRejectedValueOnce(new Error('Record not found'))
-    const token = tokenFor({ id: 'sa1', email: 'sa@a.com', role: 'SUPER_ADMIN' })
-    const res = await request(app)
-      .post('/api/v1/auth/make-admin')
-      .set('Authorization', `Bearer ${token}`)
-      .send({ email: 'ghost@example.com' })
-    expect(res.status).toBe(404)
+    expect((await request(app).get('/api/v1/auth/admins').set('Authorization', `Bearer ${token}`)).status).toBe(404)
+    expect((await request(app).post('/api/v1/auth/make-admin').set('Authorization', `Bearer ${token}`).send({ email: 'x@y.com' })).status).toBe(404)
   })
 })
 
@@ -167,7 +113,7 @@ describe('POST /api/v1/auth/register', () => {
 
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Ada', email: 'a@b.com', password: 'secret123' })
+      .send({ name: 'Ada', email: 'A@B.com', password: 'secret123', acceptPrivacy: true })
 
     expect(res.status).toBe(201)
     expect(res.body.user.emailVerified).toBe(false)
@@ -176,13 +122,26 @@ describe('POST /api/v1/auth/register', () => {
     expect(res.body).not.toHaveProperty('refreshToken')
     expect(res.body.message).toMatch(/verificar/i)
     expect(prisma.emailVerificationToken.create).toHaveBeenCalledOnce()
+    // Email guardado en minúsculas y con prueba del consentimiento Habeas Data
+    const created = prisma.user.create.mock.calls[0][0].data
+    expect(created.email).toBe('a@b.com')
+    expect(created.privacyAcceptedAt).toBeInstanceOf(Date)
+    expect(created.privacyPolicyVersion).toBeTruthy()
+  })
+
+  it('returns 400 without Habeas Data authorization', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ name: 'Ada', email: 'a@b.com', password: 'secret123' })
+    expect(res.status).toBe(400)
+    expect(prisma.user.create).not.toHaveBeenCalled()
   })
 
   it('returns 409 if email already exists', async () => {
     prisma.user.findUnique.mockResolvedValueOnce({ id: 'u1', email: 'a@b.com' })
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ name: 'Ada', email: 'a@b.com', password: 'secret123' })
+      .send({ name: 'Ada', email: 'a@b.com', password: 'secret123', acceptPrivacy: true })
     expect(res.status).toBe(409)
   })
 })

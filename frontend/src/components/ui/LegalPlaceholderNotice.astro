@@ -1,0 +1,15 @@
+---
+// Aviso visible mientras falten datos legales del vendedor (NIT, dirección…).
+// La Ley 1480 exige identificar plenamente al vendedor en comercio electrónico:
+// no lances la tienda con este aviso visible.
+import { MISSING_LEGAL_FIELDS } from '../../lib/site-config.js'
+---
+{MISSING_LEGAL_FIELDS.length > 0 && (
+  <div class="legal-placeholder-notice" role="alert">
+    ⚠️ Faltan datos legales del vendedor ({MISSING_LEGAL_FIELDS.join(', ')}). Complétalos en
+    <code>src/lib/site-config.js</code> antes de vender.
+  </div>
+)}
+<style>
+  .legal-placeholder-notice { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.5rem; font-size: 0.85rem; }
+</style>

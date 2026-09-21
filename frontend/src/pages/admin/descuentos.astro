@@ -197,7 +197,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
   const init = async () => {
     const user = await bootstrapAuth()
-    if (!user || user.role !== 'ADMIN') {
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN')) {
       document.getElementById('no-access')!.style.display = 'flex'
       return
     }

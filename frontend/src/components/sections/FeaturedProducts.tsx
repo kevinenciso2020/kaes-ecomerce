@@ -60,7 +60,7 @@ export default function FeaturedProducts({
           {!loading &&
             products.map((product, i) => {
               const img = product.images?.[0]?.url;
-              const price = Number(product.price).toLocaleString("es-CO");
+              const price = Number(product.finalPrice ?? product.price).toLocaleString("es-CO");
 
               return (
                 <RevealSection key={product.slug} custom={i}>

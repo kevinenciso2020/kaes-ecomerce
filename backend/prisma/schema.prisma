@@ -21,6 +21,9 @@ model User {
   isActive        Boolean   @default(true)
   emailVerified   Boolean   @default(false)
   emailVerifiedAt DateTime?
+  // Habeas Data (Ley 1581 de 2012): prueba de la autorización del titular
+  privacyAcceptedAt    DateTime?
+  privacyPolicyVersion String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -221,7 +224,16 @@ model Order {
   couponCode        String?
   notes             String?
   mpPreferenceId    String?
+  paymentProvider   PaymentProvider?
   paidAt            DateTime?
+  // true cuando el stock de la orden ya fue descontado (pago aprobado).
+  // Se usa para saber si al cancelar hay que devolver stock.
+  stockDeducted     Boolean     @default(false)
+  // true cuando un pago llegó en un estado que requiere intervención manual
+  // (monto distinto, sin stock tras pago aprobado, pago sobre orden expirada…)
+  needsReview       Boolean     @default(false)
+  reviewNote        String?
+  termsAcceptedAt   DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   shippingAddressId String?
@@ -235,6 +247,7 @@ model Order {
   @@index([status])
   @@index([userId])
   @@index([createdAt])
+  @@index([needsReview])
   @@map("orders")
 }
 
@@ -289,6 +302,26 @@ model Payment {
   order Order @relation(fields: [orderId], references: [id])
 
   @@map("payments")
+}
+
+// Registro crudo de cada notificación de pago procesada. `eventKey` es único
+// por (proveedor, id del pago/transacción, estado) y garantiza idempotencia:
+// una notificación repetida no vuelve a descontar stock ni reenviar emails.
+model PaymentEvent {
+  id                String          @id @default(cuid())
+  provider          PaymentProvider
+  eventKey          String          @unique
+  orderId           String?
+  providerPaymentId String?
+  status            String
+  amount            Decimal?        @db.Decimal(10, 2)
+  outcome           String?
+  payload           Json?
+  createdAt         DateTime        @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("payment_events")
 }
 
 model Discount {

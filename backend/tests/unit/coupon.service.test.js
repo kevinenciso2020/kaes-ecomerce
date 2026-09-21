@@ -58,7 +58,7 @@ describe('validateCoupon', () => {
     )
     const result = await validateCoupon('PROMO10', 100)
     expect(result.valid).toBe(false)
-    expect(result.error).toMatch(/mínimo/)
+    expect(result.error).toMatch(/mínima/)
   })
 
   it('computes PERCENTAGE discount', async () => {
@@ -105,17 +105,20 @@ describe('validateCoupon', () => {
     expect(result.coupon.value).toBe('15')
   })
 
-  it('passes endsAt OR-equals-null to Prisma (regression for service bug)', async () => {
+  it('accepts coupons without startsAt/endsAt (NULL = sin límite)', async () => {
     prisma.coupon.findFirst.mockResolvedValueOnce(baseCoupon())
     await validateCoupon('PROMO10', 1000)
     const call = prisma.coupon.findFirst.mock.calls[0][0]
     expect(call.where.AND).toEqual([
-      {
-        OR: [
-          { endsAt: expect.any(Object) },
-          { endsAt: null },
-        ],
-      },
+      { OR: [{ startsAt: null }, { startsAt: { lte: expect.any(Date) } }] },
+      { OR: [{ endsAt: null }, { endsAt: { gte: expect.any(Date) } }] },
     ])
+    expect(call.where.startsAt).toBeUndefined()
+  })
+
+  it('returns invalid for an empty code without querying', async () => {
+    const result = await validateCoupon('   ', 1000)
+    expect(result.valid).toBe(false)
+    expect(prisma.coupon.findFirst).not.toHaveBeenCalled()
   })
 })

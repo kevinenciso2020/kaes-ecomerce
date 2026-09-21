@@ -37,15 +37,20 @@ const loadCartFromAPI = async () => {
   }
 }
 
-const syncCartToAPI = async (items, action = 'get') => {
-  const localItems = items.filter(item => !item.cartItemId)
+// Sube al servidor los ítems que sólo existían en el carrito local (invitado).
+// El backend suma la cantidad si el mismo producto/talla/color ya existe.
+const syncLocalItemsToAPI = async (localItems) => {
   for (const item of localItems) {
-    await api.cart.add({
-      productId: item.id,
-      quantity: item.quantity,
-      size: item.size,
-      color: item.color,
-    })
+    try {
+      await api.cart.add({
+        productId: item.id,
+        quantity: item.quantity,
+        size: item.size,
+        color: item.color,
+      })
+    } catch (err) {
+      console.error('Error sincronizando ítem del carrito:', err)
+    }
   }
 }
 
@@ -63,25 +68,18 @@ if (typeof window !== 'undefined') {
 
 export const initCart = async () => {
   if (isLoggedIn()) {
-    const localCart = cartItems.get()
-    const apiCart = await loadCartFromAPI()
-    const merged = [...apiCart]
-    for (const localItem of localCart) {
-      const existing = merged.find(item =>
-        item.id === localItem.id &&
-        item.size === localItem.size &&
-        item.color === localItem.color
-      )
-      if (existing) {
-        existing.quantity += localItem.quantity
-      } else {
-        merged.push(localItem)
-      }
-    }
+    const localOnly = cartItems.get().filter(item => !item.cartItemId)
+    if (localOnly.length > 0) await syncLocalItemsToAPI(localOnly)
     saveToLocalStorage([])
-    cartItems.set(merged)
-    await syncCartToAPI(merged)
+    // El servidor es la fuente de verdad una vez hay sesión.
+    cartItems.set(await loadCartFromAPI())
   }
+}
+
+/** Vacía sólo el estado local (el servidor ya vació el carrito al aprobar el pago). */
+export const resetLocalCart = () => {
+  cartItems.set([])
+  saveToLocalStorage([])
 }
 
 export const logoutCart = () => {
@@ -200,6 +198,16 @@ export const clearCart = async () => {
   cartItems.set([])
 }
 
+// Promesa compartida de la carga inicial del carrito desde el servidor. Las
+// páginas que leen el carrito una sola vez (checkout) deben esperarla; si no,
+// ven el carrito vacío mientras la petición está en curso.
+let loadPromise = null
+export const ensureCartLoaded = () => {
+  if (!isLoggedIn()) return Promise.resolve()
+  if (!loadPromise) loadPromise = initCart().catch(() => {})
+  return loadPromise
+}
+
 if (typeof window !== 'undefined' && isLoggedIn()) {
-  initCart()
+  ensureCartLoaded()
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { register, login, refresh } from '../../../src/validators/auth.validator.js'
+import { register, login, forgotPassword } from '../../../src/validators/auth.validator.js'
 import { validate } from '../../../src/middleware/validate.js'
 
 const run = async (validators, body) => {
@@ -18,8 +18,29 @@ describe('auth validators — register', () => {
       name: 'Ada Lovelace',
       email: 'ada@example.com',
       password: 'secret123',
+      acceptPrivacy: true,
     })
     expect(errs).toEqual([])
+  })
+
+  it('requires Habeas Data authorization', async () => {
+    const errs = await run(register, {
+      name: 'Ada Lovelace',
+      email: 'ada@example.com',
+      password: 'secret123',
+    })
+    expect(errs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'acceptPrivacy' })]),
+    )
+  })
+
+  it('rejects passwords without a number', async () => {
+    const errs = await run(register, {
+      name: 'Ada', email: 'ada@example.com', password: 'soloLetras', acceptPrivacy: true,
+    })
+    expect(errs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'password', message: expect.stringMatching(/número/) })]),
+    )
   })
 
   it('rejects empty name', async () => {
@@ -62,7 +83,7 @@ describe('auth validators — register', () => {
       password: '123',
     })
     expect(errs).toEqual(
-      expect.arrayContaining([expect.objectContaining({ field: 'password', message: expect.stringMatching(/entre 6 y 50/) })]),
+      expect.arrayContaining([expect.objectContaining({ field: 'password', message: expect.stringMatching(/entre 8 y 72/) })]),
     )
   })
 })
@@ -81,16 +102,10 @@ describe('auth validators — login', () => {
   })
 })
 
-describe('auth validators — refresh', () => {
-  it('rejects empty refreshToken', async () => {
-    const errs = await run(refresh, { refreshToken: '' })
-    expect(errs).toEqual(
-      expect.arrayContaining([expect.objectContaining({ message: 'El refresh token es requerido' })]),
-    )
-  })
-
-  it('accepts a non-empty refreshToken', async () => {
-    const errs = await run(refresh, { refreshToken: 'abc' })
-    expect(errs).toEqual([])
+describe('auth validators — email normalization', () => {
+  it('lowercases emails but keeps Gmail dots (no normalizeEmail)', async () => {
+    const req = { body: { email: '  Juan.Perez@Gmail.com ' } }
+    for (const v of forgotPassword) await v.run(req)
+    expect(req.body.email).toBe('juan.perez@gmail.com')
   })
 })

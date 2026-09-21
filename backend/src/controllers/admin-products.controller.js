@@ -37,7 +37,7 @@ export const updateProduct = async (req, res, next) => {
 
 export const deleteProduct = async (req, res, next) => {
   try {
-    const result = await AdminProducts.deleteProduct(req.params.id)
+    const result = await AdminProducts.deleteProduct(req.params.id, { hard: req.query.hard === 'true' })
     res.json(result)
   } catch (err) { next(err) }
 }
@@ -59,6 +59,20 @@ export const setMainImage = async (req, res, next) => {
 export const upsertVariants = async (req, res, next) => {
   try {
     const product = await AdminProducts.upsertVariants(req.params.id, req.body.variants)
+    res.json(product)
+  } catch (err) { next(err) }
+}
+
+export const addProductImages = async (req, res, next) => {
+  try {
+    const product = await AdminProducts.addProductImages(req.params.id, req.body, req.files)
+    res.json(product)
+  } catch (err) { next(err) }
+}
+
+export const restoreProduct = async (req, res, next) => {
+  try {
+    const product = await AdminProducts.restoreProduct(req.params.id)
     res.json(product)
   } catch (err) { next(err) }
 }

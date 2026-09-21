@@ -58,7 +58,7 @@ describe('errorHandler — custom codes', () => {
   it('INVALID_FILE_CONTENT uses err.status or 400', () => {
     const { res } = call({ code: 'INVALID_FILE_CONTENT', message: 'bad content', status: 422 })
     expect(res.status).toHaveBeenCalledWith(422)
-    expect(res.json).toHaveBeenCalledWith({ error: 'bad content' })
+    expect(res.json).toHaveBeenCalledWith({ error: 'bad content', code: 'INVALID_FILE_CONTENT' })
   })
 
   it('UNSUPPORTED_FILE_TYPE defaults to 400', () => {
@@ -91,14 +91,26 @@ describe('errorHandler — generic', () => {
     expect(res.status).toHaveBeenCalledWith(422)
   })
 
-  it('defaults to 500 with default message', () => {
-    const { res } = call(new Error('boom'))
+  it('defaults to 500 and hides the internal message', () => {
+    const { res } = call(new Error('boom: connection string postgres://…'))
     expect(res.status).toHaveBeenCalledWith(500)
-    expect(res.json).toHaveBeenCalledWith({ error: 'boom' })
+    expect(res.json).toHaveBeenCalledWith({ error: 'Error interno del servidor' })
+  })
+
+  it('includes code and details on 4xx errors', () => {
+    const { res } = call({ status: 409, code: 'INSUFFICIENT_STOCK', message: 'Stock insuficiente', details: [{ productId: 'p1' }] })
+    expect(res.json).toHaveBeenCalledWith({ error: 'Stock insuficiente', code: 'INSUFFICIENT_STOCK', details: [{ productId: 'p1' }] })
   })
 
   it('falls back to generic message when err.message missing', () => {
     const { res } = call({})
     expect(res.json).toHaveBeenCalledWith({ error: 'Error interno del servidor' })
+  })
+})
+describe('errorHandler — errores de servicios externos (axios)', () => {
+  it('no reenvía el status remoto ni el mensaje interno: responde 502', () => {
+    const { res } = call({ isAxiosError: true, status: 401, message: 'Request failed with status code 401', response: { status: 401 }, config: { url: 'https://production.wompi.co/v1/transactions' } })
+    expect(res.status).toHaveBeenCalledWith(502)
+    expect(res.json.mock.calls[0][0].error).not.toMatch(/status code/)
   })
 })

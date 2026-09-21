@@ -11,8 +11,7 @@ import {
   forgotPassword,
   resetPassword,
 } from '../controllers/auth.controller.js'
-import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
-import { canManageAdmins } from '../middleware/authorization.middleware.js'
+import { isAuth } from '../middleware/auth.middleware.js'
 import { validate } from '../middleware/validate.js'
 import {
   authLoginLimiter,
@@ -23,16 +22,17 @@ import {
   passwordResetConfirmLimiter,
 } from '../middleware/rateLimit.middleware.js'
 import {
+  register as registerValidator,
+  login as loginValidator,
   resendVerification as resendVerificationValidator,
   forgotPassword as forgotPasswordValidator,
   resetPassword as resetPasswordValidator,
 } from '../validators/auth.validator.js'
-import { prisma } from '../config/prisma.js'
 
 const router = Router()
 
-router.post('/register',            authRegisterLimiter, register)
-router.post('/login',               authLoginLimiter,    login)
+router.post('/register',            authRegisterLimiter, validate(registerValidator), register)
+router.post('/login',               authLoginLimiter,    validate(loginValidator),    login)
 router.post('/refresh',             authRefreshLimiter,  refresh)
 router.post('/logout',              logout)
 router.get('/me',                   isAuth,              me)
@@ -46,27 +46,6 @@ router.get('/verification-status',  isAuth,              checkVerification)
 router.post('/forgot-password',     passwordResetRequestLimiter, validate(forgotPasswordValidator), forgotPassword)
 router.post('/reset-password',      passwordResetConfirmLimiter, validate(resetPasswordValidator),  resetPassword)
 
-router.get('/admins', isAuth, isAdmin, async (req, res) => {
-  const admins = await prisma.user.findMany({
-    where: { role: 'ADMIN' },
-    select: { id: true, email: true, name: true, role: true }
-  })
-  res.json(admins)
-})
-
-router.post('/make-admin', isAuth, isAdmin, canManageAdmins, async (req, res) => {
-  const { email } = req.body
-  if (!email) return res.status(400).json({ error: 'Email requerido' })
-  try {
-    const user = await prisma.user.update({
-      where: { email },
-      data: { role: 'ADMIN' },
-      select: { id: true, email: true, name: true, role: true }
-    })
-    res.json({ message: 'Usuario ahora es ADMIN', user })
-  } catch (e) {
-    res.status(404).json({ error: 'Usuario no encontrado' })
-  }
-})
+// La gestión de roles vive en /api/v1/admin/users/:id/role (sólo SUPER_ADMIN).
 
 export default router
