@@ -5,7 +5,7 @@
 
 const EMAIL_CONFIG = {
   host: import.meta.env.PUBLIC_SMTP_HOST || 'smtp.gmail.com',
-  fromEmail: import.meta.env.PUBLIC_SMTP_FROM_EMAIL || 'noreply@kaesstore.com',
+  fromEmail: import.meta.env.PUBLIC_SMTP_FROM_EMAIL || '',
 }
 
 export const SITE_CONFIG = {

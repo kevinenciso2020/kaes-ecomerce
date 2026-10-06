@@ -118,6 +118,17 @@ describe('POST /api/v1/payments/wompi/checkout', () => {
     expect((await post(customerToken(), { orderId: 'ord1' })).status).toBe(409)
   })
 
+  it('409 ORDER_IN_REVIEW si ya hay un pago aprobado sin confirmar (evita doble cobro)', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ needsReview: true, payment: { status: 'COMPLETED' } }))
+    const res = await post(customerToken(), { orderId: 'ord1' })
+    expect(res.status).toBe(409)
+    expect(res.body.code).toBe('ORDER_IN_REVIEW')
+
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ payment: { status: 'COMPLETED' } }))
+    expect((await post(customerToken(), { orderId: 'ord1' })).body.code).toBe('ORDER_IN_REVIEW')
+    expect(mocks.prisma.order.update).not.toHaveBeenCalled()
+  })
+
   it('409 si un producto se agotó antes de pagar', async () => {
     mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
     mocks.prisma.product.findUnique.mockResolvedValueOnce({ stock: 0 })

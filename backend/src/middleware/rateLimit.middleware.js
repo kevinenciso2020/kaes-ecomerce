@@ -54,7 +54,7 @@ export const emailVerifyLimiter = isTest
   ? noop
   : rateLimit({
       ...standardOptions,
-      skipSuccessfulRequests: true,
+      skipSuccessfulRequests: false,
       windowMs: 15 * 60 * 1000,
       max: 10,
       message: { error: 'Demasiadas solicitudes de verificación, intenta más tarde' },
@@ -65,7 +65,7 @@ export const passwordResetRequestLimiter = isTest
   ? noop
   : rateLimit({
       ...standardOptions,
-      skipSuccessfulRequests: true,
+      skipSuccessfulRequests: false,
       windowMs: 60 * 60 * 1000,
       max: 5,
       message: { error: 'Demasiadas solicitudes de recuperación, intenta más tarde' },
@@ -87,11 +87,39 @@ export const contactLimiter = isTest
   ? noop
   : rateLimit({
       ...standardOptions,
-      skipSuccessfulRequests: true,
+      skipSuccessfulRequests: false,
       windowMs: 60 * 60 * 1000,
       max: 5,
       message: { error: 'Has enviado demasiados mensajes, intenta más tarde' },
       keyGenerator: (req) => `${req.ip}:${normalizeEmail(req.body?.email)}`,
+    })
+
+// Estos endpoints responden 200 aunque el email no exista (anti-enumeración),
+// por eso los limitadores de arriba NO pueden saltarse las respuestas exitosas.
+// Además, un tope sólo por IP: cambiando el email en cada intento se esquivan
+// los limitadores IP+email (spam de correos, registros masivos, credential
+// stuffing) y se agota la cuota del SMTP.
+export const authIpLimiter = isTest
+  ? noop
+  : rateLimit({
+      ...standardOptions,
+      skipSuccessfulRequests: false,
+      windowMs: 60 * 60 * 1000,
+      max: 30,
+      message: { error: 'Demasiadas solicitudes desde tu conexión, intenta más tarde' },
+      keyGenerator: (req) => `ip:${req.ip}`,
+    })
+
+// Login: tope por IP que sólo cuenta intentos FALLIDOS (redes compartidas con
+// muchos clientes legítimos no se bloquean por iniciar sesión).
+export const loginIpLimiter = isTest
+  ? noop
+  : rateLimit({
+      ...standardOptions,
+      windowMs: 15 * 60 * 1000,
+      max: 30,
+      message: { error: 'Demasiados intentos de inicio de sesión desde tu conexión, intenta más tarde' },
+      keyGenerator: (req) => `login-ip:${req.ip}`,
     })
 
 // Clave por usuario autenticado (si lo hay) o por IP.

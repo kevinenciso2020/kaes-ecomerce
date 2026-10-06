@@ -37,7 +37,7 @@
     "jsonwebtoken": "^9.0.2",
     "mercadopago": "^3.4.0",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^10.0.15",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "prisma": "5.22.0"

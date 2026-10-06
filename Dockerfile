@@ -17,4 +17,8 @@ EXPOSE 3001
 
 ENV NODE_ENV=production
 
+# No correr como root dentro del contenedor.
+RUN chown -R node:node /app
+USER node
+
 CMD ["npm", "run", "start:prod"]

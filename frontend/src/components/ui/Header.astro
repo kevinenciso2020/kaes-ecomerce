@@ -79,6 +79,7 @@ import Icon from './Icon.astro'
   import { cartCount } from '../../stores/cart.store.js'
   import { currentUser } from '../../stores/auth.store.js'
   import { api } from '../../lib/api.js'
+  import { escapeHtml } from '../../lib/sanitize.js'
 
   const badge = document.getElementById('cart-count')
   cartCount.subscribe((count) => {
@@ -96,7 +97,7 @@ import Icon from './Icon.astro'
     if (!el) return
     if (user) {
       const profileLink = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? '/admin' : '/perfil'
-      const displayName = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? 'Admin' : (user.name?.split(' ')[0] || 'Perfil')
+      const displayName = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? 'Admin' : escapeHtml(user.name?.split(' ')[0] || 'Perfil')
       el.innerHTML = `
         <a href="${profileLink}" class="nav-link">${displayName}</a>
         <button id="header-logout-desktop" class="icon-btn" type="button" aria-label="Cerrar sesión">
@@ -116,7 +117,7 @@ import Icon from './Icon.astro'
     if (!el) return
     if (user) {
       const profileLink = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? '/admin' : '/perfil'
-      const displayName = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? 'Admin' : (user.name?.split(' ')[0] || 'Perfil')
+      const displayName = (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') ? 'Admin' : escapeHtml(user.name?.split(' ')[0] || 'Perfil')
       el.innerHTML = `
         <a href="${profileLink}" class="drawer-link drawer-link-strong">${displayName}</a>
         <button id="header-logout-mobile" class="drawer-link drawer-link-action" type="button">Cerrar sesión</button>

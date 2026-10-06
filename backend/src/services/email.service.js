@@ -5,7 +5,9 @@ import { logger } from '../config/logger.js'
 const log = logger.child({ component: 'email' })
 
 const FROM_NAME = 'KAES STORE'
-const FROM_EMAIL = process.env.SMTP_FROM_EMAIL || 'noreply@kaesstore.com'
+// Debe ser una dirección del dominio propio con SPF/DKIM configurados; si
+// falta se usa la cuenta SMTP (nunca un dominio ajeno, que falla DMARC).
+const FROM_EMAIL = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER
 
 const formatPrice = (price) => {
   return new Intl.NumberFormat('es-CO', {

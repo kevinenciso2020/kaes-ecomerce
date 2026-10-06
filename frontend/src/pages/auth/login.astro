@@ -62,11 +62,18 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
   const isAdmin = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN'
 
-  // Sólo rutas internas: evita redirecciones abiertas (?redirect=//evil.com).
-  const redirectParam = new URLSearchParams(window.location.search).get('redirect')
-  const safeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//')
-    ? redirectParam
-    : null
+  // Sólo rutas internas: evita redirecciones abiertas (?redirect=//evil.com o
+  // /\evil.com, que los navegadores tratan como //evil.com).
+  const toSafeRedirect = (value) => {
+    if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null
+    try {
+      const target = new URL(value, window.location.origin)
+      return target.origin === window.location.origin ? target.pathname + target.search + target.hash : null
+    } catch {
+      return null
+    }
+  }
+  const safeRedirect = toSafeRedirect(new URLSearchParams(window.location.search).get('redirect'))
 
   const destinationFor = (user) => {
     if (safeRedirect && (!safeRedirect.startsWith('/admin') || isAdmin(user.role))) return safeRedirect

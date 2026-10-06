@@ -20,6 +20,8 @@ import {
   emailVerifyLimiter,
   passwordResetRequestLimiter,
   passwordResetConfirmLimiter,
+  authIpLimiter,
+  loginIpLimiter,
 } from '../middleware/rateLimit.middleware.js'
 import {
   register as registerValidator,
@@ -31,19 +33,19 @@ import {
 
 const router = Router()
 
-router.post('/register',            authRegisterLimiter, validate(registerValidator), register)
-router.post('/login',               authLoginLimiter,    validate(loginValidator),    login)
+router.post('/register',            authIpLimiter, authRegisterLimiter, validate(registerValidator), register)
+router.post('/login',               loginIpLimiter, authLoginLimiter,    validate(loginValidator),    login)
 router.post('/refresh',             authRefreshLimiter,  refresh)
 router.post('/logout',              logout)
 router.get('/me',                   isAuth,              me)
 
 // Verificación de email — pública (el link del correo no requiere login)
 router.get('/verify-email',         verifyEmail)
-router.post('/resend-verification', emailVerifyLimiter, validate(resendVerificationValidator), resendVerification)
+router.post('/resend-verification', authIpLimiter, emailVerifyLimiter, validate(resendVerificationValidator), resendVerification)
 router.get('/verification-status',  isAuth,              checkVerification)
 
 // Recuperación de contraseña por OTP — público, rate-limited
-router.post('/forgot-password',     passwordResetRequestLimiter, validate(forgotPasswordValidator), forgotPassword)
+router.post('/forgot-password',     authIpLimiter, passwordResetRequestLimiter, validate(forgotPasswordValidator), forgotPassword)
 router.post('/reset-password',      passwordResetConfirmLimiter, validate(resetPasswordValidator),  resetPassword)
 
 // La gestión de roles vive en /api/v1/admin/users/:id/role (sólo SUPER_ADMIN).

@@ -33,6 +33,7 @@ const loadPayableOrder = async (orderId, user) => {
       user: { select: { email: true, name: true } },
       items: true,
       shippingAddress: true,
+      payment: { select: { status: true } },
     },
   })
   if (!order || (order.userId !== user.id && !isAdminRole(user.role))) {
@@ -40,6 +41,11 @@ const loadPayableOrder = async (orderId, user) => {
   }
   if (order.stockDeducted || order.status === 'CONFIRMED') {
     throw httpError(409, 'Esta orden ya está pagada', 'ORDER_ALREADY_PAID')
+  }
+  // Un pago aprobado que no pudo confirmar la orden (sin stock, monto distinto)
+  // la deja PENDING + needsReview: cobrarla otra vez sería un doble cobro.
+  if (order.needsReview || ['COMPLETED', 'REFUNDED'].includes(order.payment?.status)) {
+    throw httpError(409, 'Esta orden tiene un pago en revisión. Te contactaremos; no es necesario pagar de nuevo.', 'ORDER_IN_REVIEW')
   }
   if (order.status !== 'PENDING') {
     throw httpError(409, 'Esta orden ya no se puede pagar. Crea un pedido nuevo desde tu carrito.', 'ORDER_NOT_PAYABLE')

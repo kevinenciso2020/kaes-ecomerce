@@ -25,7 +25,10 @@ import catalogRoutes  from './routes/catalog.routes.js'
 
 const app = express()
 
-app.set('trust proxy', 1)
+// Saltos de proxy delante del API: 1 = sólo el proxy de Railway. Si el API
+// queda detrás del proxy de Cloudflare (nube naranja) usa TRUST_PROXY=2; si no,
+// req.ip sería la IP de Cloudflare y todos los clientes compartirían el rate limit.
+app.set('trust proxy', Number.parseInt(process.env.TRUST_PROXY, 10) || 1)
 
 // ── Request ID + base logger (debe ir antes que cualquier middleware que loguee) ──
 app.use(requestContextMiddleware)
