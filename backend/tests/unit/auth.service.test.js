@@ -196,28 +196,78 @@ describe('loginUser', () => {
 describe('refreshAccessToken', () => {
   const signRefresh = () => jwt.sign({ id: 'u1', jti: 'x' }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' })
 
-  it('busca el token por HASH, rota (delete + create hasheado) y emite nuevos tokens', async () => {
-    const validToken = signRefresh()
-    const txMock = {
-      refreshToken: { deleteMany: vi.fn().mockResolvedValue({ count: 1 }), create: vi.fn().mockResolvedValue({}) },
-    }
-    mocks.prisma.$transaction.mockImplementation(async (cb) => cb(txMock))
-    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
-      id: 'rt1', token: hashRefreshToken(validToken), userId: 'u1', expiresAt: new Date(Date.now() + 60_000),
-    })
+  const mockActiveUser = () =>
     mocks.prisma.user.findUnique.mockResolvedValueOnce({
       id: 'u1', email: 'a@b.com', name: 'Ada', role: 'CUSTOMER', emailVerified: true, isActive: true,
     })
+  const mockTx = () => {
+    const txMock = {
+      refreshToken: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), create: vi.fn().mockResolvedValue({}) },
+    }
+    mocks.prisma.$transaction.mockImplementation(async (cb) => cb(txMock))
+    return txMock
+  }
+
+  it('busca el token por HASH, rota (marca replacedAt + create hasheado) y emite nuevos tokens', async () => {
+    const validToken = signRefresh()
+    const txMock = mockTx()
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', token: hashRefreshToken(validToken), userId: 'u1', expiresAt: new Date(Date.now() + 60_000), replacedAt: null,
+    })
+    mockActiveUser()
 
     const result = await AuthService.refreshAccessToken(validToken)
 
     expect(mocks.prisma.refreshToken.findUnique).toHaveBeenCalledWith({ where: { token: hashRefreshToken(validToken) } })
-    expect(txMock.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { id: 'rt1' } })
+    const rotate = txMock.refreshToken.updateMany.mock.calls[0][0]
+    expect(rotate.where).toEqual({ id: 'rt1', replacedAt: null })
+    expect(rotate.data.replacedAt).toBeInstanceOf(Date)
+    // La fila rotada caduca pronto (1 h) para no acumular tokens viejos.
+    expect(rotate.data.expiresAt.getTime() - rotate.data.replacedAt.getTime()).toBe(60 * 60 * 1000)
     const stored = txMock.refreshToken.create.mock.calls[0][0].data.token
     expect(stored).toBe(hashRefreshToken(result.refreshToken))
     expect(stored).not.toBe(result.refreshToken) // nunca en texto plano
     expect(result.refreshToken).not.toBe(validToken)
     expect(result.user).not.toHaveProperty('isActive')
+    expect(mocks.prisma.refreshToken.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('refresh concurrente (otra pestaña) con un token rotado hace < 30 s: emite sesión nueva SIN revocar las demás', async () => {
+    const validToken = signRefresh()
+    const txMock = mockTx()
+    txMock.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 })
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() + 60_000), replacedAt: new Date(Date.now() - 5_000),
+    })
+    mockActiveUser()
+
+    const result = await AuthService.refreshAccessToken(validToken)
+
+    expect(result.refreshToken).toBeTruthy()
+    expect(txMock.refreshToken.create).toHaveBeenCalledTimes(1)
+    expect(mocks.prisma.refreshToken.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('token rotado reutilizado FUERA de la gracia → revoca TODAS las sesiones', async () => {
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() + 60_000), replacedAt: new Date(Date.now() - 60_000),
+    })
+    mocks.prisma.refreshToken.deleteMany.mockResolvedValueOnce({ count: 2 })
+
+    await expect(AuthService.refreshAccessToken(signRefresh())).rejects.toMatchObject({ status: 401 })
+
+    expect(mocks.prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
+    expect(mocks.prisma.refreshToken.create).not.toHaveBeenCalled()
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('token rotado cuya fila ya caducó también se trata como reuso (no como simple expiración)', async () => {
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() - 1_000), replacedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    })
+    mocks.prisma.refreshToken.deleteMany.mockResolvedValueOnce({ count: 1 })
+    await expect(AuthService.refreshAccessToken(signRefresh())).rejects.toMatchObject({ status: 401 })
+    expect(mocks.prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
   })
 
   it('lanza 401 si el JWT no es válido', async () => {

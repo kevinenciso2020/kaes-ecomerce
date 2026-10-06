@@ -14,6 +14,11 @@ const VERIFICATION_TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 horas
 const RESET_CODE_EXPIRY_MS = 10 * 60 * 1000 // 10 minutos — ventana corta para OTP
 const RESET_MAX_ATTEMPTS = 5
 
+// Margen para refresh concurrentes con el mismo token (varias pestañas).
+const REFRESH_REUSE_GRACE_MS = 30 * 1000
+// Cuánto se conserva la fila de un refresh token ya rotado.
+const ROTATED_TOKEN_RETENTION_MS = 60 * 60 * 1000
+
 const hashToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex')
 
@@ -118,8 +123,18 @@ export const refreshAccessToken = async (refreshToken) => {
   const stored = await prisma.refreshToken.findUnique({ where: { token: tokenHash } })
 
   if (!stored) {
-    // JWT válido pero no está en BD: ya fue rotado o revocado. Si alguien lo
-    // reutiliza puede ser un token robado → se revocan todas las sesiones.
+    // JWT válido pero no está en BD: ya fue rotado hace tiempo o revocado. Si
+    // alguien lo reutiliza puede ser un token robado → se revocan todas las sesiones.
+    await prisma.refreshToken.deleteMany({ where: { userId: decoded.id } })
+    log.warn({ userId: decoded.id }, 'auth.refresh_token_reuse_detected')
+    throw reject('Sesión inválida, inicia sesión de nuevo', 401)
+  }
+
+  // Un token ya rotado sólo se acepta dentro del periodo de gracia: dos
+  // pestañas que renuevan la sesión casi a la vez mandan el mismo token y la
+  // segunda no debe cerrar todas las sesiones. Fuera de la gracia es reuso.
+  // (Se revisa antes que la expiración porque al rotar se acorta expiresAt.)
+  if (stored.replacedAt && Date.now() - stored.replacedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
     await prisma.refreshToken.deleteMany({ where: { userId: decoded.id } })
     log.warn({ userId: decoded.id }, 'auth.refresh_token_reuse_detected')
     throw reject('Sesión inválida, inicia sesión de nuevo', 401)
@@ -143,11 +158,17 @@ export const refreshAccessToken = async (refreshToken) => {
   const { isActive, ...safeUser } = user
   const tokens = generateTokens(safeUser)
 
-  // Rotación atómica: borrar el viejo sólo si sigue existiendo (dos refresh
-  // concurrentes con el mismo token: sólo uno gana).
+  // Rotación: el token viejo se marca como reemplazado (no se borra) para
+  // reconocer el reuso. Su fila caduca pronto; cuando el job la purga, un
+  // reuso cae en "no está en BD" y también revoca todo.
+  // updateMany condicional: si dos refresh concurrentes lo marcan, sólo uno
+  // afecta la fila y el otro sigue dentro de la gracia.
+  const now = new Date()
   await prisma.$transaction(async (tx) => {
-    const { count } = await tx.refreshToken.deleteMany({ where: { id: stored.id } })
-    if (count !== 1) throw reject('Sesión inválida, inicia sesión de nuevo', 401)
+    await tx.refreshToken.updateMany({
+      where: { id: stored.id, replacedAt: null },
+      data: { replacedAt: now, expiresAt: new Date(now.getTime() + ROTATED_TOKEN_RETENTION_MS) },
+    })
     await storeRefreshToken(tx, user.id, tokens.refreshToken)
   })
 

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 
 vi.mock('../../src/config/prisma.js', () => ({
   prisma: {
+    user: { findFirst: vi.fn() },
     product: {
       findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(),
       create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn(),
@@ -53,6 +54,8 @@ beforeEach(() => {
   // resetAllMocks borra calls, results, queue de mockResolvedValueOnce
   // y deja las implementaciones persistentes (mockResolvedValue, mockReturnValue) intactas.
   vi.resetAllMocks()
+  // isAdmin confirma en BD que el admin sigue activo y con el mismo rol.
+  prisma.user.findFirst.mockResolvedValue({ id: 'admin' })
   cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'https://x/y.jpg', public_id: 'pid' })
   cloudinary.uploader.destroy.mockResolvedValue({ result: 'ok' })
 })

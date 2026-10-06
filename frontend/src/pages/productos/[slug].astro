@@ -3,6 +3,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 import Icon from '../../components/ui/Icon.astro'
 import { api } from '../../lib/api.js'
 import { SITE_CONFIG } from '../../lib/site-config.js'
+import { absoluteUrl, productJsonLd, resolveSiteUrl } from '../../lib/seo.js'
 
 const { slug } = Astro.params
 
@@ -34,6 +35,11 @@ const finalPrice  = Number(product.finalPrice ?? product.price)
 const hasDiscount = finalPrice < basePrice
 const fmt = (n) => Number(n).toLocaleString('es-CO')
 
+// SEO: imagen para compartir en redes y datos estructurados para Google.
+const productUrl = absoluteUrl(resolveSiteUrl(Astro.site, Astro.url.origin), `/productos/${encodeURIComponent(product.slug)}`)
+const seoImage   = mainImage?.url
+const jsonLd     = productJsonLd({ product, url: productUrl, image: seoImage, price: finalPrice, inStock: !soldOut })
+
 // JSON embebido: se escapa "<" para que un nombre con "</script>" no rompa la página.
 const productJson = JSON.stringify({
   id:            product.id,
@@ -49,7 +55,7 @@ const productJson = JSON.stringify({
 }).replace(/</g, '\\u003c')
 ---
 
-<ShopLayout title={product.name} description={product.description}>
+<ShopLayout title={product.name} description={product.description} image={seoImage} type="product" jsonLd={jsonLd}>
   <div class="product-page container">
 
     <nav class="breadcrumb" aria-label="Migas de pan">

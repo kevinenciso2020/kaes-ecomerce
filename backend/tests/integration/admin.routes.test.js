@@ -28,6 +28,39 @@ const tokenFor = (payload) =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // isAdmin confirma en BD que el admin sigue activo y con el mismo rol.
+  prisma.user.findFirst.mockResolvedValue({ id: 'admin' })
+})
+
+describe('isAdmin confirma el rol contra la BD', () => {
+  it('consulta la cuenta con el id y el rol del token, exigiendo que siga activa', async () => {
+    prisma.user.findMany.mockResolvedValueOnce([])
+    const token = tokenFor({ id: 'a1', email: 'admin@a.com', role: 'ADMIN' })
+    await request(app).get('/api/v1/admin/users').set('Authorization', `Bearer ${token}`)
+    expect(prisma.user.findFirst).toHaveBeenCalledWith({
+      where: { id: 'a1', isActive: true, role: 'ADMIN' },
+      select: { id: true },
+    })
+  })
+
+  it('401 SESSION_OUTDATED si el admin fue desactivado o degradado (token aún vigente)', async () => {
+    prisma.user.findFirst.mockResolvedValueOnce(null)
+    const token = tokenFor({ id: 'a1', email: 'admin@a.com', role: 'ADMIN' })
+    const res = await request(app)
+      .put('/api/v1/admin/users/u2')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isActive: false })
+    expect(res.status).toBe(401)
+    expect(res.body.code).toBe('SESSION_OUTDATED')
+    expect(prisma.user.update).not.toHaveBeenCalled()
+  })
+
+  it('un CUSTOMER recibe 403 sin consultar la BD', async () => {
+    const token = tokenFor({ id: 'c1', email: 'c@d.com', role: 'CUSTOMER' })
+    const res = await request(app).get('/api/v1/admin/users').set('Authorization', `Bearer ${token}`)
+    expect(res.status).toBe(403)
+    expect(prisma.user.findFirst).not.toHaveBeenCalled()
+  })
 })
 
 describe('PUT /api/v1/admin/users/:id/role', () => {

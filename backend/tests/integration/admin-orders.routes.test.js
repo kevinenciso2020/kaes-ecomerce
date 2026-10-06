@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken'
 
 vi.mock('../../src/config/prisma.js', () => ({
   prisma: {
+    user: { findFirst: vi.fn() },
     order: {
       findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(),
       update: vi.fn(), count: vi.fn(), create: vi.fn(),
@@ -29,6 +30,8 @@ const adminToken = () =>
 
 beforeEach(() => {
   vi.resetAllMocks()
+  // isAdmin confirma en BD que el admin sigue activo y con el mismo rol.
+  prisma.user.findFirst.mockResolvedValue({ id: 'admin' })
 })
 
 const makeOrder = (overrides = {}) => ({
