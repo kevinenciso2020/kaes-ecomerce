@@ -34,10 +34,21 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - run: npx prisma validate
-      - run: npx prisma generate
+      - name: Validar schema de Prisma (variables ficticias)
+        run: npx prisma validate
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+          DIRECT_URL: postgresql://user:pass@localhost:5432/db
+      - name: Generar cliente de Prisma (variables ficticias)
+        run: npx prisma generate
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+          DIRECT_URL: postgresql://user:pass@localhost:5432/db
       - name: Tests unitarios e integración (mocks)
         run: npm test
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+          DIRECT_URL: postgresql://user:pass@localhost:5432/db
       - name: Tests contra PostgreSQL real (pagos, stock, concurrencia)
         run: npm run test:db
         env:
