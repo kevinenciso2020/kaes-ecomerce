@@ -101,7 +101,6 @@ export default function HeroSection() {
           >
             Cada prenda nace desde lo esencial y evoluciona contigo.
           </motion.p>
-
           <motion.div
             className="hero-actions"
             custom={4}
@@ -124,3 +123,4 @@ export default function HeroSection() {
     </section>
   );
 }
+
