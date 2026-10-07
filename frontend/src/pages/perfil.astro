@@ -34,6 +34,7 @@ import ShopLayout from '../layouts/ShopLayout.astro'
   import { currentUser, clearAuth } from '../stores/auth.store.js'
   import { api, bootstrapAuth } from '../lib/api.js'
   import { escapeHtml } from '../lib/sanitize.js'
+  import { statusLabel } from '../lib/order-status.js'
 
   const init = async () => {
     const user = await bootstrapAuth()
@@ -52,7 +53,7 @@ import ShopLayout from '../layouts/ShopLayout.astro'
       infoEl.innerHTML = `
         <div class="info-row"><span class="info-label">Nombre</span><span>${escapeHtml(user.name)}</span></div>
         <div class="info-row"><span class="info-label">Email</span><span>${escapeHtml(user.email)}</span></div>
-        <div class="info-row"><span class="info-label">Rol</span><span>${user.role === 'ADMIN' ? 'Administrador' : 'Cliente'}</span></div>
+        <div class="info-row"><span class="info-label">Rol</span><span>${user.role === 'SUPER_ADMIN' ? 'Super administrador' : user.role === 'ADMIN' ? 'Administrador' : 'Cliente'}</span></div>
       `
     }
 
@@ -63,14 +64,14 @@ import ShopLayout from '../layouts/ShopLayout.astro'
         ordersEl.innerHTML = '<p class="empty-text">No tienes órdenes aún</p>'
         return
       }
-      ordersEl.innerHTML = orders.map(order => `
+      ordersEl.innerHTML = orders.slice(0, 5).map(order => `
         <a href="/perfil/ordenes/${order.id}" class="order-row">
           <span class="order-id">#${order.id.slice(-6).toUpperCase()}</span>
           <span class="order-date">${new Date(order.createdAt).toLocaleDateString('es-CO')}</span>
-          <span class="badge badge-gray">${escapeHtml(order.status)}</span>
+          <span class="badge badge-gray">${escapeHtml(statusLabel(order.status))}</span>
           <span class="order-total">$${Number(order.total).toLocaleString('es-CO')}</span>
         </a>
-      `).join('')
+      `).join('') + (orders.length > 5 ? '<a href="/perfil/ordenes" class="see-all">Ver todos mis pedidos →</a>' : '')
     }).catch(() => {
       const ordersEl = document.getElementById('orders-list')
       if (ordersEl) ordersEl.innerHTML = '<p class="empty-text">Error cargando órdenes</p>'

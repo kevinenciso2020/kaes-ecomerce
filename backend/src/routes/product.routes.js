@@ -1,22 +1,12 @@
 import { Router } from 'express'
-import { productUpload, uploadConstants } from '../middleware/upload.middleware.js'
-import { getProducts, getProductBySlug, createProduct, updateProduct, deleteProduct, getCategories, createCategory } from '../controllers/product.controller.js'
-import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
-import { validate } from '../middleware/validate.js'
-import { createProduct as createProductValidator, updateProduct as updateProductValidator, deleteProduct as deleteProductValidator, createCategory as createCategoryValidator } from '../validators/product.validator.js'
+import { getProducts, getProductBySlug, getCategories } from '../controllers/product.controller.js'
 
 const router = Router()
 
-// Rutas públicas — cualquiera puede ver productos sin login
+// Rutas públicas — cualquiera puede ver productos sin login.
+// La gestión (crear/editar/eliminar productos y categorías) vive en /api/v1/admin.
 router.get('/',              getProducts)
 router.get('/categories',    getCategories)
 router.get('/:slug',         getProductBySlug)
-
-// Rutas protegidas — solo admin
-// IMPORTANTE: multer debe ejecutarse ANTES del validator para que req.body tenga los datos
-router.post('/',             isAuth, isAdmin, productUpload.array('images', uploadConstants.MAX_FILES), createProductValidator, validate, createProduct)
-router.put('/:id',           isAuth, isAdmin, productUpload.array('images', uploadConstants.MAX_FILES), updateProductValidator, validate, updateProduct)
-router.delete('/:id',        isAuth, isAdmin, deleteProductValidator, validate, deleteProduct)
-router.post('/categories',    isAuth, isAdmin, createCategoryValidator, validate, createCategory)
 
 export default router

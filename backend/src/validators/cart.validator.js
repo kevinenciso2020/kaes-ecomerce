@@ -1,35 +1,29 @@
 import { body, param } from 'express-validator'
 
+const id = (field, where = body) =>
+  where(field)
+    .isString().withMessage('ID inválido')
+    .isLength({ min: 1, max: 100 }).withMessage('ID inválido')
+
 export const addToCart = [
-  body('productId')
-    .notEmpty().withMessage('El ID del producto es requerido')
-    .isInt({ min: 1 }).withMessage('El ID del producto debe ser válido'),
+  id('productId'),
   body('quantity')
-    .notEmpty().withMessage('La cantidad es requerida')
-    .isInt({ min: 1 }).withMessage('La cantidad debe ser al menos 1'),
-  body('size')
     .optional()
+    .isInt({ min: 1, max: 10 }).withMessage('La cantidad debe estar entre 1 y 10'),
+  body('size')
+    .optional({ nullable: true })
     .trim()
-    .escape()
     .isLength({ max: 20 }).withMessage('La talla no puede superar los 20 caracteres'),
   body('color')
-    .optional()
+    .optional({ nullable: true })
     .trim()
-    .escape()
-    .isLength({ max: 30 }).withMessage('El color no puede superar los 30 caracteres')
+    .isLength({ max: 30 }).withMessage('El color no puede superar los 30 caracteres'),
 ]
 
 export const updateCartItem = [
-  param('itemId')
-    .notEmpty().withMessage('El ID del ítem es requerido')
-    .isInt({ min: 1 }).withMessage('El ID debe ser un número entero positivo'),
+  id('itemId', param),
   body('quantity')
-    .notEmpty().withMessage('La cantidad es requerida')
-    .isInt({ min: 1, max: 999 }).withMessage('La cantidad debe estar entre 1 y 999')
+    .isInt({ min: 0, max: 10 }).withMessage('La cantidad debe estar entre 0 y 10'),
 ]
 
-export const removeFromCart = [
-  param('itemId')
-    .notEmpty().withMessage('El ID del ítem es requerido')
-    .isInt({ min: 1 }).withMessage('El ID debe ser un número entero positivo')
-]
+export const removeFromCart = [id('itemId', param)]

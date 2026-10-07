@@ -8,6 +8,7 @@
 // jurídica.
 import ShopLayout from '../../layouts/ShopLayout.astro'
 import { SITE_CONFIG } from '../../lib/site-config.js'
+import LegalPlaceholderNotice from '../../components/ui/LegalPlaceholderNotice.astro'
 ---
 
 <ShopLayout
@@ -20,6 +21,8 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
       <h1 class="legal-title">Términos y Condiciones</h1>
       <p class="legal-meta">Última actualización: {SITE_CONFIG.legalUpdatedAt}</p>
     </header>
+
+    <LegalPlaceholderNotice />
 
     <section class="legal-section">
       <h2>1. Información de la empresa</h2>
@@ -125,7 +128,7 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
     <section class="legal-section">
       <h2>8. Envíos y entregas</h2>
       <p>
-        Los pedidos se procesan dentro de los <strong>[NÚMERO]</strong> días
+        Los pedidos se procesan dentro de los <strong>{SITE_CONFIG.processingDays}</strong> días
         hábiles siguientes a la confirmación del pago. Los tiempos de entrega
         varían según la ciudad de destino y la transportadora seleccionada. El
         cliente recibirá un número de guía para el seguimiento del envío.
@@ -137,7 +140,7 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
       <p>
         Para cambios de talla, color o referencia por parte del cliente (no
         derivados de defectos), <strong>{SITE_CONFIG.legalName}</strong> acepta
-        cambios dentro de los <strong>[NÚMERO]</strong> días calendario
+        cambios dentro de los <strong>{SITE_CONFIG.exchangeDays}</strong> días calendario
         siguientes a la entrega, siempre que el producto cumpla las
         condiciones mencionadas en la sección de retracto. Los costos de
         envío asociados al cambio corren por cuenta del cliente.

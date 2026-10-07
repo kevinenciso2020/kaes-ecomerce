@@ -5,7 +5,8 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
 <ShopLayout title="Detalle de orden">
   <div class="order-page container" id="order-content" hidden>
 
-    <a href="/perfil" class="back-link">← Volver a mis órdenes</a>
+    <a href="/perfil/ordenes" class="back-link">← Volver a mis pedidos</a>
+    <div id="pay-banner" class="pay-banner" hidden></div>
 
     <div class="order-header">
       <h1 class="page-title">Orden #<span id="order-id"></span></h1>
@@ -23,6 +24,15 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
         <div class="order-card">
           <h2 class="card-title">Resumen</h2>
           <div class="totals" id="order-totals"></div>
+        </div>
+        <div class="order-card" id="pay-card" hidden>
+          <h2 class="card-title">Pago pendiente</h2>
+          <p class="pay-text">Este pedido aún no está pagado. Puedes pagarlo ahora; se cancelará automáticamente si no se paga.</p>
+          <div class="pay-methods" id="pay-methods">
+            <button type="button" class="btn btn-primary btn-full" data-method="wompi" id="pay-wompi">Pagar con Wompi</button>
+            <button type="button" class="btn btn-outline btn-full" data-method="mercadopago" id="pay-mp">Pagar con MercadoPago</button>
+          </div>
+          <p class="pay-error" id="pay-error" role="alert" hidden></p>
         </div>
 
         <div class="order-card">
@@ -50,12 +60,11 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
 </ShopLayout>
 
 <script>
-  import { api } from '../../../lib/api.js'
-  import { currentUser } from '../../../stores/auth.store.js'
+  import { api, bootstrapAuth } from '../../../lib/api.js'
   import { escapeHtml } from '../../../lib/sanitize.js'
 
-  const user = currentUser.get()
-  const orderId = window.location.pathname.split('/perfil/ordenes/')[1]
+  const orderId = decodeURIComponent(window.location.pathname.split('/perfil/ordenes/')[1] || '').replace(/\/$/, '')
+  const params = new URLSearchParams(window.location.search)
 
   const statusLabels = {
     PENDING:    { label: 'Pendiente',    cls: 'pending' },
@@ -74,21 +83,62 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
     })
   }
 
+  const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
+
+  const setupPayment = async (order) => {
+    const payable = order.status === 'PENDING' && !order.stockDeducted && !order.needsReview
+    const banner = document.getElementById('pay-banner')
+    if (params.get('pago') === 'error') {
+      banner.textContent = 'Tu pedido quedó creado, pero no pudimos abrir la pasarela de pago. Intenta pagarlo de nuevo aquí.'
+      banner.hidden = false
+    }
+    if (order.needsReview) {
+      banner.textContent = 'Recibimos tu pago y estamos revisando tu pedido. Te contactaremos pronto.'
+      banner.hidden = false
+    }
+    if (!payable) return
+
+    document.getElementById('pay-card').hidden = false
+    try {
+      const methods = await api.payments.methods()
+      document.getElementById('pay-wompi').hidden = !methods.wompi
+      document.getElementById('pay-mp').hidden = !methods.mercadopago
+    } catch { /* dejar ambos */ }
+
+    document.querySelectorAll('#pay-methods [data-method]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const errEl = document.getElementById('pay-error')
+        errEl.hidden = true
+        document.querySelectorAll('#pay-methods button').forEach((b) => { b.disabled = true })
+        const original = btn.textContent
+        btn.textContent = 'Conectando…'
+        try {
+          const res = btn.dataset.method === 'mercadopago'
+            ? await api.payments.createPreference(order.id)
+            : await api.payments.wompi.createCheckout(order.id)
+          window.location.href = res.checkoutUrl
+        } catch (err) {
+          errEl.textContent = err.message || 'No pudimos iniciar el pago'
+          errEl.hidden = false
+          document.querySelectorAll('#pay-methods button').forEach((b) => { b.disabled = false })
+          btn.textContent = original
+        }
+      })
+    })
+    if (params.get('pagar') === '1') document.getElementById('pay-card').scrollIntoView({ behavior: 'smooth' })
+  }
+
   async function loadOrder() {
+    const user = await bootstrapAuth()
     if (!user) {
       showOnly('order-unauthorized')
       return
     }
-
     try {
+      // El backend sólo devuelve órdenes del usuario autenticado (404 si no es suya).
       const order = await api.orders.detail(orderId)
-
-      if (order.user?.id !== user.id) {
-        showOnly('order-unauthorized')
-        return
-      }
-
       showOnly('order-content')
+      setupPayment(order)
 
       document.getElementById('order-id').textContent = order.id.slice(-6).toUpperCase()
       document.getElementById('order-date').textContent = new Date(order.createdAt).toLocaleString('es-CO')
@@ -103,7 +153,7 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
         <div class="item-row">
           <div class="item-info">
             <span class="item-name">${escapeHtml(item.product?.name || 'Producto')}</span>
-            <span class="item-qty">Cantidad: ${item.quantity}</span>
+            <span class="item-qty">Cantidad: ${item.quantity}${item.size ? ` · Talla ${escapeHtml(item.size)}` : ''}${item.color ? ` · ${escapeHtml(item.color)}` : ''}</span>
           </div>
           <span class="item-price">$${(item.quantity * Number(item.price)).toLocaleString('es-CO')}</span>
         </div>
@@ -112,7 +162,7 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
       document.getElementById('order-totals').innerHTML = `
         <div class="total-row"><span>Subtotal</span><span>$${Number(order.subtotal || 0).toLocaleString('es-CO')}</span></div>
         <div class="total-row"><span>Descuento</span><span>-$${Number(order.discount || 0).toLocaleString('es-CO')}</span></div>
-        <div class="total-row"><span>Envío</span><span>$${Number(order.shipping || 0).toLocaleString('es-CO')}</span></div>
+        <div class="total-row"><span>Envío</span><span>${Number(order.shipping) > 0 ? money(order.shipping) : 'Gratis'}</span></div>
         <div class="total-row total-final"><span>Total</span><span>$${Number(order.total).toLocaleString('es-CO')}</span></div>
       `
 
@@ -145,6 +195,11 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
 </script>
 
 <style>
+  .pay-banner { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; }
+  .pay-text { font-size: 0.85rem; color: var(--color-gray-600); margin-bottom: 0.85rem; }
+  .pay-methods { display: flex; flex-direction: column; gap: 0.5rem; }
+  .pay-methods button[hidden] { display: none; }
+  .pay-error { color: #991b1b; font-size: 0.85rem; margin-top: 0.6rem; }
   .order-page {
     padding-top:    calc(var(--header-height) + 1.5rem);
     padding-bottom: 3rem;

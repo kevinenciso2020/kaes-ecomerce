@@ -52,17 +52,17 @@ import Icon from '../components/ui/Icon.astro'
         <fieldset class="form-section">
           <legend class="section-title">Método de pago</legend>
           <div class="payment-methods" role="radiogroup" aria-label="Métodos de pago">
-            <label class="payment-option">
+            <label class="payment-option" id="pm-wompi">
               <input type="radio" name="payment" value="wompi" checked />
               <div class="payment-card">
                 <span class="payment-icon"><Icon name="card" size={22} /></span>
                 <div>
                   <p class="payment-name">Wompi</p>
-                  <p class="payment-desc">Tarjetas, Nequi, PSE, Daviplata</p>
+                  <p class="payment-desc">Tarjeta, PSE, Nequi, Bancolombia</p>
                 </div>
               </div>
             </label>
-            <label class="payment-option">
+            <label class="payment-option" id="pm-mercadopago">
               <input type="radio" name="payment" value="mercadopago" />
               <div class="payment-card">
                 <span class="payment-icon"><Icon name="bank" size={22} /></span>
@@ -75,11 +75,26 @@ import Icon from '../components/ui/Icon.astro'
           </div>
         </fieldset>
 
+        <p id="payment-unavailable" class="checkout-error" hidden>
+          Los pagos en línea no están disponibles en este momento. Intenta más tarde o escríbenos.
+        </p>
+
+        <label class="consent-row">
+          <input type="checkbox" id="accept-terms" />
+          <span>
+            Acepto los <a href="/legal/terminos-y-condiciones" target="_blank" rel="noopener">Términos y condiciones</a>,
+            la <a href="/legal/politica-de-devoluciones" target="_blank" rel="noopener">Política de cambios y devoluciones</a>
+            y autorizo el tratamiento de mis datos según la
+            <a href="/legal/politica-de-privacidad" target="_blank" rel="noopener">Política de tratamiento de datos</a> (Ley 1581 de 2012).
+          </span>
+        </label>
+
         <div id="checkout-error" class="checkout-error" role="alert" hidden></div>
 
         <button type="button" class="btn btn-primary btn-full" id="place-order-btn">
-          Confirmar pedido
+          Confirmar pedido y pagar
         </button>
+        <p class="checkout-hint">Serás redirigido a la pasarela de pago segura. Tienes 2 horas para pagar tu pedido.</p>
 
       </div>
 
@@ -112,13 +127,15 @@ import Icon from '../components/ui/Icon.astro'
         </div>
         <div class="summary-row">
           <span>Envío</span>
-          <span class="shipping-free">Gratis</span>
+          <span id="order-shipping">—</span>
         </div>
         <div class="summary-divider"></div>
         <div class="summary-row total-row">
           <span>Total</span>
           <span id="order-total">$0</span>
         </div>
+        <p class="tax-note">IVA incluido</p>
+        <div id="quote-error" class="checkout-error" role="alert" hidden></div>
       </aside>
 
     </div>
@@ -126,268 +143,249 @@ import Icon from '../components/ui/Icon.astro'
 </ShopLayout>
 
 <script>
-  import { cartItems, cartTotal, clearCart } from '../stores/cart.store.js'
+  import { cartItems, ensureCartLoaded } from '../stores/cart.store.js'
   import { applyCoupon, removeCoupon, getCouponCode } from '../stores/coupon.store.js'
-  import { api, ApiError } from '../lib/api.js'
-  import { sanitizeCartItem, escapeHtml } from '../lib/sanitize.js'
+  import { api, ApiError, bootstrapAuth } from '../lib/api.js'
+  import { escapeHtml } from '../lib/sanitize.js'
 
-  let currentDiscount = 0
-  let appliedCouponData = null
+  const $ = (id) => document.getElementById(id)
+  const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
 
-  document.addEventListener('ubicacion-change', (e) => {
+  let lastQuote = null
+  let placing = false
+
+  // UbicacionSelect emite el evento en window (no en document).
+  window.addEventListener('ubicacion-change', (e) => {
     const detail = e.detail
-    const depEl = document.getElementById('address-departamento')
-    const munEl = document.getElementById('address-municipio')
-    if (depEl) depEl.value = detail?.departamento || ''
-    if (munEl) munEl.value = detail?.municipio || ''
+    if ($('address-departamento')) $('address-departamento').value = detail?.departamento || ''
+    if ($('address-municipio')) $('address-municipio').value = detail?.municipio || ''
   })
 
-  const savedCoupon = getCouponCode()
-  if (savedCoupon) {
-    const codeEl = document.getElementById('applied-code')
-    const appliedEl = document.getElementById('coupon-applied')
-    const inputEl = document.getElementById('coupon-code')
-    if (codeEl) codeEl.textContent = savedCoupon
-    if (appliedEl) appliedEl.hidden = false
-    if (inputEl) inputEl.hidden = true
+  const cartPayload = () =>
+    cartItems.get().map((item) => ({
+      productId: item.id,
+      quantity: item.quantity,
+      size: item.size || null,
+      color: item.color || null,
+    }))
+
+  const showError = (el, html, isHtml = false) => {
+    if (!el) return
+    if (isHtml) el.innerHTML = html
+    else el.textContent = html
+    el.hidden = !html
   }
 
-  const updateTotals = (subtotal, discount = 0) => {
-    currentDiscount = discount
-    const discountRow = document.getElementById('discount-row')
-    const discountEl = document.getElementById('order-discount')
-    const totalEl = document.getElementById('order-total')
-
-    if (discount > 0 && discountRow && discountEl && totalEl) {
-      discountRow.hidden = false
-      discountEl.textContent = '-$' + Number(discount).toLocaleString('es-CO')
-      const total = subtotal - discount
-      totalEl.textContent = '$' + Number(Math.max(0, total)).toLocaleString('es-CO')
-    } else if (totalEl) {
-      discountRow.hidden = true
-      totalEl.textContent = '$' + Number(subtotal).toLocaleString('es-CO')
-    }
-  }
-
-  const setCouponMessage = (msg, text, type) => {
-    if (!msg) return
-    msg.textContent = text
-    msg.className = `coupon-message${type ? ' ' + type : ''}`
-  }
-
-  document.getElementById('apply-coupon-btn')?.addEventListener('click', async () => {
-    const codeInput = document.getElementById('coupon-code')
-    const messageEl = document.getElementById('coupon-message')
-    const appliedEl = document.getElementById('coupon-applied')
-
-    const code = codeInput?.value.trim().toUpperCase() || ''
-    if (!code) {
-      setCouponMessage(messageEl, 'Ingresa un código', 'error')
-      return
-    }
-
-    try {
-      const result = await api.coupons.validate(code)
-
-      if (result.valid) {
-        appliedCouponData = result.coupon
-        applyCoupon(code, result.coupon)
-
-        const codeEl = document.getElementById('applied-code')
-        if (codeEl) codeEl.textContent = code
-        if (appliedEl) appliedEl.hidden = false
-        if (codeInput) codeInput.hidden = true
-        setCouponMessage(
-          messageEl,
-          result.coupon.type === 'PERCENTAGE'
-            ? `${result.coupon.value}% de descuento aplicado`
-            : `$${Number(result.coupon.value).toLocaleString('es-CO')} de descuento aplicado`,
-          'success'
-        )
-
-        const subtotal = cartTotal.get()
-        const discount = result.coupon.type === 'PERCENTAGE'
-          ? subtotal * (parseFloat(result.coupon.value) / 100)
-          : parseFloat(result.coupon.value)
-        updateTotals(subtotal, discount)
-      } else {
-        setCouponMessage(messageEl, result.message || 'Cupón inválido', 'error')
-      }
-    } catch (err) {
-      setCouponMessage(messageEl, err.message || 'Error al validar cupón', 'error')
-    }
-  })
-
-  document.getElementById('remove-coupon-btn')?.addEventListener('click', () => {
-    removeCoupon()
-    appliedCouponData = null
-
-    const codeInput = document.getElementById('coupon-code')
-    const appliedEl = document.getElementById('coupon-applied')
-    const messageEl = document.getElementById('coupon-message')
-
-    if (codeInput) {
-      codeInput.hidden = false
-      codeInput.value = ''
-    }
-    if (appliedEl) appliedEl.hidden = true
-    setCouponMessage(messageEl, '', '')
-
-    const subtotal = cartTotal.get()
-    updateTotals(subtotal, 0)
-  })
-
-  const items = cartItems.get().map(sanitizeCartItem)
-  const subtotal = cartTotal.get()
-
-  if (items.length === 0) {
-    const el = document.getElementById('checkout-empty')
-    if (el) el.hidden = false
-  } else {
-    const el = document.getElementById('checkout-content')
-    if (el) el.hidden = false
-
-    const orderItemsEl = document.getElementById('order-items')
-    if (orderItemsEl) {
-      orderItemsEl.innerHTML = items.map(item => `
-        <div class="order-item">
-          <div class="order-item-image">
-            ${item.image
-              ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" />`
-              : `<div class="order-item-placeholder"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></div>`
-            }
-            <span class="order-item-qty">${item.quantity}</span>
-          </div>
-          <div class="order-item-info">
-            <p class="order-item-name">${escapeHtml(item.name)}</p>
-            ${item.size  ? `<p class="order-item-variant">Talla: ${escapeHtml(item.size)}</p>`  : ''}
-            ${item.color ? `<p class="order-item-variant">Color: ${escapeHtml(item.color)}</p>` : ''}
-          </div>
-          <p class="order-item-price">$${Number(item.price * item.quantity).toLocaleString('es-CO')}</p>
+  // ── Resumen calculado por el servidor ─────────────────────────
+  const renderQuote = (quote) => {
+    lastQuote = quote
+    $('order-items').innerHTML = quote.items.map((item) => `
+      <div class="order-item">
+        <div class="order-item-image">
+          ${item.image
+            ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" />`
+            : '<div class="order-item-placeholder"></div>'}
+          <span class="order-item-qty">${item.quantity}</span>
         </div>
-      `).join('')
-    }
+        <div class="order-item-info">
+          <p class="order-item-name">${escapeHtml(item.name)}</p>
+          ${item.size ? `<p class="order-item-variant">Talla: ${escapeHtml(item.size)}</p>` : ''}
+          ${item.color ? `<p class="order-item-variant">Color: ${escapeHtml(item.color)}</p>` : ''}
+          ${item.unitPrice < item.basePrice ? `<p class="order-item-variant">Antes ${money(item.basePrice)}</p>` : ''}
+        </div>
+        <p class="order-item-price">${money(item.lineTotal)}</p>
+      </div>`).join('')
 
-    const formatted = '$' + Number(subtotal).toLocaleString('es-CO')
-    const sub = document.getElementById('order-subtotal')
-    const tot = document.getElementById('order-total')
-    if (sub) sub.textContent = formatted
-    if (tot) tot.textContent = formatted
+    $('order-subtotal').textContent = money(quote.subtotal)
+    $('discount-row').hidden = !(quote.discount > 0)
+    $('order-discount').textContent = '-' + money(quote.discount)
+    $('order-shipping').textContent = quote.shipping > 0 ? money(quote.shipping) : 'Gratis'
+    $('order-total').textContent = money(quote.total)
+
+    const code = getCouponCode()
+    if (code && quote.couponError) {
+      removeCoupon()
+      renderCouponState(null)
+      setCouponMessage(quote.couponError, 'error')
+    } else if (code && quote.coupon) {
+      renderCouponState(code)
+    }
   }
 
-  document.getElementById('place-order-btn')?.addEventListener('click', async () => {
-    const { bootstrapAuth } = await import('../lib/api.js')
+  const refreshQuote = async () => {
+    const items = cartPayload()
+    if (items.length === 0) return
+    showError($('quote-error'), '')
+    try {
+      const quote = await api.orders.quote({ items, couponCode: getCouponCode() || undefined })
+      renderQuote(quote)
+      $('place-order-btn').disabled = false
+    } catch (err) {
+      $('place-order-btn').disabled = true
+      if (err instanceof ApiError && err.status === 401) {
+        window.location.href = '/auth/login?redirect=/checkout'
+        return
+      }
+      showError($('quote-error'), (err.message || 'No pudimos calcular tu pedido') + '. Revisa tu carrito.')
+    }
+  }
+
+  // ── Cupón ─────────────────────────────────────────────────────
+  const setCouponMessage = (text, type) => {
+    const el = $('coupon-message')
+    if (!el) return
+    el.textContent = text || ''
+    el.className = `coupon-message${type ? ' ' + type : ''}`
+  }
+
+  const renderCouponState = (code) => {
+    $('applied-code').textContent = code || ''
+    $('coupon-applied').hidden = !code
+    $('coupon-code').hidden = !!code
+    $('apply-coupon-btn').hidden = !!code
+  }
+
+  $('apply-coupon-btn')?.addEventListener('click', async () => {
+    const code = $('coupon-code')?.value.trim().toUpperCase() || ''
+    if (!code) return setCouponMessage('Ingresa un código', 'error')
+    try {
+      const coupon = await api.coupons.validate(code, lastQuote?.subtotal || 0)
+      applyCoupon(code, coupon)
+      setCouponMessage(
+        coupon.type === 'PERCENTAGE' ? `${Number(coupon.value)}% de descuento aplicado` : `${money(coupon.value)} de descuento aplicado`,
+        'success',
+      )
+      renderCouponState(code)
+      await refreshQuote()
+    } catch (err) {
+      setCouponMessage(err.message || 'Cupón no válido', 'error')
+    }
+  })
+
+  $('remove-coupon-btn')?.addEventListener('click', async () => {
+    removeCoupon()
+    renderCouponState(null)
+    setCouponMessage('', '')
+    if ($('coupon-code')) $('coupon-code').value = ''
+    await refreshQuote()
+  })
+
+  // ── Métodos de pago disponibles ───────────────────────────────
+  const loadPaymentMethods = async () => {
+    try {
+      const methods = await api.payments.methods()
+      $('pm-wompi').hidden = !methods.wompi
+      $('pm-mercadopago').hidden = !methods.mercadopago
+      const first = document.querySelector(`.payment-option:not([hidden]) input[name="payment"]`)
+      if (first) first.checked = true
+      $('payment-unavailable').hidden = methods.wompi || methods.mercadopago
+    } catch {
+      // Si falla la consulta dejamos ambos visibles; el backend valida igual.
+    }
+  }
+
+  // ── Inicio ───────────────────────────────────────────────────
+  const init = async () => {
     const user = await bootstrapAuth()
     if (!user) {
-      window.location.href = '/auth/login'
+      window.location.href = '/auth/login?redirect=/checkout'
       return
     }
+    await ensureCartLoaded()
+    if (cartItems.get().length === 0) {
+      $('checkout-empty').hidden = false
+      return
+    }
+    $('checkout-content').hidden = false
+    if ($('full-name') && !$('full-name').value) $('full-name').value = user.name || ''
+    const saved = getCouponCode()
+    if (saved) renderCouponState(saved)
+    await Promise.all([refreshQuote(), loadPaymentMethods()])
+  }
+  init()
 
-    const fullNameInput   = document.getElementById('full-name')
-    const phoneInput      = document.getElementById('phone')
-    const streetInput     = document.getElementById('street')
-    const zipInput        = document.getElementById('zipCode')
-    const departamentoInput = document.getElementById('address-departamento')
-    const municipioInput  = document.getElementById('address-municipio')
+  // ── Confirmar pedido y pagar ─────────────────────────────────
+  const startPayment = async (orderId, method) => {
+    const res = method === 'mercadopago'
+      ? await api.payments.createPreference(orderId)
+      : await api.payments.wompi.createCheckout(orderId)
+    if (!res?.checkoutUrl) throw new Error('No se recibió el enlace de pago')
+    return res.checkoutUrl
+  }
 
-    const errorEl = document.getElementById('checkout-error')
-    const btn     = document.getElementById('place-order-btn')
+  $('place-order-btn')?.addEventListener('click', async () => {
+    if (placing) return
+    const errorEl = $('checkout-error')
+    const btn = $('place-order-btn')
+    showError(errorEl, '')
 
-    const fullName     = fullNameInput?.value.trim() || ''
-    const phone        = phoneInput?.value.trim() || ''
-    const street       = streetInput?.value.trim() || ''
-    const zipCode      = zipInput?.value.trim() || ''
-    const departamento = departamentoInput?.value.trim() || ''
-    const municipio    = municipioInput?.value.trim() || ''
+    const fullName = $('full-name')?.value.trim() || ''
+    const phone = ($('phone')?.value || '').replace(/[^\d+]/g, '')
+    const street = $('street')?.value.trim() || ''
+    const zipCode = $('zipCode')?.value.trim() || ''
+    // Respaldo: leer los <select> del componente por si el evento no llegó.
+    const [depSelect, munSelect] = document.querySelectorAll('.ubicacion-select select')
+    const departamento = ($('address-departamento')?.value || depSelect?.value || '').trim()
+    const municipio = ($('address-municipio')?.value || munSelect?.value || '').trim()
 
     if (!fullName || !phone || !street || !departamento || !municipio) {
-      if (errorEl) {
-        errorEl.textContent = 'Por favor completa todos los campos requeridos (incluyendo departamento y municipio)'
-        errorEl.hidden = false
-      }
-      return
+      return showError(errorEl, 'Completa nombre, teléfono, dirección, departamento y municipio.')
+    }
+    if (!/^(\+?57)?3\d{9}$|^(\+?57)?[1-8]\d{6,9}$/.test(phone)) {
+      return showError(errorEl, 'Ingresa un teléfono colombiano válido (ej. 300 123 4567).')
+    }
+    if (!$('accept-terms')?.checked) {
+      return showError(errorEl, 'Debes aceptar los términos y autorizar el tratamiento de tus datos para continuar.')
     }
 
-    const paymentMethod = document.querySelector('input[name="payment"]:checked')?.value || 'wompi'
+    const method = document.querySelector('input[name="payment"]:checked')?.value || 'wompi'
+    placing = true
+    btn.disabled = true
+    btn.textContent = 'Creando pedido…'
 
-    if (!btn) {
-      return
-    }
-    btn.disabled    = true
-    btn.textContent = 'Procesando...'
-    errorEl.hidden = true
-
+    let order = null
     try {
-      const couponCode = getCouponCode() || undefined
-
-      const orderItems = cartItems.get().map(item => ({
-        productId: item.id,
-        quantity:  item.quantity,
-        size:      item.size,
-        color:     item.color,
-      }))
-
-      const order = await api.orders.create({
-        items: orderItems,
-        couponCode,
-        address: {
-          fullName,
-          phone,
-          street,
-          zipCode: zipCode || undefined,
-          departamento,
-          municipio,
-          label: 'Casa',
-        },
+      order = await api.orders.create({
+        items: cartPayload(),
+        couponCode: getCouponCode() || undefined,
+        acceptTerms: true,
+        address: { fullName, phone, street, zipCode: zipCode || undefined, departamento, municipio, label: 'Casa' },
       })
 
-      let paymentUrl = null
-
-      if (paymentMethod === 'wompi') {
-        const wompiResponse = await api.payments.wompi.createCheckout(order.id)
-        paymentUrl = wompiResponse.paymentLink
-      } else if (paymentMethod === 'mercadopago') {
-        const mpResponse = await api.payments.createPreference({
-          orderId: order.id,
-          items: orderItems,
-          payer: { email: JSON.parse(user).email, name: fullName },
-        })
-        paymentUrl = mpResponse.sandboxInitPoint || mpResponse.initPoint
-      }
-
-      clearCart()
+      btn.textContent = 'Conectando con la pasarela…'
+      const url = await startPayment(order.id, method)
       removeCoupon()
-
-      if (paymentUrl) {
-        window.location.href = paymentUrl
-      } else {
-        window.location.href = `/perfil/ordenes?success=true&orderId=${order.id}`
-      }
-
+      // El carrito NO se vacía aquí: se vacía cuando el pago es aprobado.
+      window.location.href = url
     } catch (err) {
+      placing = false
+      btn.disabled = false
+      btn.textContent = 'Confirmar pedido y pagar'
+
+      if (order) {
+        // La orden existe pero no se pudo abrir la pasarela: no crear otra.
+        window.location.href = `/perfil/ordenes/${order.id}?pago=error`
+        return
+      }
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
-        const userEmail = (() => {
-          try { return JSON.parse(user)?.email || '' } catch { return '' }
-        })()
-        if (errorEl) {
-          errorEl.innerHTML = `
-            ${err.message}.<br>
-            <a href="/auth/verify-email?email=${encodeURIComponent(userEmail)}" class="checkout-verify-link">
-              Reenviar enlace de verificación →
-            </a>
-          `
-          errorEl.hidden = false
-        }
-      } else if (errorEl) {
-        errorEl.textContent = err.message || 'Error al procesar el pedido'
-        errorEl.hidden = false
+        return showError(errorEl, `${escapeHtml(err.message)}.<br><a href="/auth/verify-email" class="checkout-verify-link">Reenviar enlace de verificación →</a>`, true)
       }
-      if (btn) {
-        btn.disabled    = false
-        btn.textContent = 'Confirmar pedido'
+      if (err instanceof ApiError && err.code === 'INSUFFICIENT_STOCK') {
+        await refreshQuote()
       }
+      showError(errorEl, err.message || 'No pudimos crear tu pedido. Intenta de nuevo.')
     }
   })
+
+  // Si el usuario vuelve con "atrás" desde la pasarela, re-habilitar el botón.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      placing = false
+      const btn = $('place-order-btn')
+      if (btn) { btn.disabled = false; btn.textContent = 'Confirmar pedido y pagar' }
+    }
+  })
+
 </script>
 
 <style>
@@ -518,6 +516,13 @@ import Icon from '../components/ui/Icon.astro'
     margin-bottom: 0.85rem;
   }
 
+  .consent-row { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.8rem; color: var(--color-gray-600); margin: 0 0 1rem; line-height: 1.45; cursor: pointer; }
+  .consent-row input { margin-top: 0.2rem; width: 18px; height: 18px; flex-shrink: 0; }
+  .consent-row a { text-decoration: underline; }
+  .checkout-hint { font-size: 0.75rem; color: var(--color-gray-500); text-align: center; margin-top: 0.6rem; }
+  .tax-note { font-size: 0.72rem; color: var(--color-gray-500); text-align: right; margin: 0.25rem 0 0; }
+  .payment-option[hidden] { display: none; }
+  #place-order-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .checkout-verify-link {
     display:        inline-block;
     margin-top:     0.4rem;

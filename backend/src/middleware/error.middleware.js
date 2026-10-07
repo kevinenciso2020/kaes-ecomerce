@@ -68,9 +68,20 @@ export const errorHandler = (err, req, res, next) => {
     return res.status(404).json({ error: 'Registro no encontrado' })
   }
 
+  // Errores de llamadas HTTP salientes (axios: Wompi, etc.) traen el status
+  // del servidor remoto: NO se reenvía al cliente (un 401 de Wompi no significa
+  // que la sesión del usuario sea inválida).
+  if (err.isAxiosError) {
+    log.error({ ...ctx, upstreamStatus: err.response?.status, url: err.config?.url }, 'request.upstream_failed')
+    captureError(err, { reqId: req.id, method: req.method, path: req.path, upstreamStatus: err.response?.status })
+    return res.status(502).json({ error: 'Un servicio externo no respondió. Intenta de nuevo en unos minutos.' })
+  }
+
   const status = err.status || err.statusCode || 500
-  const message = err.message || 'Error interno del servidor'
   const isServerError = status >= 500
+  // En 5xx no se expone el mensaje interno (puede traer detalles de la BD o
+  // de un proveedor externo); en 4xx el mensaje es para el usuario.
+  const message = isServerError ? 'Error interno del servidor' : (err.message || 'Solicitud inválida')
 
   if (isServerError) {
     log.error({ ...ctx, status }, 'request.failed')
@@ -79,7 +90,10 @@ export const errorHandler = (err, req, res, next) => {
     log.warn({ ...ctx, status }, 'request.client_error')
   }
 
-  res.status(status).json({ error: message })
+  const body = { error: message }
+  if (!isServerError && typeof err.code === 'string') body.code = err.code
+  if (!isServerError && err.details) body.details = err.details
+  res.status(status).json(body)
 }
 
 export const _testing = { noopLog }

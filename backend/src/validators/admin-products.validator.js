@@ -1,5 +1,16 @@
 import { body, param, query } from 'express-validator'
 
+// imageUrls: JSON array o texto con URLs separadas por comas/saltos de línea.
+// La validación fina la hace el servicio.
+const imageUrlsRule = () =>
+  body('imageUrls')
+    .optional({ nullable: true })
+    .custom((v) => {
+      const raw = typeof v === 'string' ? v : JSON.stringify(v)
+      if (raw.length > 20000) throw new Error('Demasiadas URLs de imágenes')
+      return true
+    })
+
 export const adminListProducts = [
   query('page')
     .optional()
@@ -10,12 +21,10 @@ export const adminListProducts = [
   query('search')
     .optional()
     .trim()
-    .escape()
     .isLength({ max: 200 }).withMessage('La búsqueda no puede superar los 200 caracteres'),
   query('category')
     .optional()
     .trim()
-    .escape()
     .isLength({ max: 100 }).withMessage('La categoría no puede superar los 100 caracteres'),
   query('isActive')
     .optional()
@@ -42,16 +51,15 @@ export const adminImageId = [
 export const adminCreateProduct = [
   body('name')
     .trim().notEmpty().withMessage('El nombre es requerido')
-    .isLength({ min: 2, max: 200 }).withMessage('El nombre debe tener entre 2 y 200 caracteres')
-    .escape(),
+    .isLength({ min: 2, max: 200 }).withMessage('El nombre debe tener entre 2 y 200 caracteres'),
   body('description')
     .optional({ nullable: true })
     .trim()
-    .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres')
-    .escape(),
+    .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
   body('price')
     .notEmpty().withMessage('El precio es requerido')
-    .isFloat({ min: 0 }).withMessage('El precio debe ser un número positivo'),
+    .isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+  imageUrlsRule(),
   body('stock')
     .optional({ nullable: true })
     .isInt({ min: 0 }).withMessage('El stock debe ser entero positivo'),
@@ -100,13 +108,12 @@ export const adminUpdateProduct = [
   ...adminProductId,
   body('name')
     .optional().trim()
-    .isLength({ min: 2, max: 200 }).withMessage('El nombre debe tener entre 2 y 200 caracteres')
-    .escape(),
+    .isLength({ min: 2, max: 200 }).withMessage('El nombre debe tener entre 2 y 200 caracteres'),
   body('description')
     .optional({ nullable: true }).trim()
-    .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres')
-    .escape(),
-  body('price').optional().isFloat({ min: 0 }).withMessage('El precio debe ser positivo'),
+    .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
+  body('price').optional().isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+  imageUrlsRule(),
   body('stock').optional().isInt({ min: 0 }).withMessage('El stock debe ser entero positivo'),
   body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('lowStockThreshold debe ser entero positivo'),
   body('categoryId').optional().isString(),
@@ -153,4 +160,46 @@ export const adminUpsertVariants = [
       }
       return true
     }),
+]
+
+export const adminAddImages = [
+  ...adminProductId,
+  imageUrlsRule(),
+]
+
+export const adminDeleteProduct = [
+  ...adminProductId,
+  query('hard').optional().isIn(['true', 'false']).withMessage('hard debe ser true o false'),
+]
+
+const hexRule = () =>
+  body('hex')
+    .trim()
+    .matches(/^#[0-9A-Fa-f]{6}$/).withMessage('El color debe ser un hex como #1A2B3C')
+
+const idParam = () =>
+  param('id').isString().isLength({ min: 1, max: 100 }).withMessage('ID inválido')
+
+export const adminCreateColor = [
+  body('name').trim().isLength({ min: 2, max: 40 }).withMessage('El nombre del color debe tener entre 2 y 40 caracteres'),
+  hexRule(),
+]
+
+export const adminUpdateColor = [
+  idParam(),
+  body('name').optional().trim().isLength({ min: 2, max: 40 }).withMessage('El nombre del color debe tener entre 2 y 40 caracteres'),
+  body('hex').optional().trim().matches(/^#[0-9A-Fa-f]{6}$/).withMessage('El color debe ser un hex como #1A2B3C'),
+]
+
+export const adminIdParam = [idParam()]
+
+export const adminCreateCategory = [
+  body('name').trim().isLength({ min: 2, max: 60 }).withMessage('El nombre de la categoría debe tener entre 2 y 60 caracteres'),
+  body('description').optional({ nullable: true }).trim().isLength({ max: 300 }).withMessage('Máximo 300 caracteres'),
+]
+
+export const adminUpdateCategory = [
+  idParam(),
+  body('name').optional().trim().isLength({ min: 2, max: 60 }).withMessage('El nombre de la categoría debe tener entre 2 y 60 caracteres'),
+  body('description').optional({ nullable: true }).trim().isLength({ max: 300 }).withMessage('Máximo 300 caracteres'),
 ]

@@ -1,5 +1,18 @@
-const BASE_URL = import.meta.env.PUBLIC_API_URL || 'https://kaes-ecomerce-production.up.railway.app/api/v1'
-const FRONTEND_URL = import.meta.env.PUBLIC_FRONTEND_URL || 'https://kaes-ecomerce-production.up.railway.app'
+// PUBLIC_API_URL es obligatoria (p. ej. https://api.kaes.co/api/v1). Sin
+// fallback a una URL hardcodeada: si falta, se nota en el primer request.
+const BASE_URL = (import.meta.env.PUBLIC_API_URL || '').replace(/\/$/, '')
+if (!BASE_URL && typeof window !== 'undefined') {
+  console.error('[API] PUBLIC_API_URL no está configurada')
+}
+
+// En el servidor (SSR en Vercel) todas las peticiones salen de pocas IPs:
+// el header x-ssr-key permite que el backend no las cuente en el rate limit
+// por IP. SSR_API_KEY es un secreto de servidor (NO lleva prefijo PUBLIC_).
+const ssrHeaders = () => {
+  if (!import.meta.env.SSR) return {}
+  const key = (typeof process !== 'undefined' && process.env?.SSR_API_KEY) || import.meta.env.SSR_API_KEY
+  return key ? { 'x-ssr-key': key } : {}
+}
 
 let isRefreshing = false
 let refreshSubscribers = []
@@ -21,8 +34,6 @@ const refreshAccessToken = async () => {
   })
 
   if (!res.ok) throw new Error('Session expired')
-
-  onTokenRefreshed()
 }
 
 const fetchWithRetry = async (url, config, maxRetries = 3, baseDelay = 1000) => {
@@ -62,23 +73,32 @@ const request = async (endpoint, options = {}) => {
 
   const config = {
     credentials: 'include',
+    ...options,
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...ssrHeaders(),
       ...options.headers,
     },
-    ...options,
   }
 
   let res = await fetchWithRetry(`${BASE_URL}${endpoint}`, config)
 
-  if (res.status === 401 && !endpoint.includes('/auth/refresh')) {
+  const canRefresh = typeof window !== 'undefined' &&
+    !endpoint.includes('/auth/refresh') && !endpoint.includes('/auth/login')
+  if (res.status === 401 && canRefresh) {
     if (!isRefreshing) {
       isRefreshing = true
       try {
         await refreshAccessToken()
         res = await fetchWithRetry(`${BASE_URL}${endpoint}`, config)
+      } catch {
+        // Sesión vencida: limpiar el usuario guardado para que la UI no
+        // muestre una sesión que ya no existe.
+        const { clearAuth } = await import('../stores/auth.store.js')
+        await clearAuth().catch(() => {})
       } finally {
         isRefreshing = false
+        onTokenRefreshed()
       }
     } else {
       await new Promise((resolve) => {
@@ -90,7 +110,8 @@ const request = async (endpoint, options = {}) => {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: 'Error del servidor' }))
-    const message = body.error || body.message || 'Error del servidor'
+    // Errores de validación llegan como { errors: [{ field, message }] }
+    const message = body.error || body.errors?.[0]?.message || body.message || 'Error del servidor'
     throw new ApiError(message, { status: res.status, code: body.code, body })
   }
 
@@ -125,14 +146,10 @@ export const api = {
   },
   products: {
     list:   (params = {}) => request(`/products?${new URLSearchParams(params)}`),
-    detail: (slug)        => request(`/products/${slug}`),
-    create: (formData)    => request('/products', { method: 'POST', body: formData, headers: {} }),
-    update: (id, formData)=> request(`/products/${id}`, { method: 'PUT', body: formData, headers: {} }),
-    delete: (id)          => request(`/products/${id}`, { method: 'DELETE' }),
+    detail: (slug)        => request(`/products/${encodeURIComponent(slug)}`),
   },
   categories: {
     list:   ()     => request('/products/categories'),
-    create: (data) => request('/products/categories', { method: 'POST', body: JSON.stringify(data) }),
   },
   cart: {
     get:    ()            => request('/cart'),
@@ -142,6 +159,7 @@ export const api = {
     clear:  ()            => request('/cart',           { method: 'DELETE' }),
   },
   orders: {
+    quote:  (data) => request('/orders/quote', { method: 'POST', body: JSON.stringify(data) }),
     create: (data) => request('/orders',      { method: 'POST', body: JSON.stringify(data) }),
     list:   ()     => request('/orders'),
     detail: (id)   => request(`/orders/${id}`),
@@ -152,7 +170,9 @@ export const api = {
     productDetail:  (id)          => request(`/admin/products/${id}`),
     createProduct:  (formData)    => request('/admin/products', { method: 'POST',  body: formData, headers: {} }),
     updateProduct:  (id, formData)=> request(`/admin/products/${id}`, { method: 'PUT', body: formData, headers: {} }),
-    deleteProduct:  (id)          => request(`/admin/products/${id}`, { method: 'DELETE' }),
+    deleteProduct:  (id, { hard = false } = {}) => request(`/admin/products/${id}${hard ? '?hard=true' : ''}`, { method: 'DELETE' }),
+    restoreProduct: (id)          => request(`/admin/products/${id}/restore`, { method: 'PATCH' }),
+    addProductImages: (id, formData) => request(`/admin/products/${id}/images`, { method: 'POST', body: formData, headers: {} }),
     deleteProductImage: (productId, imageId) => request(`/admin/products/${productId}/images/${imageId}`, { method: 'DELETE' }),
     setMainImage:   (productId, imageId) => request(`/admin/products/${productId}/images/${imageId}/main`, { method: 'PATCH' }),
     upsertVariants: (productId, variants) => request(`/admin/products/${productId}/variants`, { method: 'PATCH', body: JSON.stringify({ variants }) }),
@@ -161,6 +181,7 @@ export const api = {
     orders:         (params = {}) => request(`/admin/orders?${new URLSearchParams(params)}`),
     orderDetail:    (id)          => request(`/admin/orders/${id}`),
     updateOrder:    (id, status, note) => request(`/admin/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
+    resolveReview:  (id, note)    => request(`/admin/orders/${id}/resolve-review`, { method: 'PATCH', body: JSON.stringify({ note }) }),
 
     dashboard: {
       overview:     ()              => request('/admin/dashboard/overview'),
@@ -172,10 +193,19 @@ export const api = {
     },
 
     colors: ()         => request('/admin/colors'),
+    createColor: (data)     => request('/admin/colors', { method: 'POST', body: JSON.stringify(data) }),
+    updateColor: (id, data) => request(`/admin/colors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteColor: (id)       => request(`/admin/colors/${id}`, { method: 'DELETE' }),
     sizes:  (scale)    => request(`/admin/sizes${scale ? `?scale=${scale}` : ''}`),
+    categories:     ()         => request('/admin/categories'),
+    createCategory: (data)     => request('/admin/categories', { method: 'POST', body: JSON.stringify(data) }),
+    updateCategory: (id, data) => request(`/admin/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteCategory: (id)       => request(`/admin/categories/${id}`, { method: 'DELETE' }),
 
     discounts:      ()            => request('/admin/discounts'),
     createDiscount: (data)        => request('/admin/discounts', { method: 'POST', body: JSON.stringify(data) }),
+    updateDiscount: (id, data)    => request(`/admin/discounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteDiscount: (id)          => request(`/admin/discounts/${id}`, { method: 'DELETE' }),
     coupons:        ()            => request('/admin/coupons'),
     createCoupon:   (data)        => request('/admin/coupons', { method: 'POST', body: JSON.stringify(data) }),
     updateCoupon:   (id, data)    => request(`/admin/coupons/${id}`, { method: 'PUT',  body: JSON.stringify(data) }),
@@ -188,15 +218,16 @@ export const api = {
     deleteMessage:  (id)          => request(`/admin/messages/${id}`, { method: 'DELETE' }),
   },
   payments: {
-    createPreference: (data) => request('/payments/create-preference', { method: 'POST', body: JSON.stringify(data) }),
+    methods: () => request('/payments/methods'),
+    createPreference: (orderId) => request('/payments/create-preference', { method: 'POST', body: JSON.stringify({ orderId }) }),
     getStatus: (orderId) => request(`/payments/status/${orderId}`),
+    verify: (orderId, data = {}) => request(`/payments/verify/${orderId}`, { method: 'POST', body: JSON.stringify(data) }),
     wompi: {
-      createCheckout: (orderId) => request('/payments/wompi/create-checkout', { method: 'POST', body: JSON.stringify({ orderId }) }),
-      getAcceptanceToken: () => request('/payments/wompi/acceptance-token'),
+      createCheckout: (orderId) => request('/payments/wompi/checkout', { method: 'POST', body: JSON.stringify({ orderId }) }),
     },
   },
   coupons: {
-    validate: (code, subtotal = 0) => request(`/coupons/${code}?subtotal=${subtotal}`),
+    validate: (code, subtotal = 0) => request(`/coupons/${encodeURIComponent(code)}?subtotal=${subtotal}`),
   },
   contact: {
     send: (data) => request('/contact', { method: 'POST', body: JSON.stringify(data) }),

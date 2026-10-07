@@ -151,14 +151,14 @@ describe('Rate limit on /auth/refresh (30 / 15min)', () => {
       const res = await request(testApp)
         .post('/refresh')
         .set('X-Forwarded-For', '10.0.0.20')
-        .send({ refreshToken: 'token-a' })
+        .set('Cookie', 'refreshToken=token-a')
       expect(res.status).toBe(200)
     }
 
     const blocked = await request(testApp)
       .post('/refresh')
       .set('X-Forwarded-For', '10.0.0.20')
-      .send({ refreshToken: 'token-a' })
+      .set('Cookie', 'refreshToken=token-a')
     expect(blocked.status).toBe(429)
     expect(blocked.body).toEqual({
       error: 'Demasiadas solicitudes de refresh, intenta más tarde',
@@ -170,17 +170,17 @@ describe('Rate limit on /auth/refresh (30 / 15min)', () => {
       await request(testApp)
         .post('/refresh')
         .set('X-Forwarded-For', '10.0.0.21')
-        .send({ refreshToken: 'token-x' })
+        .set('Cookie', 'refreshToken=token-x')
     }
 
     const differentToken = await request(testApp)
       .post('/refresh')
       .set('X-Forwarded-For', '10.0.0.21')
-      .send({ refreshToken: 'token-y' })
+      .set('Cookie', 'refreshToken=token-y')
     expect(differentToken.status).toBe(200)
   })
 
-  it('reads the token from cookies as well as the body', async () => {
+  it('reads the token from the httpOnly cookie', async () => {
     for (let i = 1; i <= 30; i += 1) {
       const res = await request(testApp)
         .post('/refresh')

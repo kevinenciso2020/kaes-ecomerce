@@ -1,9 +1,10 @@
 import { Router } from 'express'
-import rateLimit from 'express-rate-limit'
 import { validate } from '../middleware/validate.js'
+import { adminLimiter } from '../middleware/rateLimit.middleware.js'
 
 import {
   getDashboardStats, createDiscount, createCoupon, getCoupons, getDiscounts,
+  updateDiscount, deleteDiscount,
   getAllUsers, getUserById, updateUser, deleteUser, updateUserRole,
   resetUserPassword, updateCoupon,
 } from '../controllers/admin.controller.js'
@@ -25,6 +26,10 @@ import {
   updateUserRole as updateUserRoleValidator,
   resetUserPassword as resetUserPasswordValidator,
   updateCoupon as updateCouponValidator,
+  createCoupon as createCouponValidator,
+  createDiscount as createDiscountValidator,
+  updateDiscount as updateDiscountValidator,
+  deleteDiscount as deleteDiscountValidator,
 } from '../validators/admin.validator.js'
 
 import { getAllContactMessages, markContactMessageRead } from '../validators/contact.validator.js'
@@ -32,6 +37,8 @@ import { getAllContactMessages, markContactMessageRead } from '../validators/con
 import {
   adminListProducts, adminProductId, adminImageId,
   adminCreateProduct, adminUpdateProduct, adminUpsertVariants,
+  adminAddImages, adminDeleteProduct, adminCreateColor, adminUpdateColor, adminIdParam,
+  adminCreateCategory, adminUpdateCategory,
 } from '../validators/admin-products.validator.js'
 
 import {
@@ -49,14 +56,6 @@ import { canManageAdmins } from '../middleware/authorization.middleware.js'
 
 const router = Router()
 
-const adminRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  message: { error: 'Demasiadas peticiones de admin, intenta más tarde' },
-  standardHeaders: true,
-  legacyHeaders: false,
-})
-
 const adminActionLogger = (req, res, next) => {
   req.log?.info({
     reqId: req.id,
@@ -69,7 +68,8 @@ const adminActionLogger = (req, res, next) => {
   next()
 }
 
-router.use(adminRateLimiter, isAuth, isAdmin, adminActionLogger)
+// Auth primero para que el rate limit cuente por usuario admin, no por IP.
+router.use(isAuth, isAdmin, adminLimiter, adminActionLogger)
 
 // ─────────────────────────────────────────
 // Stats legacy (mantenido por compat con admin/index.astro que llama /admin/stats)
@@ -79,8 +79,16 @@ router.get('/stats', getDashboardStats)
 // ─────────────────────────────────────────
 // Catálogo canónico — colors & sizes
 // ─────────────────────────────────────────
-router.get('/colors', Catalog.getColors)
-router.get('/sizes',  validate(catalogSizes), Catalog.getSizes)
+router.get   ('/colors',        Catalog.getColors)
+router.post  ('/colors',        validate(adminCreateColor),   Catalog.createColor)
+router.put   ('/colors/:id',    validate(adminUpdateColor),   Catalog.updateColor)
+router.delete('/colors/:id',    validate(adminIdParam),       Catalog.deleteColor)
+router.get   ('/sizes',         validate(catalogSizes),       Catalog.getSizes)
+
+router.get   ('/categories',     Catalog.listCategories)
+router.post  ('/categories',     validate(adminCreateCategory), Catalog.createCategory)
+router.put   ('/categories/:id', validate(adminUpdateCategory), Catalog.updateCategory)
+router.delete('/categories/:id', validate(adminIdParam),        Catalog.deleteCategory)
 
 // ─────────────────────────────────────────
 // Products — CRUD admin
@@ -91,7 +99,9 @@ router.get   ('/products/low-stock',                  validate(adminListProducts
 router.get   ('/products/:id',                        validate(adminProductId),      AdminProducts.getProductById)
 router.post  ('/products',                            productUpload.array('images', uploadConstants.MAX_FILES), validate(adminCreateProduct), AdminProducts.createProduct)
 router.put   ('/products/:id',                        productUpload.array('images', uploadConstants.MAX_FILES), validate(adminUpdateProduct), AdminProducts.updateProduct)
-router.delete('/products/:id',                        validate(adminProductId),      AdminProducts.deleteProduct)
+router.delete('/products/:id',                        validate(adminDeleteProduct),  AdminProducts.deleteProduct)
+router.patch ('/products/:id/restore',                validate(adminProductId),      AdminProducts.restoreProduct)
+router.post  ('/products/:id/images',                 productUpload.array('images', uploadConstants.MAX_FILES), validate(adminAddImages), AdminProducts.addProductImages)
 router.delete('/products/:id/images/:imageId',        validate(adminProductId), validate(adminImageId), AdminProducts.deleteProductImage)
 router.patch ('/products/:id/images/:imageId/main',   validate(adminProductId), validate(adminImageId), AdminProducts.setMainImage)
 router.patch ('/products/:id/variants',               validate(adminUpsertVariants), AdminProducts.upsertVariants)
@@ -102,6 +112,7 @@ router.patch ('/products/:id/variants',               validate(adminUpsertVarian
 router.get   ('/orders',                            validate(adminListOrders),       AdminOrders.listOrders)
 router.get   ('/orders/:id',                        validate(adminOrderId),          AdminOrders.getOrderById)
 router.put   ('/orders/:id/status',                 validate(adminUpdateOrderStatus), AdminOrders.updateOrderStatus)
+router.patch ('/orders/:id/resolve-review',         validate(adminOrderId),          AdminOrders.resolveReview)
 
 // ─────────────────────────────────────────
 // Dashboard — agregaciones
@@ -117,9 +128,11 @@ router.get('/dashboard/low-stock',    validate(dashboardLowStock),     Dashboard
 // Discounts & Coupons
 // ─────────────────────────────────────────
 router.get('/discounts',         getDiscounts)
-router.post('/discounts',        createDiscount)
+router.post('/discounts',        validate(createDiscountValidator), createDiscount)
+router.put('/discounts/:id',     validate(updateDiscountValidator), updateDiscount)
+router.delete('/discounts/:id',  validate(deleteDiscountValidator), deleteDiscount)
 router.get('/coupons',           getCoupons)
-router.post('/coupons',          createCoupon)
+router.post('/coupons',          validate(createCouponValidator), createCoupon)
 router.put('/coupons/:id',       validate(updateCouponValidator), updateCoupon)
 
 // ─────────────────────────────────────────
@@ -137,6 +150,6 @@ router.put('/users/:id/reset-password', validate(resetUserPasswordValidator), ca
 // ─────────────────────────────────────────
 router.get('/messages',            validate(getAllContactMessages), listContactMessages)
 router.put('/messages/:id/read',   validate(markContactMessageRead), readContactMessage)
-router.delete('/messages/:id',     removeContactMessage)
+router.delete('/messages/:id',     validate(adminIdParam), removeContactMessage)
 
 export default router

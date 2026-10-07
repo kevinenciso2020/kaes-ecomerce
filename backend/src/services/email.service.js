@@ -5,7 +5,9 @@ import { logger } from '../config/logger.js'
 const log = logger.child({ component: 'email' })
 
 const FROM_NAME = 'KAES STORE'
-const FROM_EMAIL = process.env.SMTP_FROM_EMAIL || 'noreply@kaesstore.com'
+// Debe ser una dirección del dominio propio con SPF/DKIM configurados; si
+// falta se usa la cuenta SMTP (nunca un dominio ajeno, que falla DMARC).
+const FROM_EMAIL = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER
 
 const formatPrice = (price) => {
   return new Intl.NumberFormat('es-CO', {
@@ -37,8 +39,8 @@ export const sendOrderConfirmation = async (orderId) => {
         (item) => `
         <tr>
           <td style="padding: 12px; border-bottom: 1px solid #eee;">
-            <strong>${item.product.name}</strong>
-            ${item.size && item.color ? `<br><small style="color: #666;">Talla: ${item.size} / Color: ${item.color}</small>` : ''}
+            <strong>${escapeHtml(item.product.name)}</strong>
+            ${item.size || item.color ? `<br><small style="color: #666;">${[item.size && `Talla: ${escapeHtml(item.size)}`, item.color && `Color: ${escapeHtml(item.color)}`].filter(Boolean).join(' / ')}</small>` : ''}
           </td>
           <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
           <td style="padding: 12px; border-bottom: 1px solid #eee; text-align: right;">${formatPrice(item.price)}</td>
@@ -72,7 +74,7 @@ export const sendOrderConfirmation = async (orderId) => {
     
     <div style="padding: 24px;">
       <h2 style="color: #333; margin-top: 0;">¡Tu pedido está confirmado! 🎉</h2>
-      <p style="color: #666;">Hola <strong>${order.user.name}</strong>,</p>
+      <p style="color: #666;">Hola <strong>${escapeHtml(order.user.name)}</strong>,</p>
       <p style="color: #666;">Gracias por tu compra. Tu pedido ha sido confirmado y está siendo procesado.</p>
       
       <div style="background: #f9f9f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
@@ -95,7 +97,19 @@ export const sendOrderConfirmation = async (orderId) => {
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3" style="padding: 12px; text-align: right; font-weight: bold; border-top: 2px solid #ddd;">Total:</td>
+            <td colspan="3" style="padding: 8px 12px; text-align: right; color: #666; border-top: 2px solid #ddd;">Subtotal:</td>
+            <td style="padding: 8px 12px; text-align: right; color: #666; border-top: 2px solid #ddd;">${formatPrice(order.subtotal)}</td>
+          </tr>
+          ${Number(order.discount) > 0 ? `<tr>
+            <td colspan="3" style="padding: 8px 12px; text-align: right; color: #16a34a;">Descuento${order.couponCode ? ` (${escapeHtml(order.couponCode)})` : ''}:</td>
+            <td style="padding: 8px 12px; text-align: right; color: #16a34a;">-${formatPrice(order.discount)}</td>
+          </tr>` : ''}
+          <tr>
+            <td colspan="3" style="padding: 8px 12px; text-align: right; color: #666;">Envío:</td>
+            <td style="padding: 8px 12px; text-align: right; color: #666;">${Number(order.shipping) > 0 ? formatPrice(order.shipping) : 'Gratis'}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding: 12px; text-align: right; font-weight: bold;">Total (IVA incluido):</td>
             <td style="padding: 12px; text-align: right; font-weight: bold; font-size: 18px; color: #1a1a1a; border-top: 2px solid #ddd;">${formatPrice(order.total)}</td>
           </tr>
         </tfoot>
@@ -159,7 +173,7 @@ export const sendOrderCancelled = async (orderId) => {
     
     <div style="padding: 24px;">
       <h2 style="color: #333;">Tu pedido ha sido cancelado</h2>
-      <p style="color: #666;">Hola <strong>${order.user.name}</strong>,</p>
+      <p style="color: #666;">Hola <strong>${escapeHtml(order.user.name)}</strong>,</p>
       <p style="color: #666;">Tu pedido #${orderNumber} ha sido cancelado. Si realizaste el pago, el reembolso será procesado según las políticas de tu método de pago.</p>
       <p style="color: #666;">Si tienes alguna pregunta, contáctanos respondiendo este email.</p>
     </div>

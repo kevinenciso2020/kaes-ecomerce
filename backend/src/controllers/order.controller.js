@@ -1,5 +1,12 @@
 import * as OrderService from '../services/order.service.js'
 
+export const quoteOrder = async (req, res, next) => {
+  try {
+    const quote = await OrderService.quoteOrder(req.body)
+    res.json(quote)
+  } catch (err) { next(err) }
+}
+
 export const createOrder = async (req, res, next) => {
   try {
     const order = await OrderService.createOrder(req.user.id, req.body)

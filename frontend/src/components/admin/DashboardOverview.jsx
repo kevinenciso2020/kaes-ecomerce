@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { isAdminRole } from '../../lib/roles.js'
 import { api, bootstrapAuth } from '../../lib/api.js'
 import SalesChart        from './SalesChart.jsx'
 import TopProductsChart  from './TopProductsChart.jsx'
@@ -31,7 +32,7 @@ export default function DashboardOverview() {
     ;(async () => {
       const user = await bootstrapAuth()
       if (!mounted) return
-      if (!user || user.role !== 'ADMIN') {
+      if (!user || !isAdminRole(user.role)) {
         setAccessDenied(true)
         setLoading(false)
         return

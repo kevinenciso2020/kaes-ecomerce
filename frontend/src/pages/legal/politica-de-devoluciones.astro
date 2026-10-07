@@ -5,6 +5,7 @@
 // No constituye asesoría jurídica.
 import ShopLayout from '../../layouts/ShopLayout.astro'
 import { SITE_CONFIG } from '../../lib/site-config.js'
+import LegalPlaceholderNotice from '../../components/ui/LegalPlaceholderNotice.astro'
 ---
 
 <ShopLayout
@@ -17,6 +18,8 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
       <h1 class="legal-title">Política de Devoluciones, Cambios y Retracto</h1>
       <p class="legal-meta">Última actualización: {SITE_CONFIG.legalUpdatedAt}</p>
     </header>
+
+    <LegalPlaceholderNotice />
 
     <section class="legal-section">
       <h2>1. Alcance</h2>
@@ -81,7 +84,7 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
       <h2>5. Cambios por talla, color o referencia</h2>
       <p>
         Aceptamos cambios por talla, color o referencia dentro de los
-        <strong>[NÚMERO]</strong> días calendario siguientes a la entrega,
+        <strong>{SITE_CONFIG.exchangeDays}</strong> días calendario siguientes a la entrega,
         siempre que el producto cumpla las mismas condiciones descritas en la
         sección de retracto (sin uso, empaque original, etiquetas).
       </p>
@@ -115,7 +118,7 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
       <p>
         <strong>{SITE_CONFIG.legalName}</strong> asumirá todos los costos de envío
         asociados a la garantía. El cliente debe notificar el defecto dentro
-        de los <strong>[NÚMERO]</strong> días calendario siguientes a la
+        de los <strong>{SITE_CONFIG.warrantyNoticeDays}</strong> días calendario siguientes a la
         entrega, enviando fotos del producto y el defecto al correo
         <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a>.
       </p>
@@ -143,7 +146,34 @@ import { SITE_CONFIG } from '../../lib/site-config.js'
     </section>
 
     <section class="legal-section">
-      <h2>8. Contacto</h2>
+      <h2>8. Reversión del pago</h2>
+      <p>
+        De acuerdo con el artículo 51 de la Ley 1480 de 2011 y el Decreto 587
+        de 2016, si pagaste con tarjeta de crédito, débito o cualquier otro
+        instrumento de pago electrónico, puedes solicitar la
+        <strong>reversión del pago</strong> cuando:
+      </p>
+      <ul>
+        <li>Fuiste objeto de fraude o la operación no fue solicitada por ti.</li>
+        <li>El producto no fue recibido.</li>
+        <li>El producto entregado no corresponde a lo solicitado o es defectuoso.</li>
+      </ul>
+      <p>
+        Debes presentar la solicitud dentro de los <strong>cinco (5) días
+        hábiles</strong> siguientes a la fecha en que tuviste noticia de la
+        operación fraudulenta o no solicitada, o en que debiste recibir el
+        producto (o lo recibiste defectuoso o distinto). La queja se dirige a
+        <strong>{SITE_CONFIG.legalName}</strong> al correo
+        <a href={`mailto:${SITE_CONFIG.email}`}>{SITE_CONFIG.email}</a> y, al
+        mismo tiempo, al emisor de tu instrumento de pago (tu banco o la
+        entidad de la tarjeta), indicando la causal, el número de pedido y, si
+        aplica, devolviendo el producto en las mismas condiciones en que lo
+        recibiste.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>9. Contacto</h2>
       <p>
         Para cualquier solicitud relacionada con devoluciones, cambios o
         garantía, escríbenos a

@@ -8,7 +8,8 @@ import cookieParser from 'cookie-parser'
 
 import { logger } from './config/logger.js'
 import { errorHandler } from './middleware/error.middleware.js'
-import { csrfProtection } from './middleware/csrf.middleware.js'
+import { csrfProtection, getAllowedOrigins, isWebhookPath } from './middleware/csrf.middleware.js'
+import { isTrustedSsrRequest } from './middleware/ssr.middleware.js'
 import { requestContextMiddleware } from './middleware/requestContext.middleware.js'
 import { prisma } from './config/prisma.js'
 
@@ -24,7 +25,10 @@ import catalogRoutes  from './routes/catalog.routes.js'
 
 const app = express()
 
-app.set('trust proxy', 1)
+// Saltos de proxy delante del API: 1 = sólo el proxy de Railway. Si el API
+// queda detrás del proxy de Cloudflare (nube naranja) usa TRUST_PROXY=2; si no,
+// req.ip sería la IP de Cloudflare y todos los clientes compartirían el rate limit.
+app.set('trust proxy', Number.parseInt(process.env.TRUST_PROXY, 10) || 1)
 
 // ── Request ID + base logger (debe ir antes que cualquier middleware que loguee) ──
 app.use(requestContextMiddleware)
@@ -60,18 +64,13 @@ app.use(pinoHttp({
 app.use(helmet())
 
 // ── CORS ───────────────────────────────────────────────────────
+// localhost sólo se permite fuera de producción. Un origen no permitido no
+// lanza error (eso terminaba en 500): simplemente no recibe cabeceras CORS y
+// el navegador bloquea la respuesta.
 const corsOptions = {
   origin: (origin, callback) => {
-    const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      'http://localhost:4321',
-      'http://127.0.0.1:4321',
-    ]
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
+    if (!origin) return callback(null, true)
+    callback(null, getAllowedOrigins().includes(origin))
   },
   credentials: true,
 }
@@ -85,14 +84,21 @@ app.use(cors(corsOptions))
 // porque vienen de los proveedores, no de un navegador.
 app.use(csrfProtection)
 
-// Rate limiting global — máximo 100 peticiones por 15 minutos por IP
+// Rate limiting global — 300 peticiones / 15 min por IP.
+// Excepciones:
+//  • webhooks de pago (vienen de pocas IPs de los proveedores y deben entrar siempre)
+//  • renderizado SSR de Vercel: todas las visitas salen de pocas IPs de Vercel;
+//    el frontend se identifica con el header x-ssr-key = SSR_API_KEY.
 // Deshabilitado en tests para no auto-bloquear la suite.
 if (process.env.NODE_ENV !== 'test') {
   app.use(rateLimit({
     windowMs: 15 * 60 * 1000,
-    max:      100,
+    max:      300,
+    standardHeaders: true,
+    legacyHeaders: false,
     message:  { error: 'Demasiadas peticiones, intenta más tarde' },
     validate: { xForwardedForHeader: false },
+    skip: (req) => isWebhookPath(req.path) || isTrustedSsrRequest(req),
   }))
 }
 
@@ -100,12 +106,13 @@ if (process.env.NODE_ENV !== 'test') {
 app.use(cookieParser())
 
 // ── Body parsing ─────────────────────────────────────────────
-// Stripe, MercadoPago y Wompi webhooks necesitan el body en raw, por eso estas rutas van antes del json parser
-// app.use('/api/v1/payments/webhook/stripe', express.raw({ type: 'application/json' })) // TODO: habilitar cuando se configure Stripe
-app.use('/api/v1/payments/webhook', express.raw({ type: 'application/json' }))
-app.use('/api/v1/payments/wompi/webhook', express.raw({ type: 'application/json' }))
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+// Los webhooks de MercadoPago y Wompi necesitan el body en raw (Buffer), por
+// eso estas rutas van antes del json parser. `type: () => true` acepta
+// cualquier content-type (MP a veces no manda application/json).
+app.use('/api/v1/payments/webhook', express.raw({ type: () => true, limit: '1mb' }))
+app.use('/api/v1/payments/wompi/webhook', express.raw({ type: () => true, limit: '1mb' }))
+app.use(express.json({ limit: '1mb' }))
+app.use(express.urlencoded({ extended: true, limit: '1mb' }))
 
 // ── Rutas ────────────────────────────────────────────────────
 app.use('/api/v1/auth',     authRoutes)
@@ -118,32 +125,23 @@ app.use('/api/v1/coupons',  couponRoutes)
 app.use('/api/v1/contact',  contactRoutes)
 app.use('/api/v1',          catalogRoutes)   // /colors, /sizes — público
 
-// Health checks — verificar que el servidor y la DB están vivos con retry logic
+// Health check para Railway y monitores de uptime. Responde rápido (una sola
+// consulta con timeout de 3 s) y no expone detalles internos.
 app.get('/api/health', async (req, res) => {
-  const maxRetries = 3
-  const baseDelay = 1000 // 1 segundo
   const log = req.log || logger
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      await prisma.$queryRaw`SELECT 1`
-      return res.json({ status: 'ok', db: 'connected', env: process.env.NODE_ENV })
-    } catch (err) {
-      if (attempt === maxRetries) {
-        log.error({ err, attempts: maxRetries }, 'health.db_unreachable')
-        return res.status(503).json({
-          status: 'error',
-          db: 'disconnected',
-          attempts: maxRetries,
-          error: err.message
-        })
-      }
-      const delay = baseDelay * Math.pow(2, attempt - 1) // 1s, 2s, 4s
-      log.warn({ attempt, retryInMs: delay, err: err.message }, 'health.db_retrying')
-      await new Promise(r => setTimeout(r, delay))
-    }
+  try {
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('db timeout')), 3000)),
+    ])
+    return res.json({ status: 'ok', db: 'connected' })
+  } catch (err) {
+    log.error({ err }, 'health.db_unreachable')
+    return res.status(503).json({ status: 'error', db: 'disconnected' })
   }
 })
+
+app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada' }))
 
 // ── Error handler global (siempre al final) ───────────────────
 app.use(errorHandler)

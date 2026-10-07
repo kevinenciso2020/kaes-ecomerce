@@ -1,51 +1,38 @@
 import { prisma } from '../config/prisma.js'
+import { buildQuote } from './pricing.service.js'
 
-export const createOrder = async (userId, { items, couponCode, shippingAddressId, notes, address }) => {
-  // Calcular el total verificando precios desde la DB (nunca confiar en el cliente)
-  let subtotal = 0
-  const orderItems = []
+export const PRIVACY_POLICY_VERSION = process.env.PRIVACY_POLICY_VERSION || '2026-09-21'
 
-  for (const item of items) {
-    const product = await prisma.product.findFirst({ where: { id: item.productId, isActive: true } })
-    if (!product) throw Object.assign(new Error(`Producto ${item.productId} no disponible`), { status: 400 })
+const badRequest = (message, extra = {}) =>
+  Object.assign(new Error(message), { status: 400, ...extra })
 
-    const price = parseFloat(product.price)
-    subtotal += price * item.quantity
-    orderItems.push({ productId: item.productId, quantity: item.quantity, price, size: item.size, color: item.color })
+/** Resumen del checkout calculado por el servidor (no crea nada). */
+export const quoteOrder = async ({ items, couponCode }) =>
+  buildQuote({ items, couponCode }, { strictCoupon: false })
+
+export const createOrder = async (userId, { items, couponCode, shippingAddressId, notes, address, acceptTerms }) => {
+  if (acceptTerms !== true && acceptTerms !== 'true') {
+    throw badRequest('Debes aceptar los términos y la política de tratamiento de datos', { code: 'TERMS_REQUIRED' })
   }
 
-  // Aplicar cupón si existe
-  let discount = 0
-  if (couponCode) {
-    const now = new Date()
-    const coupon = await prisma.coupon.findFirst({
-      where: {
-        code: couponCode.toUpperCase(),
-        isActive: true,
-        startsAt: { lte: now },
-        endsAt: {
-          OR: [{ gte: now }, { isNull: true }]
-        }
-      }
-    })
-    if (coupon && (!coupon.maxUses || coupon.usedCount < coupon.maxUses)) {
-      if (!coupon.minPurchase || subtotal >= parseFloat(coupon.minPurchase)) {
-        discount = coupon.type === 'PERCENTAGE'
-          ? subtotal * (parseFloat(coupon.value) / 100)
-          : parseFloat(coupon.value)
-        await prisma.coupon.update({ where: { id: coupon.id }, data: { usedCount: { increment: 1 } } })
-      }
-    }
+  // Precios, descuentos, cupón, envío y stock calculados SIEMPRE desde la BD.
+  const quote = await buildQuote({ items, couponCode }, { strictCoupon: true })
+
+  if (!shippingAddressId && !address) {
+    throw badRequest('La dirección de envío es requerida')
   }
 
-  const total = Math.max(0, subtotal - discount)
+  if (shippingAddressId) {
+    const owned = await prisma.address.findFirst({ where: { id: shippingAddressId, userId }, select: { id: true } })
+    if (!owned) throw badRequest('Dirección de envío no válida')
+  }
 
-  // Crear la orden y sus items en una sola transacción
-  const order = await prisma.$transaction(async (tx) => {
+  const now = new Date()
+
+  return prisma.$transaction(async (tx) => {
     let finalShippingAddressId = shippingAddressId
 
-    // Si se proporciona dirección, crearla
-    if (address && !shippingAddressId) {
+    if (!finalShippingAddressId) {
       const departamento = (address.departamento || address.department || '').trim()
       const municipio = (address.municipio || address.city || '').trim()
       const newAddress = await tx.address.create({
@@ -53,6 +40,8 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
           userId,
           label: address.label || 'Casa',
           street: address.street,
+          // city/department se mantienen sincronizados por compatibilidad con
+          // pantallas antiguas; la fuente canónica es departamento/municipio.
           city: municipio,
           department: departamento,
           departamento,
@@ -60,32 +49,50 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
           zipCode: address.zipCode || null,
           fullName: address.fullName || null,
           phone: address.phone || null,
-        }
+        },
       })
       finalShippingAddressId = newAddress.id
     }
 
-    const newOrder = await tx.order.create({
-      data: {
-        userId,
-        subtotal,
-        discount,
-        total,
-        couponCode,
-        shippingAddressId: finalShippingAddressId,
-        notes,
-        items: { create: orderItems }
-      },
-      include: { items: { include: { product: true } } }
+    // Registro de la autorización Habeas Data si el usuario aún no la tenía.
+    await tx.user.updateMany({
+      where: { id: userId, privacyAcceptedAt: null },
+      data: { privacyAcceptedAt: now, privacyPolicyVersion: PRIVACY_POLICY_VERSION },
     })
 
-    // Vaciar el carrito del usuario después de crear la orden
-    await tx.cartItem.deleteMany({ where: { userId } })
-
-    return newOrder
+    // El carrito NO se vacía aquí: se vacía cuando el pago es aprobado, así
+    // el cliente no pierde su carrito si el pago falla.
+    return tx.order.create({
+      data: {
+        userId,
+        subtotal: quote.subtotal,
+        discount: quote.discount,
+        shipping: quote.shipping,
+        total: quote.total,
+        couponCode: quote.coupon?.code ?? null,
+        shippingAddressId: finalShippingAddressId,
+        notes: notes || null,
+        termsAcceptedAt: now,
+        items: {
+          create: quote.items.map((i) => ({
+            productId: i.productId,
+            variantId: i.variantId,
+            quantity: i.quantity,
+            price: i.unitPrice,
+            size: i.size,
+            color: i.color,
+            variantSnapshot: i.variantId
+              ? { sku: i.sku, colorHex: i.colorHex, basePrice: i.basePrice }
+              : undefined,
+          })),
+        },
+        statusLogs: {
+          create: { toStatus: 'PENDING', changedById: userId, note: 'Orden creada' },
+        },
+      },
+      include: { items: { include: { product: true } } },
+    })
   })
-
-  return order
 }
 
 export const getOrders = async (userId) => {
@@ -95,7 +102,7 @@ export const getOrders = async (userId) => {
       items:   { include: { product: { include: { images: { where: { isMain: true }, take: 1 } } } } },
       payment: true,
     },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: 'desc' },
   })
 }
 
@@ -106,7 +113,7 @@ export const getOrderById = async (userId, orderId) => {
       items:           { include: { product: { include: { images: true } } } },
       payment:         true,
       shippingAddress: true,
-    }
+    },
   })
 
   if (!order) {

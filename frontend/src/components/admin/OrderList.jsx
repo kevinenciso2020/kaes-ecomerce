@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { isAdminRole } from '../../lib/roles.js'
 import { api, bootstrapAuth } from '../../lib/api.js'
 import { escapeHtml } from '../../lib/sanitize.js'
 import OrderDetailModal from './OrderDetailModal.jsx'
@@ -13,7 +14,7 @@ const STATUS_LABELS = {
   REFUNDED:   { label: 'Reembolsado', cls: 'refunded'   },
 }
 
-export default function OrderList({ showToast }) {
+export default function OrderList() {
   const [orders, setOrders]       = useState([])
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState(null)
@@ -25,7 +26,16 @@ export default function OrderList({ showToast }) {
     search: '',
     dateFrom: '',
     dateTo: '',
+    needsReview: '',
   })
+  const [toasts, setToasts] = useState([])
+  // La página no inyecta showToast: avisos propios para que ningún error quede silencioso.
+  const showToast = ({ type, message }) => {
+    const id = Math.random().toString(36).slice(2)
+    setToasts((t) => [...t, { id, type, message }])
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), type === 'error' ? 6000 : 3500)
+  }
+  const [reviewCount, setReviewCount] = useState(0)
   const [activeOrder, setActiveOrder] = useState(null)
   const [showDetail, setShowDetail]   = useState(false)
 
@@ -38,7 +48,12 @@ export default function OrderList({ showToast }) {
       if (filters.search)   q.set('search', filters.search)
       if (filters.dateFrom) q.set('dateFrom', new Date(filters.dateFrom).toISOString())
       if (filters.dateTo)   q.set('dateTo',   new Date(filters.dateTo).toISOString())
-      const result = await api.admin.orders(Object.fromEntries(q))
+      if (filters.needsReview) q.set('needsReview', 'true')
+      const [result, review] = await Promise.all([
+        api.admin.orders(Object.fromEntries(q)),
+        api.admin.orders({ needsReview: 'true', limit: 1 }),
+      ])
+      setReviewCount(review.total || 0)
       setOrders(result.orders || [])
       setPage(result.page || 1)
       setTotalPages(result.totalPages || 1)
@@ -52,7 +67,7 @@ export default function OrderList({ showToast }) {
     ;(async () => {
       const user = await bootstrapAuth()
       if (!mounted) return
-      if (!user || user.role !== 'ADMIN') { setAccessDenied(true); setLoading(false); return }
+      if (!user || !isAdminRole(user.role)) { setAccessDenied(true); setLoading(false); return }
       await loadOrders()
       if (mounted) setLoading(false)
     })()
@@ -87,14 +102,11 @@ export default function OrderList({ showToast }) {
     }
   }
 
-  const quickStatus = async (orderId, status) => {
-    try {
-      await api.admin.updateOrder(orderId, status)
-      showToast?.({ type: 'success', message: 'Estado actualizado' })
-      await loadOrders()
-    } catch (err) {
-      showToast?.({ type: 'error', message: err.message })
-    }
+  const handleResolveReview = async (orderId, note) => {
+    const updated = await api.admin.resolveReview(orderId, note)
+    setActiveOrder(updated)
+    showToast({ type: 'success', message: 'Revisión marcada como resuelta' })
+    await loadOrders()
   }
 
   if (accessDenied) {
@@ -114,6 +126,13 @@ export default function OrderList({ showToast }) {
           <p className="admin-sub">Gestiona los pedidos · {orders.length} en esta página</p>
         </div>
       </div>
+
+      {reviewCount > 0 && (
+        <button type="button" className="review-banner" onClick={() => setFilters((f) => ({ ...f, needsReview: f.needsReview ? '' : 'true' }))}>
+          ⚠️ {reviewCount} orden(es) requieren revisión (pago sin stock, monto distinto, pago duplicado…).
+          {filters.needsReview ? ' Ver todas' : ' Ver solo esas'}
+        </button>
+      )}
 
       <div className="filters">
         <input
@@ -147,11 +166,11 @@ export default function OrderList({ showToast }) {
           onChange={(e) => setFilters((f) => ({ ...f, dateTo: e.target.value }))}
           title="Hasta"
         />
-        {(filters.search || filters.status || filters.dateFrom || filters.dateTo) && (
+        {(filters.search || filters.status || filters.dateFrom || filters.dateTo || filters.needsReview) && (
           <button
             type="button"
             className="btn btn-secondary"
-            onClick={() => setFilters({ status: '', search: '', dateFrom: '', dateTo: '' })}
+            onClick={() => setFilters({ status: '', search: '', dateFrom: '', dateTo: '', needsReview: '' })}
           >
             Limpiar
           </button>
@@ -183,7 +202,10 @@ export default function OrderList({ showToast }) {
               const s = STATUS_LABELS[o.status] || { label: o.status, cls: '' }
               return (
                 <tr key={o.id}>
-                  <td><strong>#{o.id.slice(-6).toUpperCase()}</strong></td>
+                  <td>
+                    <strong>#{o.id.slice(-6).toUpperCase()}</strong>
+                    {o.needsReview && <span className="review-tag" title={o.reviewNote || ''}>Revisar</span>}
+                  </td>
                   <td>
                     <div className="customer-info">
                       <span className="customer-name">{escapeHtml(o.user?.name || '—')}</span>
@@ -198,7 +220,7 @@ export default function OrderList({ showToast }) {
                         o.payment.status === 'COMPLETED' ? 'completed' :
                         o.payment.status === 'FAILED'    ? 'cancelled' :
                         'pending'
-                      }`}>{o.payment.status}</span>
+                      }`}>{{ COMPLETED: 'Pagado', FAILED: 'Fallido', PENDING: 'Pendiente', REFUNDED: 'Reembolsado' }[o.payment.status] || o.payment.status}</span>
                     ) : <span className="muted">—</span>}
                   </td>
                   <td><span className={`status-badge ${s.cls}`}>{s.label}</span></td>
@@ -206,16 +228,7 @@ export default function OrderList({ showToast }) {
                   <td>
                     <div className="action-buttons">
                       <button className="btn-icon" title="Ver detalle" onClick={() => viewOrder(o)}>👁️</button>
-                      <select
-                        className="status-select"
-                        value={o.status}
-                        onChange={(e) => quickStatus(o.id, e.target.value)}
-                        title="Cambiar estado rápido"
-                      >
-                        {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                          <option key={k} value={k}>{v.label}</option>
-                        ))}
-                      </select>
+
                     </div>
                   </td>
                 </tr>
@@ -238,12 +251,23 @@ export default function OrderList({ showToast }) {
           order={activeOrder}
           onClose={() => { setShowDetail(false); setActiveOrder(null) }}
           onStatusChange={handleStatusChange}
+          onResolveReview={handleResolveReview}
           showToast={showToast}
         />
       )}
 
+      <div className="ol-toasts" aria-live="polite">
+        {toasts.map((t) => <div key={t.id} className={`ol-toast ${t.type}`}>{t.message}</div>)}
+      </div>
+
       <style>{`
         .admin-page { padding-top: calc(60px + 2rem); padding-bottom: 4rem; }
+        .review-banner { display: block; width: 100%; text-align: left; background: #fff7ed; border: 1px solid #fb923c; color: #9a3412; border-radius: 8px; padding: 0.7rem 1rem; margin-bottom: 1rem; cursor: pointer; font-size: 0.85rem; }
+        .review-tag { display: inline-block; margin-left: 0.4rem; font-size: 0.62rem; background: #fb923c; color: #fff; padding: 1px 6px; border-radius: 999px; vertical-align: middle; }
+        .ol-toasts { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: 0.5rem; z-index: 1100; }
+        .ol-toast { padding: 0.75rem 1rem; border-radius: 8px; color: #fff; font-size: 0.85rem; background: #111; }
+        .ol-toast.success { background: #166534; }
+        .ol-toast.error { background: #b91c1c; }
         .admin-header { margin-bottom: 1.5rem; }
         .admin-title { font-family: var(--font-serif); font-size: 2rem; font-weight: 600; color: var(--color-black); margin: 0; }
         .admin-sub { font-size: 0.875rem; color: var(--color-gray-400); margin-top: 0.25rem; }

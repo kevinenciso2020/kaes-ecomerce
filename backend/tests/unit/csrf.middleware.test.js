@@ -101,12 +101,34 @@ describe('csrfProtection middleware', () => {
     expect(next).toHaveBeenCalledOnce()
   })
 
-  it('allows POST with localhost origin', () => {
+  it('allows POST with localhost origin outside production', () => {
+    process.env.NODE_ENV = 'development'
     const req  = { method: 'POST', path: '/api/v1/orders', headers: { origin: 'http://localhost:4321' } }
     const res  = mockRes()
     const next = vi.fn()
     csrfProtection(req, res, next)
     expect(next).toHaveBeenCalledOnce()
+  })
+
+  it('rejects localhost origin in production', () => {
+    const req  = { method: 'POST', path: '/api/v1/orders', headers: { origin: 'http://localhost:4321' } }
+    const res  = mockRes()
+    const next = vi.fn()
+    csrfProtection(req, res, next)
+    expect(next).not.toHaveBeenCalled()
+    expect(res.status).toHaveBeenCalledWith(403)
+  })
+
+  it('accepts extra origins from ALLOWED_ORIGINS', () => {
+    process.env.ALLOWED_ORIGINS = 'https://www.kaes.co, https://kaes.co'
+    try {
+      const req  = { method: 'POST', path: '/api/v1/orders', headers: { origin: 'https://www.kaes.co' } }
+      const next = vi.fn()
+      csrfProtection(req, mockRes(), next)
+      expect(next).toHaveBeenCalledOnce()
+    } finally {
+      delete process.env.ALLOWED_ORIGINS
+    }
   })
 
   it('rejects PUT and DELETE without Origin', () => {

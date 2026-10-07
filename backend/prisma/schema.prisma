@@ -11,18 +11,21 @@ datasource db {
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  password        String
-  name            String
-  role            Role      @default(CUSTOMER)
-  avatar          String?
-  phone           String?
-  isActive        Boolean   @default(true)
-  emailVerified   Boolean   @default(false)
-  emailVerifiedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                   String    @id @default(cuid())
+  email                String    @unique
+  password             String
+  name                 String
+  role                 Role      @default(CUSTOMER)
+  avatar               String?
+  phone                String?
+  isActive             Boolean   @default(true)
+  emailVerified        Boolean   @default(false)
+  emailVerifiedAt      DateTime?
+  // Habeas Data (Ley 1581 de 2012): prueba de la autorización del titular
+  privacyAcceptedAt    DateTime?
+  privacyPolicyVersion String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   orders                  Order[]
   cartItems               CartItem[]
@@ -37,14 +40,18 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id         String    @id @default(cuid())
+  token      String    @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  // Se marca al rotar: un token reemplazado sólo se acepta durante un periodo
+  // de gracia corto (refresh concurrentes de varias pestañas).
+  replacedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("refresh_tokens")
 }
 
@@ -114,6 +121,8 @@ model Product {
   discounts      ProductDiscount[]
   availableSizes ProductAvailableSize[]
 
+  @@index([categoryId])
+  @@index([isActive, createdAt])
   @@map("products")
 }
 
@@ -211,19 +220,28 @@ model CartItem {
 }
 
 model Order {
-  id                String      @id @default(cuid())
+  id                String           @id @default(cuid())
   userId            String
-  status            OrderStatus @default(PENDING)
-  subtotal          Decimal     @db.Decimal(10, 2)
-  discount          Decimal     @default(0) @db.Decimal(10, 2)
-  shipping          Decimal     @default(0) @db.Decimal(10, 2)
-  total             Decimal     @db.Decimal(10, 2)
+  status            OrderStatus      @default(PENDING)
+  subtotal          Decimal          @db.Decimal(10, 2)
+  discount          Decimal          @default(0) @db.Decimal(10, 2)
+  shipping          Decimal          @default(0) @db.Decimal(10, 2)
+  total             Decimal          @db.Decimal(10, 2)
   couponCode        String?
   notes             String?
   mpPreferenceId    String?
+  paymentProvider   PaymentProvider?
   paidAt            DateTime?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  // true cuando el stock de la orden ya fue descontado (pago aprobado).
+  // Se usa para saber si al cancelar hay que devolver stock.
+  stockDeducted     Boolean          @default(false)
+  // true cuando un pago llegó en un estado que requiere intervención manual
+  // (monto distinto, sin stock tras pago aprobado, pago sobre orden expirada…)
+  needsReview       Boolean          @default(false)
+  reviewNote        String?
+  termsAcceptedAt   DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
   shippingAddressId String?
 
   user            User             @relation(fields: [userId], references: [id])
@@ -235,6 +253,7 @@ model Order {
   @@index([status])
   @@index([userId])
   @@index([createdAt])
+  @@index([needsReview])
   @@map("orders")
 }
 
@@ -289,6 +308,26 @@ model Payment {
   order Order @relation(fields: [orderId], references: [id])
 
   @@map("payments")
+}
+
+// Registro crudo de cada notificación de pago procesada. `eventKey` es único
+// por (proveedor, id del pago/transacción, estado) y garantiza idempotencia:
+// una notificación repetida no vuelve a descontar stock ni reenviar emails.
+model PaymentEvent {
+  id                String          @id @default(cuid())
+  provider          PaymentProvider
+  eventKey          String          @unique
+  orderId           String?
+  providerPaymentId String?
+  status            String
+  amount            Decimal?        @db.Decimal(10, 2)
+  outcome           String?
+  payload           Json?
+  createdAt         DateTime        @default(now())
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("payment_events")
 }
 
 model Discount {

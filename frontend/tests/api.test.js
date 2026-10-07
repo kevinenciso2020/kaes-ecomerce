@@ -35,7 +35,7 @@ describe('api — happy path', () => {
     const fd = new FormData()
     fd.append('file', new Blob(['x']), 'x.bin')
     fetch.mockResolvedValueOnce(okJson({ id: 'p1' }))
-    await apiModule.api.products.create(fd)
+    await apiModule.api.admin.createProduct(fd)
     const [, config] = fetch.mock.calls[0]
     expect(config.headers['Content-Type']).toBeUndefined()
   })
@@ -129,14 +129,18 @@ describe('api — 401 + refresh', () => {
     expect(refreshConfig.headers.Authorization).toBeUndefined()
   })
 
-  it('clears auth and redirects when refresh fails', async () => {
-    const { clearAuth } = await import('../src/stores/auth.store.js')
-    const clearAuthSpy = vi.spyOn({ clearAuth }, 'clearAuth')
-
+  it('clears the stored user when refresh fails and surfaces the 401', async () => {
+    window.localStorage.setItem('user', JSON.stringify({ id: 'u1' }))
     fetch
       .mockResolvedValueOnce(okJson({ error: 'expired' }, 401))
       .mockResolvedValueOnce(okJson({ error: 'no refresh' }, 401))
 
-    await expect(apiModule.api.products.list()).rejects.toThrow('Session expired')
+    await expect(apiModule.api.orders.list()).rejects.toMatchObject({ status: 401 })
+    await vi.waitFor(() => expect(window.localStorage.getItem('user')).toBeNull())
+  })
+
+  it('uses the first validation error message from { errors: [...] }', async () => {
+    fetch.mockResolvedValueOnce(okJson({ errors: [{ field: 'password', message: 'La contraseña debe tener entre 8 y 72 caracteres' }] }, 400))
+    await expect(apiModule.api.auth.register({})).rejects.toThrow('La contraseña debe tener entre 8 y 72 caracteres')
   })
 })

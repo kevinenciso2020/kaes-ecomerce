@@ -1,50 +1,59 @@
-import jwt from 'jsonwebtoken'
+// Protección SSR de /admin.
+//
+// La autorización REAL está en el backend: todos los endpoints /api/v1/admin/*
+// exigen un JWT válido con rol ADMIN/SUPER_ADMIN, y las páginas de admin no
+// renderizan datos en el servidor (los piden al API desde el navegador). Este
+// middleware es una capa adicional para no servir ni el esqueleto del panel a
+// quien no tiene sesión.
+//
+// Cómo verifica: reenvía la cookie `accessToken` a GET /auth/me del backend.
+// Así Vercel NO necesita conocer JWT_SECRET.
+//
+// La cookie sólo es visible aquí si front y API comparten dominio
+// (kaes.co + api.kaes.co con COOKIE_DOMAIN=.kaes.co en el backend). Mientras el
+// front esté en *.vercel.app y el API en *.railway.app la cookie pertenece a
+// otro sitio y nunca llega: en ese caso (ADMIN_SSR_GUARD distinto de "strict")
+// se deja pasar y la página valida el rol en el cliente contra el backend.
 
-const ADMIN_ROUTES = ['/admin']
+const ADMIN_PREFIX = '/admin'
 
-const isAdminRole = (role) => {
-  return role === 'ADMIN' || role === 'SUPER_ADMIN'
-}
+const isAdminRole = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN'
+
+const readCookie = (header, name) =>
+  header?.split(';').map((c) => c.trim()).find((c) => c.startsWith(`${name}=`))?.slice(name.length + 1)
 
 export const onRequest = async (context, next) => {
   const { url, request, locals } = context
+  if (!url.pathname.startsWith(ADMIN_PREFIX)) return next()
 
-  const path = url.pathname
-  const isAdminRoute = ADMIN_ROUTES.some(route => path.startsWith(route))
-
-  if (!isAdminRoute) {
-    return next()
-  }
-
-  const JWT_SECRET = process.env.JWT_SECRET
-
-  // Fail-closed: si falta la variable de entorno no dejamos pasar,
-  // bloqueamos el acceso a /admin. Antes esto hacía `next()` y dejaba
-  // pasar a cualquiera sin login si la env var no estaba seteada.
-  if (!JWT_SECRET) {
-    console.error('middleware.admin: JWT_SECRET no está definida — bloqueando acceso a /admin')
-    return context.redirect('/auth/login')
-  }
-
-  const token = request.headers.get('cookie')?.match(/accessToken=([^;]+)/)?.[1]
+  const strict = process.env.ADMIN_SSR_GUARD === 'strict'
+  const apiUrl = (import.meta.env.PUBLIC_API_URL || '').replace(/\/$/, '')
+  const token = readCookie(request.headers.get('cookie'), 'accessToken')
+  const loginUrl = `/auth/login?redirect=${encodeURIComponent(url.pathname)}`
 
   if (!token) {
-    return context.redirect('/auth/login')
+    return strict ? context.redirect(loginUrl) : next()
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET)
+    const res = await fetch(`${apiUrl}/auth/me`, {
+      headers: {
+        cookie: `accessToken=${token}`,
+        ...(process.env.SSR_API_KEY ? { 'x-ssr-key': process.env.SSR_API_KEY } : {}),
+      },
+    })
+    // 401 puede ser sólo el access token vencido (15 min) con refresh válido:
+    // fuera de "strict" se deja pasar para que el cliente refresque la sesión.
+    if (!res.ok) return strict ? context.redirect(loginUrl) : next()
+    const { user } = await res.json()
+    if (!isAdminRole(user?.role)) return context.redirect('/')
 
-    if (!isAdminRole(decoded.role)) {
-      return context.redirect('/auth/login')
-    }
-
-    locals.user = decoded
+    locals.user = user
     locals.isAdmin = true
-    locals.isSuperAdmin = decoded.role === 'SUPER_ADMIN'
-
+    locals.isSuperAdmin = user.role === 'SUPER_ADMIN'
     return next()
   } catch (err) {
-    return context.redirect('/auth/login')
+    console.error('middleware.admin: no se pudo verificar la sesión', err)
+    return strict ? context.redirect(loginUrl) : next()
   }
 }

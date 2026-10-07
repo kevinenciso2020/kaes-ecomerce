@@ -7,12 +7,16 @@ import '../styles/components.css'
 interface Props {
   title:       string
   description?: string
+  image?:      string
+  type?:       'website' | 'product'
+  noindex?:    boolean
+  jsonLd?:     Record<string, unknown>
 }
 
-const { title, description } = Astro.props
+const { title, description, image, type, noindex, jsonLd } = Astro.props
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout title={title} description={description} image={image} type={type} noindex={noindex} jsonLd={jsonLd}>
   <Header />
   <main id="main-content" class="main-content">
     <slot />

@@ -2,19 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import crypto from 'crypto'
 import jwt from 'jsonwebtoken'
 
+// Rutas de pago con la BD y los proveedores mockeados. La lógica transaccional
+// real (idempotencia, stock, carreras) se prueba contra PostgreSQL en
+// tests/db/payments.db.test.js.
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     order: { findUnique: vi.fn(), update: vi.fn() },
-    payment: { upsert: vi.fn() },
+    product: { findUnique: vi.fn() },
+    productVariant: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn() },
   },
+  processPaymentUpdate: vi.fn(),
   preferenceCreate: vi.fn(),
   paymentGet: vi.fn(),
-  discountStock: vi.fn(),
-  restoreStock: vi.fn(),
-  sendOrderConfirmation: vi.fn(),
-  sendOrderCancelled: vi.fn(),
-  wompiGetPresignedAcceptance: vi.fn(),
-  wompiCreateTransaction: vi.fn(),
+  paymentSearch: vi.fn(),
+  getTransaction: vi.fn(),
 }))
 
 vi.mock('../../src/config/prisma.js', () => ({ prisma: mocks.prisma }))
@@ -24,637 +27,329 @@ vi.mock('../../src/middleware/upload.middleware.js', async () => {
   return makeUploadMock()
 })
 
-vi.mock('../../src/services/stock.service.js', () => ({
-  discountStock: mocks.discountStock,
-  restoreStock: mocks.restoreStock,
-}))
-
-vi.mock('../../src/services/email.service.js', () => ({
-  sendOrderConfirmation: mocks.sendOrderConfirmation,
-  sendOrderCancelled: mocks.sendOrderCancelled,
-}))
-
-vi.mock('../../src/config/mercadopago.js', () => ({
-  default: { accessToken: 'TEST' },
-}))
+vi.mock('../../src/services/payment.service.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, processPaymentUpdate: mocks.processPaymentUpdate }
+})
 
 vi.mock('mercadopago', () => ({
+  MercadoPagoConfig: vi.fn(),
   Preference: vi.fn().mockImplementation(function () { return { create: mocks.preferenceCreate } }),
-  Payment: vi.fn().mockImplementation(function () { return { get: mocks.paymentGet } }),
+  Payment: vi.fn().mockImplementation(function () { return { get: mocks.paymentGet, search: mocks.paymentSearch } }),
 }))
 
-vi.mock('../../src/config/wompi.js', () => ({
-  default: {
-    getPresignedAcceptance: mocks.wompiGetPresignedAcceptance,
-    createTransaction: mocks.wompiCreateTransaction,
-    getTransaction: vi.fn(),
-  },
-}))
+vi.mock('../../src/config/wompi.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, getTransaction: mocks.getTransaction, default: { ...actual.default, getTransaction: mocks.getTransaction } }
+})
 
 import request from 'supertest'
 import app from '../../src/app.js'
 
-const tokenFor = (payload) =>
-  jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' })
-
-const customerToken = () =>
-  tokenFor({ id: 'u1', email: 'c@d.com', role: 'CUSTOMER', emailVerified: true })
-
-const adminToken = () =>
-  tokenFor({ id: 'a1', email: 'a@d.com', role: 'ADMIN', emailVerified: true })
-
-const unverifiedToken = () =>
-  tokenFor({ id: 'u1', email: 'c@d.com', role: 'CUSTOMER', emailVerified: false })
+const tokenFor = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' })
+const customerToken = () => tokenFor({ id: 'u1', email: 'c@d.com', role: 'CUSTOMER', emailVerified: true })
+const otherToken = () => tokenFor({ id: 'u2', email: 'x@d.com', role: 'CUSTOMER', emailVerified: true })
 
 const baseOrder = (overrides = {}) => ({
-  id: 'ord-1',
+  id: 'ord1',
   userId: 'u1',
   status: 'PENDING',
-  total: '50000',
+  stockDeducted: false,
+  total: '64900',
+  paymentProvider: null,
   mpPreferenceId: null,
-  items: [
-    {
-      id: 'item-1',
-      productId: 'p1',
-      quantity: 2,
-      price: '25000',
-      product: { id: 'p1', name: 'Camiseta', price: '25000', imageUrl: null },
-    },
-  ],
+  user: { email: 'c@d.com', name: 'Cliente' },
+  shippingAddress: { fullName: 'Cliente Uno', phone: '3001234567' },
+  items: [{ productId: 'p1', variantId: null, quantity: 1 }],
   ...overrides,
 })
 
 beforeEach(() => {
-  mocks.prisma.order.findUnique.mockReset()
-  mocks.prisma.order.update.mockReset()
-  mocks.prisma.payment.upsert.mockReset()
-  mocks.preferenceCreate.mockReset()
-  mocks.paymentGet.mockReset()
-  mocks.discountStock.mockReset().mockResolvedValue(undefined)
-  mocks.restoreStock.mockReset().mockResolvedValue(undefined)
-  mocks.sendOrderConfirmation.mockReset().mockResolvedValue(true)
-  mocks.sendOrderCancelled.mockReset().mockResolvedValue(true)
-  mocks.wompiGetPresignedAcceptance.mockReset()
-  mocks.wompiCreateTransaction.mockReset()
+  vi.clearAllMocks()
+  process.env.WOMPI_PUBLIC_KEY = 'pub_test_abc'
+  process.env.WOMPI_INTEGRITY_SECRET = 'test_integrity'
+  process.env.WOMPI_EVENTS_SECRET = 'test_events'
+  process.env.MP_WEBHOOK_SECRET = 'mp_secret'
+  process.env.FRONTEND_URL = 'http://localhost:4321'
+  process.env.BACKEND_URL = 'https://api.kaes.test'
+  mocks.prisma.product.findUnique.mockResolvedValue({ stock: 10 })
+  mocks.prisma.order.update.mockResolvedValue({})
+  mocks.processPaymentUpdate.mockResolvedValue({ outcome: 'CONFIRMED', duplicate: false })
 })
 
 // ─────────────────────────────────────────────────────────────
-// POST /api/v1/payments/create-preference  (MercadoPago)
+// Wompi checkout
 // ─────────────────────────────────────────────────────────────
-describe('POST /api/v1/payments/create-preference — auth', () => {
-  it('retorna 401 sin auth', async () => {
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Origin', 'http://localhost:4321')
-      .send({ orderId: 'ord-1', items: [{}], payer: { email: 'a@b.com' } })
+describe('POST /api/v1/payments/wompi/checkout', () => {
+  const post = (token, body) =>
+    request(app).post('/api/v1/payments/wompi/checkout').set('Authorization', `Bearer ${token}`).send(body)
+
+  it('401 sin sesión', async () => {
+    const res = await request(app).post('/api/v1/payments/wompi/checkout').send({ orderId: 'ord1' })
     expect(res.status).toBe(401)
   })
 
-  it('retorna 403 si el email no está verificado', async () => {
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Authorization', `Bearer ${unverifiedToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({ orderId: 'ord-1', items: [{}], payer: { email: 'a@b.com' } })
+  it('devuelve la URL del Web Checkout con el TOTAL de la orden y firma de integridad', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    const res = await post(customerToken(), { orderId: 'ord1' })
+    expect(res.status).toBe(200)
+    const url = new URL(res.body.checkoutUrl)
+    expect(url.hostname).toBe('checkout.wompi.co')
+    expect(url.searchParams.get('amount-in-cents')).toBe('6490000')
+    expect(url.searchParams.get('reference')).toMatch(/^KAES-ord1-/)
+    expect(url.searchParams.get('redirect-url')).toBe('http://localhost:4321/checkout/resultado?orderId=ord1&provider=wompi')
+    expect(url.searchParams.get('signature:integrity')).toMatch(/^[a-f0-9]{64}$/)
+    expect(mocks.prisma.order.update).toHaveBeenCalledWith({
+      where: { id: 'ord1' },
+      data: { paymentProvider: 'WOMPI', mpPreferenceId: res.body.reference },
+    })
+  })
+
+  it('404 si la orden es de otro usuario (no revela que existe)', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    const res = await post(otherToken(), { orderId: 'ord1' })
+    expect(res.status).toBe(404)
+  })
+
+  it('409 si la orden ya está pagada o cancelada', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ status: 'CONFIRMED', stockDeducted: true }))
+    expect((await post(customerToken(), { orderId: 'ord1' })).body.code).toBe('ORDER_ALREADY_PAID')
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ status: 'CANCELLED' }))
+    expect((await post(customerToken(), { orderId: 'ord1' })).status).toBe(409)
+  })
+
+  it('409 ORDER_IN_REVIEW si ya hay un pago aprobado sin confirmar (evita doble cobro)', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ needsReview: true, payment: { status: 'COMPLETED' } }))
+    const res = await post(customerToken(), { orderId: 'ord1' })
+    expect(res.status).toBe(409)
+    expect(res.body.code).toBe('ORDER_IN_REVIEW')
+
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ payment: { status: 'COMPLETED' } }))
+    expect((await post(customerToken(), { orderId: 'ord1' })).body.code).toBe('ORDER_IN_REVIEW')
+    expect(mocks.prisma.order.update).not.toHaveBeenCalled()
+  })
+
+  it('409 si un producto se agotó antes de pagar', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.prisma.product.findUnique.mockResolvedValueOnce({ stock: 0 })
+    const res = await post(customerToken(), { orderId: 'ord1' })
+    expect(res.status).toBe(409)
+    expect(res.body.code).toBe('INSUFFICIENT_STOCK')
+  })
+
+  it('503 si Wompi no está configurado', async () => {
+    delete process.env.WOMPI_INTEGRITY_SECRET
+    const res = await post(customerToken(), { orderId: 'ord1' })
+    expect(res.status).toBe(503)
+  })
+
+  it('403 si el email no está verificado (confirmado contra la BD)', async () => {
+    mocks.prisma.user.findUnique.mockResolvedValueOnce({ emailVerified: false, isActive: true })
+    const res = await post(tokenFor({ id: 'u1', role: 'CUSTOMER', emailVerified: false }), { orderId: 'ord1' })
     expect(res.status).toBe(403)
     expect(res.body.code).toBe('EMAIL_NOT_VERIFIED')
   })
-})
 
-describe('POST /api/v1/payments/create-preference — validación', () => {
-  it('retorna 400 sin orderId', async () => {
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({ items: [{}], payer: { email: 'a@b.com' } })
-    expect(res.status).toBe(400)
-  })
-
-  it('retorna 400 sin items', async () => {
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({ orderId: 'ord-1', payer: { email: 'a@b.com' } })
-    expect(res.status).toBe(400)
-  })
-
-  it('retorna 400 sin payer.email', async () => {
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({ orderId: 'ord-1', items: [{}] })
-    expect(res.status).toBe(400)
-  })
-
-  it('retorna 404 si la orden no existe', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValueOnce(null)
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({ orderId: 'missing', items: [{}], payer: { email: 'a@b.com' } })
-    expect(res.status).toBe(404)
-  })
-
-  it('retorna 400 si la orden no está PENDING', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ status: 'CONFIRMED' }))
-    const res = await request(app)
-      .post('/api/v1/payments/create-preference')
-      .set('Authorization', `Bearer ${customerToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({ orderId: 'ord-1', items: [{}], payer: { email: 'a@b.com' } })
-    expect(res.status).toBe(400)
-  })
-})
-
-describe('POST /api/v1/payments/create-preference — happy path', () => {
-  it('crea preference, guarda mpPreferenceId y devuelve initPoint', async () => {
+  it('deja pasar si el token está desactualizado pero la BD dice verificado', async () => {
+    mocks.prisma.user.findUnique.mockResolvedValueOnce({ emailVerified: true, isActive: true })
     mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
-    mocks.prisma.order.update.mockResolvedValueOnce({ id: 'ord-1' })
-    mocks.preferenceCreate.mockResolvedValueOnce({
-      id: 'pref-123',
-      init_point: 'https://mp.com/checkout',
-      sandbox_init_point: 'https://sandbox.mp.com/checkout',
-    })
+    const res = await post(tokenFor({ id: 'u1', role: 'CUSTOMER', emailVerified: false }), { orderId: 'ord1' })
+    expect(res.status).toBe(200)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Wompi webhook
+// ─────────────────────────────────────────────────────────────
+describe('POST /api/v1/payments/wompi/webhook', () => {
+  const signedEvent = (tx, secret = 'test_events') => {
+    const event = {
+      event: 'transaction.updated',
+      data: { transaction: tx },
+      signature: { properties: ['transaction.id', 'transaction.status', 'transaction.amount_in_cents'] },
+      timestamp: 1790000000,
+    }
+    event.signature.checksum = crypto.createHash('sha256')
+      .update(`${tx.id}${tx.status}${tx.amount_in_cents}${event.timestamp}${secret}`).digest('hex').toUpperCase()
+    return event
+  }
+  const tx = { id: 'tx-1', status: 'APPROVED', amount_in_cents: 6490000, reference: 'KAES-ord1-abc', currency: 'COP' }
+
+  const send = (event) =>
+    request(app).post('/api/v1/payments/wompi/webhook').set('Content-Type', 'application/json').send(JSON.stringify(event))
+
+  it('procesa un evento firmado (sin Origin: exento de CSRF) y responde 200', async () => {
+    const res = await send(signedEvent(tx))
+    expect(res.status).toBe(200)
+    expect(mocks.processPaymentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'WOMPI', orderId: 'ord1', providerPaymentId: 'tx-1', status: 'APPROVED', amount: 64900, source: 'webhook',
+    }))
+  })
+
+  it('401 con firma inválida o evento alterado', async () => {
+    const event = signedEvent(tx)
+    event.data.transaction.amount_in_cents = 100
+    const res = await send(event)
+    expect(res.status).toBe(401)
+    expect(mocks.processPaymentUpdate).not.toHaveBeenCalled()
+  })
+
+  it('401 si la firma fue hecha con otro secreto', async () => {
+    const res = await send(signedEvent(tx, 'secreto_falso'))
+    expect(res.status).toBe(401)
+  })
+
+  it('500 si el procesamiento falla (Wompi reintenta; es idempotente)', async () => {
+    mocks.processPaymentUpdate.mockRejectedValueOnce(new Error('db caída'))
+    const res = await send(signedEvent(tx))
+    expect(res.status).toBe(500)
+  })
+
+  it('200 sin procesar si la referencia no es de esta tienda', async () => {
+    const res = await send(signedEvent({ ...tx, reference: 'otra-tienda-123' }))
+    expect(res.status).toBe(200)
+    expect(mocks.processPaymentUpdate).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// MercadoPago
+// ─────────────────────────────────────────────────────────────
+describe('POST /api/v1/payments/create-preference', () => {
+  it('crea una preferencia por el TOTAL de la orden con notification_url en /api/v1', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.preferenceCreate.mockResolvedValueOnce({ id: 'pref-1', init_point: 'https://mp/init', sandbox_init_point: 'https://sandbox/init' })
 
     const res = await request(app)
       .post('/api/v1/payments/create-preference')
       .set('Authorization', `Bearer ${customerToken()}`)
-      .set('Origin', 'http://localhost:4321')
-      .send({
-        orderId: 'ord-1',
-        items: [{ productId: 'p1', quantity: 99, price: 9999 }], // cliente miente
-        payer: { email: 'payer@x.com', name: 'Payer' },
-      })
+      .send({ orderId: 'ord1' })
 
     expect(res.status).toBe(200)
-    expect(res.body.preferenceId).toBe('pref-123')
-    expect(res.body.initPoint).toBe('https://mp.com/checkout')
-
-    // Items reconstruidos desde DB — precios/cantidades del cliente IGNORADOS
-    const createArg = mocks.preferenceCreate.mock.calls[0][0].body
-    expect(createArg.items[0].id).toBe('p1')
-    expect(createArg.items[0].title).toBe('Camiseta')
-    expect(createArg.items[0].unit_price).toBe(25000)
-    expect(createArg.items[0].quantity).toBe(2)
-
-    // mpPreferenceId guardado
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'ord-1' },
-        data: { mpPreferenceId: 'pref-123' },
-      }),
-    )
-    expect(createArg.external_reference).toBe('ord-1')
-    expect(createArg.notification_url).toContain('/api/payments/webhook')
+    // Nunca se usa sandbox_init_point
+    expect(res.body.checkoutUrl).toBe('https://mp/init')
+    const body = mocks.preferenceCreate.mock.calls[0][0].body
+    expect(body.items).toEqual([expect.objectContaining({ quantity: 1, unit_price: 64900, currency_id: 'COP' })])
+    expect(body.notification_url).toBe('https://api.kaes.test/api/v1/payments/webhook')
+    expect(body.external_reference).toBe('ord1')
   })
-})
 
-// ─────────────────────────────────────────────────────────────
-// POST /api/v1/payments/webhook  (MercadoPago)
-// ─────────────────────────────────────────────────────────────
-const mpSignature = ({ ts, queryId, requestId, body, secret }) => {
-  const manifest = `id:${queryId};request-id:${requestId};ts:${ts};`
-  return {
-    ts,
-    v1: crypto.createHmac('sha256', secret).update(manifest).digest('hex'),
-  }
-}
-
-const sendMpWebhook = async ({ ts, queryId, requestId, body, secret, queryIdOverride }) => {
-  const sig = mpSignature({
-    ts,
-    queryId: queryIdOverride !== undefined ? queryIdOverride : (queryId ?? ''),
-    requestId,
-    body,
-    secret: secret || process.env.MP_WEBHOOK_SECRET,
-  })
-  const path = `/api/v1/payments/webhook${queryIdOverride === undefined && queryId !== undefined ? `?id=${queryId}` : ''}`
-  let req = request(app)
-    .post(path)
-    .set('x-signature', `ts=${sig.ts},v1=${sig.v1}`)
-    .set('x-request-id', requestId)
-    .set('Content-Type', 'application/json')
-
-  return { req: req.send(body) }
-}
-
-describe('POST /api/v1/payments/webhook — verificación de firma', () => {
-  it('retorna 401 sin header x-signature', async () => {
+  it('404 para la orden de otro usuario', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
     const res = await request(app)
-      .post('/api/v1/payments/webhook')
-      .set('x-request-id', 'req-1')
-      .send({ type: 'payment' })
-    expect(res.status).toBe(401)
+      .post('/api/v1/payments/create-preference')
+      .set('Authorization', `Bearer ${otherToken()}`)
+      .send({ orderId: 'ord1' })
+    expect(res.status).toBe(404)
+    expect(mocks.preferenceCreate).not.toHaveBeenCalled()
   })
 
-  it('retorna 401 sin header x-request-id', async () => {
+  it('responde (no se cuelga) si MercadoPago falla', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.preferenceCreate.mockRejectedValueOnce(new Error('MP caído'))
     const res = await request(app)
-      .post('/api/v1/payments/webhook')
-      .set('x-signature', 'ts=123,v1=abc')
-      .send({ type: 'payment' })
-    expect(res.status).toBe(401)
-  })
-
-  it('retorna 401 con formato de firma inválido (sin v1)', async () => {
-    const res = await request(app)
-      .post('/api/v1/payments/webhook')
-      .set('x-signature', 'ts=123')
-      .set('x-request-id', 'req-1')
-      .send({ type: 'payment' })
-    expect(res.status).toBe(401)
-  })
-
-  it('retorna 401 con firma HMAC incorrecta', async () => {
-    const body = JSON.stringify({ type: 'payment', data: { id: 'pay-1' } })
-    const ts = String(Math.floor(Date.now() / 1000))
-    const res = await request(app)
-      .post('/api/v1/payments/webhook?id=q-1')
-      .set('x-signature', `ts=${ts},v1=${'0'.repeat(64)}`)
-      .set('x-request-id', 'req-1')
-      .send(body)
-    expect(res.status).toBe(401)
-  })
-})
-
-describe('POST /api/v1/payments/webhook — idempotencia', () => {
-  const validHeaders = (body) => {
-    const ts = String(Math.floor(Date.now() / 1000))
-    const sig = mpSignature({
-      ts,
-      queryId: 'q-1',
-      requestId: 'req-1',
-      body,
-      secret: process.env.MP_WEBHOOK_SECRET,
-    })
-    return { 'x-signature': `ts=${sig.ts},v1=${sig.v1}`, 'x-request-id': 'req-1' }
-  }
-
-  it('retorna 200 sin tocar DB si type !== "payment"', async () => {
-    const body = JSON.stringify({ type: 'plan', data: { id: 'plan-1' } })
-    const res = await request(app)
-      .post('/api/v1/payments/webhook?id=q-1')
-      .set(validHeaders(body))
-      .set('Content-Type', 'application/json')
-      .send(body)
-    expect(res.status).toBe(200)
-    expect(mocks.paymentGet).not.toHaveBeenCalled()
-    expect(mocks.prisma.order.update).not.toHaveBeenCalled()
-  })
-
-  it('retorna 200 sin tocar DB si falta data.id', async () => {
-    const body = JSON.stringify({ type: 'payment' })
-    const res = await request(app)
-      .post('/api/v1/payments/webhook?id=q-1')
-      .set(validHeaders(body))
-      .set('Content-Type', 'application/json')
-      .send(body)
-    expect(res.status).toBe(200)
-    expect(mocks.paymentGet).not.toHaveBeenCalled()
-  })
-})
-
-describe('POST /api/v1/payments/webhook — flujo approved', () => {
-  const sendApproved = async () => {
-    const body = JSON.stringify({ type: 'payment', data: { id: 'pay-1' } })
-    const ts = String(Math.floor(Date.now() / 1000))
-    const sig = mpSignature({
-      ts, queryId: 'q-1', requestId: 'req-1', body,
-      secret: process.env.MP_WEBHOOK_SECRET,
-    })
-
-    mocks.paymentGet.mockResolvedValueOnce({
-      id: 'pay-1',
-      status: 'approved',
-      external_reference: 'ord-1',
-      transaction_amount: 50000,
-      currency_id: 'COP',
-    })
-    mocks.prisma.order.update.mockResolvedValueOnce({ id: 'ord-1', status: 'CONFIRMED' })
-    mocks.prisma.payment.upsert.mockResolvedValueOnce({})
-
-    return request(app)
-      .post('/api/v1/payments/webhook?id=q-1')
-      .set('x-signature', `ts=${sig.ts},v1=${sig.v1}`)
-      .set('x-request-id', 'req-1')
-      .set('Content-Type', 'application/json')
-      .send(body)
-  }
-
-  it('marca orden CONFIRMED, descuenta stock y manda email', async () => {
-    const res = await sendApproved()
-    expect(res.status).toBe(200)
-
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'ord-1' },
-        data: expect.objectContaining({ status: 'CONFIRMED' }),
-      }),
-    )
-    expect(mocks.discountStock).toHaveBeenCalledWith('ord-1')
-    expect(mocks.sendOrderConfirmation).toHaveBeenCalledWith('ord-1')
-  })
-
-  it('crea/actualiza Payment con provider=MERCADOPAGO y status=COMPLETED', async () => {
-    await sendApproved()
-    expect(mocks.prisma.payment.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { orderId: 'ord-1' },
-        create: expect.objectContaining({
-          provider: 'MERCADOPAGO',
-          status: 'COMPLETED',
-          amount: 50000,
-          currency: 'COP',
-        }),
-      }),
-    )
-  })
-})
-
-describe('POST /api/v1/payments/webhook — flujo rejected / pending / error', () => {
-  const sendWithStatus = async (mpStatus) => {
-    const body = JSON.stringify({ type: 'payment', data: { id: 'pay-1' } })
-    const ts = String(Math.floor(Date.now() / 1000))
-    const sig = mpSignature({
-      ts, queryId: 'q-1', requestId: 'req-1', body,
-      secret: process.env.MP_WEBHOOK_SECRET,
-    })
-
-    mocks.paymentGet.mockResolvedValueOnce({
-      id: 'pay-1',
-      status: mpStatus,
-      external_reference: 'ord-1',
-      transaction_amount: 50000,
-      currency_id: 'COP',
-    })
-    mocks.prisma.order.update.mockResolvedValueOnce({})
-    mocks.prisma.payment.upsert.mockResolvedValueOnce({})
-
-    return request(app)
-      .post('/api/v1/payments/webhook?id=q-1')
-      .set('x-signature', `ts=${sig.ts},v1=${sig.v1}`)
-      .set('x-request-id', 'req-1')
-      .set('Content-Type', 'application/json')
-      .send(body)
-  }
-
-  it('rejected → orden CANCELLED, NO descuenta stock, NO manda email', async () => {
-    const res = await sendWithStatus('rejected')
-    expect(res.status).toBe(200)
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: 'CANCELLED' }),
-      }),
-    )
-    expect(mocks.discountStock).not.toHaveBeenCalled()
-    expect(mocks.sendOrderConfirmation).not.toHaveBeenCalled()
-    expect(mocks.prisma.payment.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ status: 'FAILED' }),
-      }),
-    )
-  })
-
-  it('pending → orden queda PENDING, sin descuento de stock', async () => {
-    const res = await sendWithStatus('pending')
-    expect(res.status).toBe(200)
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: 'PENDING' }),
-      }),
-    )
-    expect(mocks.discountStock).not.toHaveBeenCalled()
-  })
-
-  it('in_process → orden queda PENDING, sin descuento', async () => {
-    const res = await sendWithStatus('in_process')
-    expect(res.status).toBe(200)
-    expect(mocks.discountStock).not.toHaveBeenCalled()
-    expect(mocks.prisma.payment.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ status: 'PENDING' }),
-      }),
-    )
-  })
-
-  it('status desconocido → fallback a PENDING', async () => {
-    const res = await sendWithStatus('something-weird')
-    expect(res.status).toBe(200)
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: 'PENDING' }),
-      }),
-    )
-  })
-
-  it('retorna 200 incluso si la API de MP lanza error (evita reintentos)', async () => {
-    const body = JSON.stringify({ type: 'payment', data: { id: 'pay-1' } })
-    const ts = String(Math.floor(Date.now() / 1000))
-    const sig = mpSignature({
-      ts, queryId: 'q-1', requestId: 'req-1', body,
-      secret: process.env.MP_WEBHOOK_SECRET,
-    })
-
-    mocks.paymentGet.mockRejectedValueOnce(new Error('MP down'))
-
-    const res = await request(app)
-      .post('/api/v1/payments/webhook?id=q-1')
-      .set('x-signature', `ts=${sig.ts},v1=${sig.v1}`)
-      .set('x-request-id', 'req-1')
-      .set('Content-Type', 'application/json')
-      .send(body)
-    expect(res.status).toBe(200)
-    expect(mocks.prisma.order.update).not.toHaveBeenCalled()
-  })
-})
-
-// ─────────────────────────────────────────────────────────────
-// POST /api/v1/payments/wompi/webhook
-// ─────────────────────────────────────────────────────────────
-const wompiSig = ({ id, ts, body }) =>
-  crypto.createHmac('sha256', process.env.WOMPI_WEBHOOK_SECRET)
-    .update(`${id}.${ts}.${body}`)
-    .digest('hex')
-
-const buildWompiRequest = (body, { skipSig = false, signatureOverride = null } = {}) => {
-  const id = `evt-${Math.random().toString(36).slice(2)}`
-  const ts = String(Date.now())
-  const sig = signatureOverride || wompiSig({ id, ts, body })
-
-  let req = request(app)
-    .post('/api/v1/payments/wompi/webhook')
-    .set('Content-Type', 'application/json')
-
-  if (!skipSig) {
-    req = req
-      .set('x-wompi-event-id', id)
-      .set('x-wompi-timestamp', ts)
-      .set('x-wompi-signature', sig)
-  }
-  return req.send(body)
-}
-
-describe('POST /api/v1/payments/wompi/webhook — early returns y firma', () => {
-  it('retorna 200 idempotente si event !== "transaction.updated"', async () => {
-    const body = JSON.stringify({
-      event: 'transaction.created',
-      data: { object: { id: 't-1' } },
-    })
-    const res = await buildWompiRequest(body)
-    expect(res.status).toBe(200)
-    expect(mocks.prisma.order.update).not.toHaveBeenCalled()
-  })
-
-  it('retorna 401 sin headers de firma', async () => {
-    const body = JSON.stringify({
-      event: 'transaction.updated',
-      data: { object: { id: 't-1', status: 'APPROVED' } },
-    })
-    const res = await buildWompiRequest(body, { skipSig: true })
-    expect(res.status).toBe(401)
-  })
-
-  it('retorna 401 cuando longitudes de firma difieren', async () => {
-    const body = JSON.stringify({
-      event: 'transaction.updated',
-      data: { object: { id: 't-1', status: 'APPROVED' } },
-    })
-    const res = await buildWompiRequest(body, { signatureOverride: 'short' })
-    expect(res.status).toBe(401)
-  })
-
-  it('retorna 401 con firma HMAC incorrecta', async () => {
-    const body = JSON.stringify({
-      event: 'transaction.updated',
-      data: { object: { id: 't-1', status: 'APPROVED' } },
-    })
-    const res = await buildWompiRequest(body, { signatureOverride: 'a'.repeat(64) })
-    expect(res.status).toBe(401)
-  })
-})
-
-describe('POST /api/v1/payments/wompi/webhook — flujo APPROVED / DECLINED', () => {
-  it('APPROVED → orden CONFIRMED, descuento de stock y email', async () => {
-    mocks.prisma.order.update.mockResolvedValueOnce({})
-    mocks.prisma.payment.upsert.mockResolvedValueOnce({})
-
-    const body = JSON.stringify({
-      event: 'transaction.updated',
-      data: {
-        object: {
-          id: 'wompi-tx-1',
-          status: 'APPROVED',
-          reference: 'ORDER-ord-42',
-          amount_in_cents: 5000000,
-          currency: 'COP',
-        },
-      },
-    })
-    const res = await buildWompiRequest(body)
-    expect(res.status).toBe(200)
-
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'ord-42' },
-        data: expect.objectContaining({ status: 'CONFIRMED' }),
-      }),
-    )
-    expect(mocks.discountStock).toHaveBeenCalledWith('ord-42')
-    expect(mocks.sendOrderConfirmation).toHaveBeenCalledWith('ord-42')
-    expect(mocks.prisma.payment.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({
-          provider: 'WOMPI',
-          status: 'COMPLETED',
-          amount: 50000,
-        }),
-      }),
-    )
-  })
-
-  it('DECLINED → orden CANCELLED, NO descuenta stock', async () => {
-    mocks.prisma.order.update.mockResolvedValueOnce({})
-    mocks.prisma.payment.upsert.mockResolvedValueOnce({})
-
-    const body = JSON.stringify({
-      event: 'transaction.updated',
-      data: {
-        object: {
-          id: 'wompi-tx-2',
-          status: 'DECLINED',
-          reference: 'ORDER-ord-99',
-          amount_in_cents: 1000000,
-          currency: 'COP',
-        },
-      },
-    })
-    const res = await buildWompiRequest(body)
-    expect(res.status).toBe(200)
-
-    expect(mocks.prisma.order.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ status: 'CANCELLED' }),
-      }),
-    )
-    expect(mocks.discountStock).not.toHaveBeenCalled()
-    expect(mocks.sendOrderConfirmation).not.toHaveBeenCalled()
-    expect(mocks.prisma.payment.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        create: expect.objectContaining({ status: 'FAILED' }),
-      }),
-    )
-  })
-})
-
-// ─────────────────────────────────────────────────────────────
-// GET /api/v1/payments/status/:orderId
-// ─────────────────────────────────────────────────────────────
-describe('GET /api/v1/payments/status/:orderId', () => {
-  it('retorna 401 sin auth', async () => {
-    const res = await request(app).get('/api/v1/payments/status/ord-1')
-    expect(res.status).toBe(401)
-  })
-
-  it('retorna 404 si la orden no existe', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValueOnce(null)
-    const res = await request(app)
-      .get('/api/v1/payments/status/missing')
+      .post('/api/v1/payments/create-preference')
       .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ orderId: 'ord1' })
+    expect(res.status).toBe(500)
+    expect(res.body.error).toBe('Error interno del servidor')
+  })
+})
+
+describe('POST /api/v1/payments/webhook (MercadoPago)', () => {
+  const sign = (dataId, requestId, ts = '1790000000') => {
+    const v1 = crypto.createHmac('sha256', 'mp_secret').update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex')
+    return `ts=${ts},v1=${v1}`
+  }
+
+  it('verifica la firma con data.id del query y procesa el pago consultado a la API de MP', async () => {
+    mocks.paymentGet.mockResolvedValueOnce({ id: 555, status: 'approved', transaction_amount: 64900, currency_id: 'COP', external_reference: 'ord1' })
+    const res = await request(app)
+      .post('/api/v1/payments/webhook?data.id=555&type=payment')
+      .set('x-signature', sign('555', 'req-1'))
+      .set('x-request-id', 'req-1')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ type: 'payment', data: { id: '555' } }))
+
+    expect(res.status).toBe(200)
+    expect(mocks.paymentGet).toHaveBeenCalledWith({ id: '555' })
+    expect(mocks.processPaymentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'MERCADOPAGO', orderId: 'ord1', providerPaymentId: '555', status: 'APPROVED', amount: 64900,
+    }))
+  })
+
+  it('401 si la firma no coincide', async () => {
+    const res = await request(app)
+      .post('/api/v1/payments/webhook?data.id=555&type=payment')
+      .set('x-signature', sign('999', 'req-1'))
+      .set('x-request-id', 'req-1')
+      .send({})
+    expect(res.status).toBe(401)
+    expect(mocks.paymentGet).not.toHaveBeenCalled()
+  })
+
+  it('ignora (200) notificaciones que no son de pagos', async () => {
+    const res = await request(app)
+      .post('/api/v1/payments/webhook?topic=merchant_order&id=1')
+      .send({})
+    expect(res.status).toBe(200)
+    expect(mocks.paymentGet).not.toHaveBeenCalled()
+  })
+
+  it('la ruta antigua sin /v1 ya no es la notification_url', async () => {
+    const res = await request(app).post('/api/payments/webhook').send({})
+    expect(res.status).not.toBe(200)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Verificación manual y estado
+// ─────────────────────────────────────────────────────────────
+describe('POST /api/v1/payments/verify/:orderId', () => {
+  it('consulta la transacción en Wompi y la procesa como un webhook', async () => {
+    mocks.prisma.order.findUnique
+      .mockResolvedValueOnce({ id: 'ord1', userId: 'u1', mpPreferenceId: 'KAES-ord1-abc', paymentProvider: 'WOMPI' })
+      .mockResolvedValueOnce({ id: 'ord1', status: 'CONFIRMED', paidAt: new Date(), total: '64900', needsReview: false, payment: { status: 'COMPLETED', provider: 'WOMPI' } })
+    mocks.getTransaction.mockResolvedValueOnce({ id: 'tx-9', status: 'APPROVED', amount_in_cents: 6490000, reference: 'KAES-ord1-abc', currency: 'COP' })
+
+    const res = await request(app)
+      .post('/api/v1/payments/verify/ord1')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ provider: 'wompi', transactionId: 'tx-9' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('CONFIRMED')
+    expect(mocks.processPaymentUpdate).toHaveBeenCalledWith(expect.objectContaining({ providerPaymentId: 'tx-9', source: 'verify' }))
+  })
+
+  it('ignora transacciones cuya referencia es de otra orden', async () => {
+    mocks.prisma.order.findUnique
+      .mockResolvedValueOnce({ id: 'ord1', userId: 'u1', mpPreferenceId: null, paymentProvider: 'WOMPI' })
+      .mockResolvedValueOnce({ id: 'ord1', status: 'PENDING' })
+    mocks.getTransaction.mockResolvedValueOnce({ id: 'tx-x', status: 'APPROVED', amount_in_cents: 100, reference: 'KAES-otra-abc' })
+
+    const res = await request(app)
+      .post('/api/v1/payments/verify/ord1')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ provider: 'wompi', transactionId: 'tx-x' })
+    expect(res.status).toBe(200)
+    expect(mocks.processPaymentUpdate).not.toHaveBeenCalled()
+  })
+
+  it('404 para órdenes ajenas', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce({ id: 'ord1', userId: 'u1' })
+    const res = await request(app).post('/api/v1/payments/verify/ord1').set('Authorization', `Bearer ${otherToken()}`).send({})
     expect(res.status).toBe(404)
   })
+})
 
-  it('retorna 403 si la orden pertenece a otro usuario', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValueOnce({
-      id: 'ord-1', userId: 'otro', status: 'PENDING', paidAt: null, total: '50000',
-    })
+describe('GET /api/v1/payments/status/:orderId', () => {
+  it('SUPER_ADMIN también puede consultar cualquier orden', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce({ id: 'ord1', userId: 'u1', status: 'PENDING', total: '1', needsReview: false })
     const res = await request(app)
-      .get('/api/v1/payments/status/ord-1')
-      .set('Authorization', `Bearer ${customerToken()}`)
-    expect(res.status).toBe(403)
-  })
-
-  it('retorna 200 para el dueño de la orden', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValueOnce({
-      id: 'ord-1', userId: 'u1', status: 'CONFIRMED', paidAt: new Date(), total: '50000',
-    })
-    const res = await request(app)
-      .get('/api/v1/payments/status/ord-1')
-      .set('Authorization', `Bearer ${customerToken()}`)
+      .get('/api/v1/payments/status/ord1')
+      .set('Authorization', `Bearer ${tokenFor({ id: 'sa', role: 'SUPER_ADMIN' })}`)
     expect(res.status).toBe(200)
-    expect(res.body).toMatchObject({ id: 'ord-1', status: 'CONFIRMED', total: '50000' })
-  })
-
-  it('ADMIN puede consultar orden de otro usuario', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValueOnce({
-      id: 'ord-1', userId: 'u-otro', status: 'PENDING', paidAt: null, total: '9999',
-    })
-    const res = await request(app)
-      .get('/api/v1/payments/status/ord-1')
-      .set('Authorization', `Bearer ${adminToken()}`)
-    expect(res.status).toBe(200)
-    expect(res.body.total).toBe('9999')
+    expect(res.body).not.toHaveProperty('userId')
   })
 })

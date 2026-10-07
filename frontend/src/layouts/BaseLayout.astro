@@ -1,12 +1,27 @@
 ---
 import '../styles/global.css'
+import { SITE_CONFIG } from '../lib/site-config.js'
+import { absoluteUrl, isNoIndexPath, resolveSiteUrl, safeJsonForScript, truncateDescription } from '../lib/seo.js'
 
 interface Props {
   title:       string
   description?:string | undefined
+  image?:      string | undefined   // URL absoluta para Open Graph / Twitter
+  type?:       'website' | 'product'
+  noindex?:    boolean
+  jsonLd?:     Record<string, unknown> | undefined
 }
 
-const { title, description = 'Tienda de ropa online' } = Astro.props
+const { title, description = 'Tienda de ropa online', image, type = 'website', noindex, jsonLd } = Astro.props
+
+// URL canónica sin query string (filtros, utm…). Con SITE_URL configurado
+// (astro.config) apunta siempre al dominio principal aunque se visite el
+// sitio por *.vercel.app.
+const siteUrl      = resolveSiteUrl(Astro.site, Astro.url.origin)
+const canonicalUrl = absoluteUrl(siteUrl, Astro.url.pathname)
+const metaDescription = truncateDescription(description)
+const fullTitle    = `${title} | Kaes Store`
+const robots       = noindex ?? isNoIndexPath(Astro.url.pathname) ? 'noindex, nofollow' : 'index, follow'
 ---
 
 <!DOCTYPE html>
@@ -15,8 +30,25 @@ const { title, description = 'Tienda de ropa online' } = Astro.props
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0a0a" />
-    <meta name="description" content={description} />
-    <title>{title} | Kaes Store</title>
+    <meta name="description" content={metaDescription} />
+    <meta name="robots" content={robots} />
+    <title>{fullTitle}</title>
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+    <meta property="og:site_name" content={SITE_CONFIG.name} />
+    <meta property="og:locale" content="es_CO" />
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={metaDescription} />
+    <meta property="og:url" content={canonicalUrl} />
+    {image && <meta property="og:image" content={image} />}
+    <meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={metaDescription} />
+    {image && <meta name="twitter:image" content={image} />}
+    {jsonLd && <script type="application/ld+json" set:html={safeJsonForScript(jsonLd)} />}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet" />

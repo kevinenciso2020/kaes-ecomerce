@@ -1,10 +1,10 @@
-cat > .gitignore << 'EOF'
 node_modules/
 .env
 .env.local
+.env.production
 dist/
 .astro/
+.vercel/
 *.log
 .DS_Store
-EOF
-/generated/prisma
+coverage/

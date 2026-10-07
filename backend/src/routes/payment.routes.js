@@ -1,481 +1,380 @@
-import { Router } from 'express'
+import express from 'express'
+import { Preference, Payment } from 'mercadopago'
 
-import express from "express";
-import crypto from "crypto";
-import { Preference, Payment } from "mercadopago";
-import mpClient from "../config/mercadopago.js";
-import wompi from "../config/wompi.js";
-import { prisma } from "../config/prisma.js";
-import { isAuth } from "../middleware/auth.middleware.js";
-import { requireVerifiedEmail } from "../middleware/requireVerifiedEmail.middleware.js";
-import { discountStock } from "../services/stock.service.js";
-import { sendOrderConfirmation } from "../services/email.service.js";
-import { logger } from "../config/logger.js";
+import { getMpClient, isMercadoPagoConfigured, verifyMpSignature } from '../config/mercadopago.js'
+import * as wompi from '../config/wompi.js'
+import { prisma } from '../config/prisma.js'
+import { captureError } from '../config/sentry.js'
+import { isAuth } from '../middleware/auth.middleware.js'
+import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail.middleware.js'
+import { paymentInitLimiter } from '../middleware/rateLimit.middleware.js'
+import {
+  processPaymentUpdate,
+  mapMercadoPagoStatus,
+  mapWompiStatus,
+} from '../services/payment.service.js'
 
-const router = express.Router();
+const router = express.Router()
 
-// ─────────────────────────────────────────
-// POST /api/payments/create-preference
-// Crea la preferencia de pago y devuelve la URL de checkout
-// ─────────────────────────────────────────
-router.post("/create-preference", isAuth, requireVerifiedEmail, async (req, res) => {
-  try {
-    const { orderId, items, payer } = req.body;
+const isAdminRole = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN'
 
-    // Validaciones básicas de seguridad
-    if (!orderId || !items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "Datos de orden inválidos" });
-    }
+const httpError = (status, message, code) => Object.assign(new Error(message), { status, code })
 
-    if (!payer?.email) {
-      return res.status(400).json({ error: "Email del comprador requerido" });
-    }
+// Tiempo que el cliente tiene para completar el pago en la pasarela.
+const CHECKOUT_TTL_MINUTES = 60
 
-    // Verificar que la orden existe en tu DB y pertenece al usuario
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { items: { include: { product: true } } },
-    });
+/** Carga una orden del usuario lista para pagar o lanza el error adecuado. */
+const loadPayableOrder = async (orderId, user) => {
+  if (!orderId || typeof orderId !== 'string') throw httpError(400, 'orderId requerido')
 
-    if (!order) {
-      return res.status(404).json({ error: "Orden no encontrada" });
-    }
-
-    if (order.status !== "PENDING") {
-      return res.status(400).json({ error: "Esta orden ya fue procesada" });
-    }
-
-    // Construir items desde la DB (no desde el cliente — seguridad)
-    const mpItems = order.items.map((item) => ({
-      id: item.productId.toString(),
-      title: item.product.name,
-      quantity: item.quantity,
-      unit_price: parseFloat(item.product.price),
-      currency_id: "COP",
-      picture_url: item.product.imageUrl || undefined,
-    }));
-
-    const preference = new Preference(mpClient);
-
-    const preferenceData = {
-      items: mpItems,
-      payer: {
-        email: payer.email,
-        name: payer.name || "",
-      },
-      back_urls: {
-        success: `${process.env.FRONTEND_URL}/checkout/success`,
-        failure: `${process.env.FRONTEND_URL}/checkout/failure`,
-        pending: `${process.env.FRONTEND_URL}/checkout/pending`,
-      },
-      auto_return: "approved",
-      external_reference: orderId.toString(),
-      notification_url: `${process.env.BACKEND_URL}/api/payments/webhook`,
-      statement_descriptor: "KAES STORE",
-      expires: true,
-      expiration_date_to: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // expira en 30 min
-    };
-
-    const result = await preference.create({ body: preferenceData });
-
-    // Guardar el preference ID en la orden
-    await prisma.order.update({
-      where: { id: orderId },
-      data: { mpPreferenceId: result.id },
-    });
-
-    return res.json({
-      preferenceId: result.id,
-      initPoint: result.init_point,         // URL producción
-      sandboxInitPoint: result.sandbox_init_point, // URL sandbox (pruebas)
-    });
-  } catch (error) {
-    req.log?.error({ err: error, orderId }, 'payment.mp.create_preference_failed');
-    return res.status(500).json({ error: "Error procesando el pago" });
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: {
+      user: { select: { email: true, name: true } },
+      items: true,
+      shippingAddress: true,
+      payment: { select: { status: true } },
+    },
+  })
+  if (!order || (order.userId !== user.id && !isAdminRole(user.role))) {
+    throw httpError(404, 'Orden no encontrada')
   }
-});
-
-// ─────────────────────────────────────────
-// POST /api/payments/webhook
-// MercadoPago notifica aquí el resultado del pago
-// ─────────────────────────────────────────
-router.post("/webhook", async (req, res) => {
-  try {
-    // 1. Verificar firma del webhook (seguridad anti-spoofing)
-    const xSignature = req.headers["x-signature"];
-    const xRequestId = req.headers["x-request-id"];
-
-    if (!xSignature || !xRequestId) {
-      req.log?.warn({ provider: 'mercadopago', reason: 'missing_signature' }, 'payment.webhook.signature_missing');
-      return res.status(401).json({ error: "Firma requerida" });
-    }
-
-    // Parsear la firma de MP: "ts=...,v1=..."
-    const parts = xSignature.split(",");
-    const ts = parts.find((p) => p.startsWith("ts="))?.split("=")[1];
-    const v1 = parts.find((p) => p.startsWith("v1="))?.split("=")[1];
-
-    if (!ts || !v1) {
-      return res.status(401).json({ error: "Formato de firma inválido" });
-    }
-
-    // Construir el string a firmar según docs de MP
-    const body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-    const queryId = req.query.id || "";
-    const manifest = `id:${queryId};request-id:${xRequestId};ts:${ts};`;
-
-    const expectedSignature = crypto
-      .createHmac("sha256", process.env.MP_WEBHOOK_SECRET)
-      .update(manifest)
-      .digest("hex");
-
-    // timingSafeEqual requiere buffers de igual longitud — si difieren, rechazar
-    // sin throw. También eliminar el bloque "basic length check fallback" muerto.
-    const expectedBuffer = Buffer.from(expectedSignature, "utf8")
-    const receivedBuffer = Buffer.from(v1, "utf8")
-
-    if (expectedBuffer.length !== receivedBuffer.length) {
-      req.log?.warn({ provider: 'mercadopago', reason: 'invalid_signature_length' }, 'payment.webhook.signature_invalid');
-      return res.status(401).json({ error: "Firma inválida" });
-    }
-
-    if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
-      req.log?.warn({ provider: 'mercadopago', reason: 'invalid_signature' }, 'payment.webhook.signature_invalid');
-      return res.status(401).json({ error: "Firma inválida" });
-    }
-
-    // 2. Procesar la notificación
-    // req.body es un Buffer (express.raw en server.js); nunca aplicar JSON.stringify
-    // sobre un Buffer o la firma nunca coincidirá.
-    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : req.body;
-    const notification = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
-
-    // MP solo nos interesa el evento "payment"
-    if (notification.type !== "payment") {
-      return res.sendStatus(200);
-    }
-
-    const paymentId = notification.data?.id;
-    if (!paymentId) {
-      return res.sendStatus(200);
-    }
-
-    // 3. Consultar el pago directamente a la API de MP (no confiar en el body del webhook)
-    const paymentApi = new Payment(mpClient);
-    const payment = await paymentApi.get({ id: paymentId });
-
-    const orderId = payment.external_reference;
-    const status = payment.status; // "approved", "rejected", "pending", etc.
-
-    if (!orderId) {
-      return res.sendStatus(200);
-    }
-
-    // 4. Actualizar el estado de la orden y crear/actualizar el pago en tu DB
-    let newOrderStatus;
-    let paymentStatus;
-
-    switch (status) {
-      case "approved":
-        newOrderStatus = "CONFIRMED";
-        paymentStatus = "COMPLETED";
-        break;
-      case "rejected":
-        newOrderStatus = "CANCELLED";
-        paymentStatus = "FAILED";
-        break;
-      case "pending":
-      case "in_process":
-        newOrderStatus = "PENDING";
-        paymentStatus = "PENDING";
-        break;
-      default:
-        newOrderStatus = "PENDING";
-        paymentStatus = "PENDING";
-    }
-
-    // Actualizar orden
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: newOrderStatus,
-        paidAt: status === "approved" ? new Date() : null,
-      },
-    });
-
-    // Descontar stock solo si el pago fue aprobado
-    if (status === "approved") {
-      await discountStock(orderId);
-      await sendOrderConfirmation(orderId);
-    }
-
-    // Crear o actualizar registro de Payment
-    await prisma.payment.upsert({
-      where: { orderId: orderId },
-      create: {
-        orderId: orderId,
-        provider: "MERCADOPAGO",
-        providerPaymentId: paymentId.toString(),
-        status: paymentStatus,
-        amount: parseFloat(payment.transaction_amount) || 0,
-        currency: payment.currency_id || "COP",
-      },
-      update: {
-        providerPaymentId: paymentId.toString(),
-        status: paymentStatus,
-        amount: parseFloat(payment.transaction_amount) || 0,
-      },
-    });
-
-    req.log?.info({
-      provider: 'mercadopago',
-      orderId,
-      paymentId,
-      mpStatus: status,
-      newOrderStatus,
-      paymentStatus,
-    }, 'payment.webhook.order_updated');
-
-    // MP requiere 200 o reintenta por hasta 4 días
-    return res.sendStatus(200);
-  } catch (error) {
-    req.log?.error({ err: error, provider: 'mercadopago' }, 'payment.webhook.processing_failed');
-    // Retornar 200 igual para que MP no reintente indefinidamente en errores nuestros
-    return res.sendStatus(200);
+  if (order.stockDeducted || order.status === 'CONFIRMED') {
+    throw httpError(409, 'Esta orden ya está pagada', 'ORDER_ALREADY_PAID')
   }
-});
-
-// ─────────────────────────────────────────
-// GET /api/payments/status/:orderId
-// El frontend consulta si ya se aprobó el pago
-// ─────────────────────────────────────────
-router.get("/status/:orderId", isAuth, async (req, res) => {
-  try {
-    const { orderId } = req.params;
-
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: {
-        id: true,
-        status: true,
-        paidAt: true,
-        total: true,
-        userId: true,
-      },
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: "Orden no encontrada" });
-    }
-
-    if (order.userId !== req.user.id && req.user.role !== 'ADMIN') {
-      return res.status(403).json({ error: "No tienes acceso a esta orden" });
-    }
-
-    return res.json({ id: order.id, status: order.status, paidAt: order.paidAt, total: order.total });
-  } catch (error) {
-    req.log?.error({ err: error, orderId }, 'payment.status_lookup_failed');
-    return res.status(500).json({ error: "Error consultando el pago" });
+  // Un pago aprobado que no pudo confirmar la orden (sin stock, monto distinto)
+  // la deja PENDING + needsReview: cobrarla otra vez sería un doble cobro.
+  if (order.needsReview || ['COMPLETED', 'REFUNDED'].includes(order.payment?.status)) {
+    throw httpError(409, 'Esta orden tiene un pago en revisión. Te contactaremos; no es necesario pagar de nuevo.', 'ORDER_IN_REVIEW')
   }
-});
+  if (order.status !== 'PENDING') {
+    throw httpError(409, 'Esta orden ya no se puede pagar. Crea un pedido nuevo desde tu carrito.', 'ORDER_NOT_PAYABLE')
+  }
+
+  // Revalidar stock antes de mandar al cliente a pagar (informativo: el stock
+  // se descuenta atómicamente cuando el pago se aprueba).
+  for (const item of order.items) {
+    const source = item.variantId
+      ? await prisma.productVariant.findUnique({ where: { id: item.variantId }, select: { stock: true } })
+      : await prisma.product.findUnique({ where: { id: item.productId }, select: { stock: true } })
+    if (!source || source.stock < item.quantity) {
+      throw httpError(409, 'Uno de los productos de tu pedido se agotó. Revisa tu carrito.', 'INSUFFICIENT_STOCK')
+    }
+  }
+  return order
+}
+
+const frontendUrl = () => (process.env.FRONTEND_URL || '').replace(/\/$/, '')
+const backendUrl = () => (process.env.BACKEND_URL || '').replace(/\/$/, '')
 
 // ─────────────────────────────────────────
-// POST /api/payments/wompi/create-checkout
-// Crea una transacción en Wompi y devuelve la URL de pago
+// POST /api/v1/payments/wompi/checkout
+// Devuelve la URL del Web Checkout de Wompi para una orden PENDING.
 // ─────────────────────────────────────────
-router.post("/wompi/create-checkout", isAuth, requireVerifiedEmail, async (req, res) => {
+const wompiCheckout = async (req, res, next) => {
   try {
-    const { orderId } = req.body;
+    if (!wompi.isWompiConfigured()) throw httpError(503, 'Pagos con Wompi no disponibles en este momento')
 
-    if (!orderId) {
-      return res.status(400).json({ error: "orderId requerido" });
-    }
-
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      include: { user: true, items: { include: { product: true } } },
-    });
-
-    if (!order) {
-      return res.status(404).json({ error: "Orden no encontrada" });
-    }
-
-    if (order.status !== "PENDING") {
-      return res.status(400).json({ error: "Esta orden ya fue procesada" });
-    }
-
-    const acceptanceData = await wompi.getPresignedAcceptance();
-
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
     const amountInCents = Math.round(Number(order.total) * 100)
-    const reference = `ORDER-${order.id}`
-    const redirectUrl = `${process.env.FRONTEND_URL}/checkout/wompi-callback?orderId=${order.id}`
+    const reference = wompi.buildReference(order.id)
+    const expirationTime = new Date(Date.now() + CHECKOUT_TTL_MINUTES * 60 * 1000).toISOString()
 
-    const clientIp = req.ip || req.connection.remoteAddress || '127.0.0.1'
-    const cleanedIp = clientIp.replace(/^::ffff:/, '')
-
-    const transaction = await wompi.createTransaction({
+    const checkoutUrl = wompi.buildCheckoutUrl({
+      reference,
       amountInCents,
       currency: 'COP',
+      redirectUrl: `${frontendUrl()}/checkout/resultado?orderId=${order.id}&provider=wompi`,
       customerEmail: order.user.email,
-      reference,
-      acceptanceToken: acceptanceData.acceptance_token,
-      acceptPersonalAuth: acceptanceData.accept_personal_auth,
-      paymentMethod: { type: 'CARD' },
-      paymentMethodType: 'CARD',
-      redirectUrl,
-      ip: cleanedIp,
+      customerName: order.shippingAddress?.fullName || order.user.name,
+      customerPhone: order.shippingAddress?.phone || undefined,
+      expirationTime,
     })
 
     await prisma.order.update({
-      where: { id: orderId },
-      data: { mpPreferenceId: transaction.id },
+      where: { id: order.id },
+      data: { paymentProvider: 'WOMPI', mpPreferenceId: reference },
     })
 
-    return res.json({
-      transactionId: transaction.id,
-      paymentLink: transaction.redirect_url,
-    })
-  } catch (error) {
-    req.log?.error({ err: error, orderId }, 'payment.wompi.create_checkout_failed')
-    return res.status(500).json({ error: "Error al crear el pago" })
+    req.log?.info({ orderId: order.id, reference, amountInCents }, 'payment.wompi.checkout_created')
+    return res.json({ checkoutUrl, reference })
+  } catch (err) {
+    next(err)
   }
-})
+}
+router.post('/wompi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, wompiCheckout)
+// Alias de compatibilidad con el frontend anterior.
+router.post('/wompi/create-checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, wompiCheckout)
 
 // ─────────────────────────────────────────
-// POST /api/payments/wompi/webhook
-// Wompi notifica aquí el resultado del pago
+// POST /api/v1/payments/wompi/webhook
+// Evento firmado de Wompi (transaction.updated).
 // ─────────────────────────────────────────
-router.post("/wompi/webhook", async (req, res) => {
+router.post('/wompi/webhook', async (req, res) => {
+  let event
   try {
-    const rawBody = Buffer.isBuffer(req.body) ? req.body.toString("utf8") : req.body;
-    const event = typeof rawBody === "string" ? JSON.parse(rawBody) : rawBody;
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : JSON.stringify(req.body ?? {})
+    event = JSON.parse(raw)
+  } catch {
+    return res.status(400).json({ error: 'JSON inválido' })
+  }
 
-    if (event.event !== "transaction.updated") {
-      return res.sendStatus(200)
-    }
+  const check = wompi.verifyEventChecksum(event, req.headers['x-event-checksum'])
+  if (!check.valid) {
+    req.log?.warn({ provider: 'wompi', reason: check.reason }, 'payment.webhook.signature_invalid')
+    return res.status(401).json({ error: 'Firma inválida' })
+  }
 
-    const wompiId        = req.headers["x-wompi-event-id"]
-    const wompiTimestamp = req.headers["x-wompi-timestamp"]
-    const wompiSignature = req.headers["x-wompi-signature"]
+  if (event.event !== 'transaction.updated') return res.sendStatus(200)
 
-    if (!wompiId || !wompiTimestamp || !wompiSignature) {
-      req.log?.warn({ provider: 'wompi', reason: 'missing_signature' }, 'payment.webhook.signature_missing')
-      return res.status(401).json({ error: "Firma requerida" })
-    }
+  const tx = event.data?.transaction
+  const orderId = wompi.orderIdFromReference(tx?.reference)
+  if (!tx?.id || !orderId) {
+    req.log?.warn({ provider: 'wompi', reference: tx?.reference }, 'payment.webhook.unknown_reference')
+    return res.sendStatus(200)
+  }
 
-    const bodyString = Buffer.isBuffer(req.body)
-      ? req.body.toString('utf8')
-      : (typeof req.body === 'string' ? req.body : JSON.stringify(req.body))
-    const manifest  = `${wompiId}.${wompiTimestamp}.${bodyString}`
-
-    const expectedSignature = crypto
-      .createHmac("sha256", process.env.WOMPI_WEBHOOK_SECRET)
-      .update(manifest)
-      .digest("hex")
-
-    // timingSafeEqual requiere buffers de igual longitud — si difieren, rechazar
-    // sin throw. También eliminar el bloque "basic length check fallback" muerto.
-    const expectedBuffer = Buffer.from(expectedSignature, "utf8")
-    const receivedBuffer = Buffer.from(wompiSignature, "utf8")
-
-    if (expectedBuffer.length !== receivedBuffer.length) {
-      req.log?.warn({ provider: 'wompi', reason: 'invalid_signature_length' }, 'payment.webhook.signature_invalid')
-      return res.status(401).json({ error: "Firma inválida" })
-    }
-
-    if (!crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
-      req.log?.warn({ provider: 'wompi', reason: 'invalid_signature' }, 'payment.webhook.signature_invalid')
-      return res.status(401).json({ error: "Firma inválida" })
-    }
-
-    const transaction = event.data.object
-    const transactionId = transaction.id
-    const status = transaction.status
-
-    const reference = transaction.reference
-    const orderId = reference.replace('ORDER-', '')
-
-    let newOrderStatus
-    let paymentStatus
-
-    switch (status) {
-      case "APPROVED":
-        newOrderStatus = "CONFIRMED"
-        paymentStatus = "COMPLETED"
-        break
-      case "DECLINED":
-        newOrderStatus = "CANCELLED"
-        paymentStatus = "FAILED"
-        break
-      case "PENDING":
-      case "PROCESSING":
-        newOrderStatus = "PENDING"
-        paymentStatus = "PENDING"
-        break
-      default:
-        newOrderStatus = "PENDING"
-        paymentStatus = "PENDING"
-    }
-
-    await prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: newOrderStatus,
-        paidAt: status === "APPROVED" ? new Date() : null,
-      },
-    })
-
-    // Descontar stock solo si el pago fue aprobado
-    if (status === "APPROVED") {
-      await discountStock(orderId)
-      await sendOrderConfirmation(orderId)
-    }
-
-    await prisma.payment.upsert({
-      where: { orderId: orderId },
-      create: {
-        orderId: orderId,
-        provider: "WOMPI",
-        providerPaymentId: transactionId,
-        status: paymentStatus,
-        amount: transaction.amount_in_cents / 100,
-        currency: transaction.currency || "COP",
-      },
-      update: {
-        providerPaymentId: transactionId,
-        status: paymentStatus,
-        amount: transaction.amount_in_cents / 100,
-      },
-    })
-
-    req.log?.info({
-      provider: 'wompi',
+  try {
+    const result = await processPaymentUpdate({
+      provider: 'WOMPI',
       orderId,
-      transactionId,
-      wompiStatus: status,
-      newOrderStatus,
-      paymentStatus,
-    }, 'payment.webhook.order_updated')
-
+      providerPaymentId: tx.id,
+      status: mapWompiStatus(tx.status),
+      amount: Number(tx.amount_in_cents) / 100,
+      currency: tx.currency,
+      payload: event,
+      source: 'webhook',
+    })
+    req.log?.info({ provider: 'wompi', orderId, transactionId: tx.id, wompiStatus: tx.status, outcome: result.outcome }, 'payment.webhook.processed')
     return res.sendStatus(200)
-  } catch (error) {
-    req.log?.error({ err: error, provider: 'wompi' }, 'payment.webhook.processing_failed')
-    return res.sendStatus(200)
+  } catch (err) {
+    // 500 → Wompi reintenta. Es seguro porque el procesamiento es idempotente.
+    req.log?.error({ err, provider: 'wompi', orderId, transactionId: tx.id }, 'payment.webhook.processing_failed')
+    captureError(err, { provider: 'wompi', orderId, transactionId: tx.id })
+    return res.status(500).json({ error: 'Error procesando el evento' })
   }
 })
 
 // ─────────────────────────────────────────
-// GET /api/payments/wompi/acceptance-token
-// Devuelve el token de aceptación para el frontend (Widget)
+// POST /api/v1/payments/create-preference   (MercadoPago)
 // ─────────────────────────────────────────
-router.get("/wompi/acceptance-token", async (req, res) => {
+router.post('/create-preference', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
   try {
-    const acceptanceData = await wompi.getPresignedAcceptance()
-    return res.json(acceptanceData)
-  } catch (error) {
-    req.log?.error({ err: error }, 'payment.wompi.acceptance_token_failed')
-    return res.status(500).json({ error: "Error obteniendo token" })
+    if (!isMercadoPagoConfigured()) throw httpError(503, 'Pagos con MercadoPago no disponibles en este momento')
+
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const shortId = order.id.slice(-8).toUpperCase()
+
+    // Un solo ítem por el TOTAL de la orden: así el monto cobrado incluye
+    // exactamente descuentos, cupón y envío calculados por el servidor.
+    const preference = await new Preference(getMpClient()).create({
+      body: {
+        items: [{
+          id: order.id,
+          title: `Pedido KAES #${shortId}`,
+          description: `${order.items.length} producto(s)`,
+          quantity: 1,
+          unit_price: Number(order.total),
+          currency_id: 'COP',
+        }],
+        payer: { email: order.user.email, name: order.shippingAddress?.fullName || order.user.name },
+        back_urls: {
+          success: `${frontendUrl()}/checkout/resultado?orderId=${order.id}&provider=mercadopago`,
+          failure: `${frontendUrl()}/checkout/resultado?orderId=${order.id}&provider=mercadopago`,
+          pending: `${frontendUrl()}/checkout/resultado?orderId=${order.id}&provider=mercadopago`,
+        },
+        auto_return: 'approved',
+        external_reference: order.id,
+        notification_url: `${backendUrl()}/api/v1/payments/webhook`,
+        statement_descriptor: 'KAES STORE',
+        expires: true,
+        expiration_date_to: new Date(Date.now() + CHECKOUT_TTL_MINUTES * 60 * 1000).toISOString(),
+      },
+    })
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { mpPreferenceId: preference.id, paymentProvider: 'MERCADOPAGO' },
+    })
+
+    req.log?.info({ orderId: order.id, preferenceId: preference.id }, 'payment.mp.preference_created')
+    // init_point sirve tanto para credenciales de prueba como productivas.
+    return res.json({ preferenceId: preference.id, checkoutUrl: preference.init_point, initPoint: preference.init_point })
+  } catch (err) {
+    next(err)
   }
 })
 
-export default router;
+// ─────────────────────────────────────────
+// POST /api/v1/payments/webhook   (MercadoPago)
+// ─────────────────────────────────────────
+router.post('/webhook', async (req, res) => {
+  let body = {}
+  try {
+    const raw = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : ''
+    body = raw ? JSON.parse(raw) : {}
+  } catch {
+    body = {}
+  }
+
+  const topic = req.query.type || req.query.topic || body.type || body.topic
+  const dataId = req.query['data.id'] || body?.data?.id || (req.query.topic ? req.query.id : undefined)
+
+  // Si llega firma se verifica (Webhooks). Las notificaciones IPN antiguas no
+  // traen firma; en ambos casos el estado real se consulta a la API de MP con
+  // nuestro access token, así que el cuerpo de la notificación nunca se usa
+  // como fuente de verdad.
+  if (req.headers['x-signature']) {
+    const check = verifyMpSignature({
+      xSignature: req.headers['x-signature'],
+      xRequestId: req.headers['x-request-id'],
+      dataId,
+    })
+    if (!check.valid) {
+      req.log?.warn({ provider: 'mercadopago', reason: check.reason }, 'payment.webhook.signature_invalid')
+      return res.status(401).json({ error: 'Firma inválida' })
+    }
+  } else {
+    req.log?.info({ provider: 'mercadopago', topic }, 'payment.webhook.unsigned_notification')
+  }
+
+  if (topic !== 'payment' || !dataId) return res.sendStatus(200)
+  if (!isMercadoPagoConfigured()) return res.sendStatus(200)
+
+  try {
+    const payment = await new Payment(getMpClient()).get({ id: String(dataId) })
+    const orderId = payment.external_reference
+    if (!orderId) return res.sendStatus(200)
+
+    const result = await processPaymentUpdate({
+      provider: 'MERCADOPAGO',
+      orderId,
+      providerPaymentId: String(payment.id),
+      status: mapMercadoPagoStatus(payment.status),
+      amount: Number(payment.transaction_amount),
+      currency: payment.currency_id,
+      payload: { id: payment.id, status: payment.status, status_detail: payment.status_detail, transaction_amount: payment.transaction_amount, external_reference: payment.external_reference, payment_method_id: payment.payment_method_id },
+      source: 'webhook',
+    })
+    req.log?.info({ provider: 'mercadopago', orderId, paymentId: payment.id, mpStatus: payment.status, outcome: result.outcome }, 'payment.webhook.processed')
+    return res.sendStatus(200)
+  } catch (err) {
+    req.log?.error({ err, provider: 'mercadopago', dataId }, 'payment.webhook.processing_failed')
+    captureError(err, { provider: 'mercadopago', dataId })
+    return res.status(500).json({ error: 'Error procesando la notificación' })
+  }
+})
+
+// ─────────────────────────────────────────
+// POST /api/v1/payments/verify/:orderId
+// Respaldo del webhook: la página de resultado pide verificar el pago
+// directamente con el proveedor (fuente de verdad) y lo procesa igual que un
+// webhook (idempotente). Sirve si el webhook se demora o falla.
+// ─────────────────────────────────────────
+router.post('/verify/:orderId', isAuth, paymentInitLimiter, async (req, res, next) => {
+  try {
+    const { orderId } = req.params
+    const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, userId: true, mpPreferenceId: true, paymentProvider: true } })
+    if (!order || (order.userId !== req.user.id && !isAdminRole(req.user.role))) {
+      throw httpError(404, 'Orden no encontrada')
+    }
+
+    const provider = req.body?.provider || (order.paymentProvider === 'MERCADOPAGO' ? 'mercadopago' : 'wompi')
+    const updates = []
+
+    // Consultar al proveedor es "best effort": si su API falla, se registra y
+    // se responde con el estado actual de la orden (el webhook sigue siendo la
+    // vía principal). Nunca se propaga el error HTTP del proveedor al cliente.
+    const safely = async (label, fn) => {
+      try {
+        return await fn()
+      } catch (err) {
+        req.log?.warn({ err: err.message, status: err.response?.status, orderId: order.id, provider: label }, 'payment.verify.provider_unavailable')
+        return null
+      }
+    }
+
+    if (provider === 'wompi' && wompi.isWompiConfigured()) {
+      let transactions = []
+      if (req.body?.transactionId) {
+        const t = await safely('wompi', () => wompi.getTransaction(String(req.body.transactionId)))
+        if (t) transactions = [t]
+      } else if (order.mpPreferenceId?.startsWith('KAES-') && process.env.WOMPI_PRIVATE_KEY) {
+        transactions = (await safely('wompi', () => wompi.findTransactionsByReference(order.mpPreferenceId))) || []
+      }
+      for (const t of transactions) {
+        if (wompi.orderIdFromReference(t.reference) !== order.id) continue
+        updates.push({
+          provider: 'WOMPI', providerPaymentId: t.id, status: mapWompiStatus(t.status),
+          amount: Number(t.amount_in_cents) / 100, currency: t.currency, payload: { transaction: t },
+        })
+      }
+    }
+
+    if (provider === 'mercadopago' && isMercadoPagoConfigured()) {
+      const paymentApi = new Payment(getMpClient())
+      let payments = []
+      if (req.body?.paymentId) {
+        const p = await safely('mercadopago', () => paymentApi.get({ id: String(req.body.paymentId) }))
+        payments = p ? [p] : []
+      } else {
+        const found = await safely('mercadopago', () => paymentApi.search({ options: { external_reference: order.id } }))
+        payments = found?.results || []
+      }
+      for (const p of payments) {
+        if (p?.external_reference !== order.id) continue
+        updates.push({
+          provider: 'MERCADOPAGO', providerPaymentId: String(p.id), status: mapMercadoPagoStatus(p.status),
+          amount: Number(p.transaction_amount), currency: p.currency_id,
+          payload: { id: p.id, status: p.status, status_detail: p.status_detail, transaction_amount: p.transaction_amount },
+        })
+      }
+    }
+
+    for (const u of updates) {
+      await processPaymentUpdate({ ...u, orderId: order.id, source: 'verify' })
+    }
+
+    const fresh = await prisma.order.findUnique({
+      where: { id: order.id },
+      select: { id: true, status: true, paidAt: true, total: true, needsReview: true, payment: { select: { status: true, provider: true } } },
+    })
+    return res.json(fresh)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────
+// GET /api/v1/payments/status/:orderId
+// ─────────────────────────────────────────
+router.get('/status/:orderId', isAuth, async (req, res, next) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: req.params.orderId },
+      select: {
+        id: true, status: true, paidAt: true, total: true, userId: true, needsReview: true,
+        payment: { select: { status: true, provider: true } },
+      },
+    })
+    if (!order || (order.userId !== req.user.id && !isAdminRole(req.user.role))) {
+      return res.status(404).json({ error: 'Orden no encontrada' })
+    }
+    const { userId, ...rest } = order
+    return res.json(rest)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────
+// GET /api/v1/payments/methods — qué pasarelas están activas
+// ─────────────────────────────────────────
+router.get('/methods', (req, res) => {
+  res.json({
+    wompi: wompi.isWompiConfigured(),
+    mercadopago: isMercadoPagoConfigured() && process.env.MP_ENABLED !== 'false',
+  })
+})
+
+export default router

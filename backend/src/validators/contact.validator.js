@@ -4,7 +4,6 @@ export const createContactMessage = [
   body('name')
     .trim()
     .notEmpty().withMessage('El nombre es requerido')
-    .escape()
     .isLength({ min: 2, max: 100 }).withMessage('El nombre debe tener entre 2 y 100 caracteres'),
   body('email')
     .trim()
@@ -15,7 +14,6 @@ export const createContactMessage = [
   body('subject')
     .optional({ nullable: true, checkFalsy: true })
     .trim()
-    .escape()
     .isLength({ max: 200 }).withMessage('El asunto no puede superar los 200 caracteres'),
   body('message')
     .trim()

@@ -5,7 +5,7 @@ const VALID_SCALES = ['LETTER', 'NUMERIC', 'SHOE']
 
 export const dashboardSales = [
   query('range')
-    .optional().trim().escape()
+    .optional().trim()
     .isIn(VALID_RANGES).withMessage(`range debe ser uno de: ${VALID_RANGES.join(', ')}`),
 ]
 
@@ -27,6 +27,6 @@ export const dashboardLowStock = [
 
 export const catalogSizes = [
   query('scale')
-    .optional().trim().escape()
+    .optional().trim()
     .isIn(VALID_SCALES).withMessage(`scale debe ser uno de: ${VALID_SCALES.join(', ')}`),
 ]

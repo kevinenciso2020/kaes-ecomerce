@@ -1,221 +1,220 @@
-import React, { useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
 
 /**
- * Subida multi-imagen con preview. Soporta 2 modos:
- *  - "new": para crear productos — los archivos se acumulan y se suben al guardar el form.
- *  - "existing": para editar — combina archivos nuevos con las imágenes ya guardadas
- *     (el padre pasa la lista actual y este componente la muestra + permite borrar).
+ * Gestión de imágenes de un producto:
+ *  - Subir archivos (JPG/PNG/WEBP, máx 5 MB) → se suben a Cloudinary al guardar.
+ *  - Pegar URLs https de imágenes (de cualquier sitio) → Cloudinary las descarga y
+ *    aloja al guardar; las que ya son de res.cloudinary.com se guardan tal cual.
+ *  - En edición: ver las imágenes actuales, marcar la principal (★) y eliminar.
  *
  * Props:
- *  - mode: 'new' | 'existing'
- *  - productId?: requerido en mode='existing' para borrar imágenes via API.
- *  - images?: [{ id, url, publicId, isMain }] — existentes (solo mode='existing')
- *  - onChange?: ({ files: File[], removedIds: string[] }) => void
- *  - maxFiles?: número máximo de archivos nuevos (default 10)
+ *  - productId?: en edición (las acciones sobre imágenes existentes van al API)
+ *  - images?: imágenes existentes [{ id, url, isMain }]
+ *  - onChange({ files: File[], urls: string[] })
+ *  - onImagesChanged?(): tras borrar/marcar principal en el servidor
+ *  - maxImages (default 10)
  */
-export default function ImageUploader({
-  mode = 'new',
-  productId,
-  images = [],
-  onChange,
-  maxFiles = 10,
-}) {
-  const [files, setFiles]       = useState([])
-  const [previews, setPreviews] = useState([])
-  const [removedIds, setRemovedIds] = useState([])
-  const [mainId, setMainId]     = useState(() => images.find((i) => i.isMain)?.id || null)
-  const [busy, setBusy]         = useState(false)
-  const [error, setError]       = useState(null)
+export const CLOUDINARY_URL_RE = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/.+/i
+export const IMAGE_URL_RE = /^https:\/\/[^/\s]+\.[^/\s]+\/\S+$/i
 
-  const emit = (nextFiles, nextPreviews, nextRemoved, nextMain) => {
-    onChange?.({ files: nextFiles, removedIds: nextRemoved, mainImageId: nextMain ?? mainId })
+const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
+// Constante estable: un `[]` por defecto en los props sería un array nuevo en
+// cada render y dispararía el efecto de sincronización en bucle.
+const NO_IMAGES = []
+const MAX_BYTES = 5 * 1024 * 1024
+
+export default function ImageUploader({ productId, images = NO_IMAGES, onChange, onImagesChanged, maxImages = 10 }) {
+  const [existing, setExisting] = useState(images)
+  const [files, setFiles] = useState([])       // [{ file, preview }]
+  const [urls, setUrls] = useState([])         // [string]
+  const [urlInput, setUrlInput] = useState('')
+  const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const inputRef = useRef(null)
+
+  useEffect(() => setExisting(images), [images])
+
+  useEffect(() => {
+    onChange?.({ files: files.map((f) => f.file), urls })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, urls])
+
+  // Liberar las URLs de preview al desmontar
+  useEffect(() => () => files.forEach((f) => URL.revokeObjectURL(f.preview)), []) // eslint-disable-line
+
+  const total = existing.length + files.length + urls.length
+  const remaining = Math.max(0, maxImages - total)
+
+  const addFiles = (list) => {
+    setError(null)
+    const accepted = []
+    for (const file of Array.from(list)) {
+      if (!ACCEPTED.includes(file.type)) { setError(`"${file.name}": solo JPG, PNG o WEBP.`); continue }
+      if (file.size > MAX_BYTES) { setError(`"${file.name}" pesa más de 5 MB.`); continue }
+      if (accepted.length >= remaining) { setError(`Máximo ${maxImages} imágenes por producto.`); break }
+      accepted.push({ file, preview: URL.createObjectURL(file) })
+    }
+    if (accepted.length) setFiles((prev) => [...prev, ...accepted])
   }
 
-  const handleFiles = (selected) => {
+  const addUrls = () => {
     setError(null)
-    const arr = Array.from(selected)
-    const total = files.length + images.filter((i) => !removedIds.includes(i.id)).length + arr.length
-    if (total > maxFiles) {
-      setError(`Máximo ${maxFiles} imágenes. Actualmente hay ${total - arr.length}, intentas agregar ${arr.length}.`)
+    const candidates = urlInput.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean)
+    if (!candidates.length) return
+    const invalid = candidates.filter((u) => !IMAGE_URL_RE.test(u))
+    if (invalid.length) {
+      setError(`URL no válida: ${invalid[0]}. Debe ser un enlace https directo a la imagen`)
       return
     }
-    const valid = []
-    const newPreviews = []
-    for (const f of arr) {
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(f.type)) {
-        setError(`Tipo de archivo no permitido: ${f.name}. Solo JPG, PNG o WEBP.`)
-        continue
-      }
-      if (f.size > 5 * 1024 * 1024) {
-        setError(`El archivo ${f.name} excede 5 MB.`)
-        continue
-      }
-      valid.push(f)
-      newPreviews.push(URL.createObjectURL(f))
+    const fresh = candidates.filter((u) => !urls.includes(u) && !existing.some((img) => img.url === u))
+    if (fresh.length > remaining) {
+      setError(`Máximo ${maxImages} imágenes por producto.`)
+      return
     }
-    const nextFiles = [...files, ...valid]
-    const nextPreviews = [...previews, ...newPreviews]
-    setFiles(nextFiles)
-    setPreviews(nextPreviews)
-    emit(nextFiles, nextPreviews, removedIds, mainId)
+    setUrls((prev) => [...prev, ...fresh])
+    setUrlInput('')
   }
 
-  const removeNewFile = (idx) => {
-    const nextFiles = files.filter((_, i) => i !== idx)
-    const nextPreviews = previews.filter((_, i) => i !== idx)
-    URL.revokeObjectURL(previews[idx])
-    setFiles(nextFiles)
-    setPreviews(nextPreviews)
-    emit(nextFiles, nextPreviews, removedIds, mainId)
+  const removeFile = (idx) => {
+    URL.revokeObjectURL(files[idx].preview)
+    setFiles((prev) => prev.filter((_, i) => i !== idx))
   }
 
   const removeExisting = async (img) => {
-    if (!productId) {
-      // Modo "new" — no debería entrar acá
-      return
-    }
-    if (!confirm(`¿Eliminar esta imagen? Esta acción no se puede deshacer.`)) return
-    setBusy(true)
-    setError(null)
+    if (!productId) return
+    if (!confirm('¿Eliminar esta imagen del producto? Si está en tu Cloudinary también se borrará de allí.')) return
+    setBusy(true); setError(null)
     try {
       await api.admin.deleteProductImage(productId, img.id)
-      const nextRemoved = [...removedIds, img.id]
-      setRemovedIds(nextRemoved)
-      // Si era la principal, promover la siguiente visualmente
-      if (mainId === img.id) {
-        const remaining = images.filter((i) => i.id !== img.id && !nextRemoved.includes(i.id))
-        setMainId(remaining[0]?.id || null)
-      }
-      emit(files, previews, nextRemoved, mainId === img.id ? null : mainId)
+      const next = existing.filter((i) => i.id !== img.id)
+      if (img.isMain && next[0]) next[0] = { ...next[0], isMain: true }
+      setExisting(next)
+      onImagesChanged?.()
     } catch (err) {
-      setError(err.message || 'Error al eliminar la imagen')
+      setError(err.message || 'No se pudo eliminar la imagen')
     } finally {
       setBusy(false)
     }
   }
 
-  const setMain = async (img) => {
-    if (!productId) {
-      setMainId(img.id)
-      emit(files, previews, removedIds, img.id)
-      return
-    }
-    setBusy(true)
+  const makeMain = async (img) => {
+    if (!productId || img.isMain) return
+    setBusy(true); setError(null)
     try {
       await api.admin.setMainImage(productId, img.id)
-      setMainId(img.id)
+      setExisting((prev) => prev.map((i) => ({ ...i, isMain: i.id === img.id })))
+      onImagesChanged?.()
     } catch (err) {
-      setError(err.message || 'Error al marcar como principal')
+      setError(err.message || 'No se pudo marcar como principal')
     } finally {
       setBusy(false)
     }
   }
 
-  const remaining = images.filter((i) => !removedIds.includes(i.id))
+  const willBeMain = existing.length === 0
 
   return (
-    <div className="image-uploader">
-      <div className="image-grid">
-        {remaining.map((img) => (
-          <div key={img.id} className={`image-thumb ${mainId === img.id ? 'main' : ''}`}>
-            <img src={img.url} alt="" />
-            <div className="image-actions">
-              <button
-                type="button"
-                className="img-btn"
-                onClick={() => setMain(img)}
-                disabled={busy || mainId === img.id}
-                title={mainId === img.id ? 'Imagen principal' : 'Marcar como principal'}
-              >
-                {mainId === img.id ? '★' : '☆'}
-              </button>
-              <button
-                type="button"
-                className="img-btn danger"
-                onClick={() => removeExisting(img)}
-                disabled={busy}
-                title="Eliminar"
-              >
-                ✕
-              </button>
+    <div className="img-manager">
+      <div className="img-grid">
+        {existing.map((img) => (
+          <figure key={img.id} className={`img-thumb ${img.isMain ? 'is-main' : ''}`}>
+            <img src={img.url} alt="" loading="lazy" />
+            {img.isMain && <span className="img-badge main">Principal</span>}
+            <div className="img-actions">
+              <button type="button" onClick={() => makeMain(img)} disabled={busy || img.isMain} title="Marcar como principal" aria-label="Marcar como principal">★</button>
+              <button type="button" className="danger" onClick={() => removeExisting(img)} disabled={busy} title="Eliminar" aria-label="Eliminar imagen">✕</button>
             </div>
-          </div>
+          </figure>
         ))}
-        {previews.map((src, idx) => (
-          <div key={`new-${idx}`} className="image-thumb new">
-            <img src={src} alt="" />
-            <span className="badge-new">nueva</span>
-            <button
-              type="button"
-              className="img-btn danger"
-              onClick={() => removeNewFile(idx)}
-              title="Quitar"
-            >
-              ✕
-            </button>
-          </div>
+        {files.map((f, idx) => (
+          <figure key={f.preview} className="img-thumb pending">
+            <img src={f.preview} alt="" />
+            <span className="img-badge">{willBeMain && idx === 0 ? 'Principal · nueva' : 'Nueva'}</span>
+            <div className="img-actions visible">
+              <button type="button" className="danger" onClick={() => removeFile(idx)} aria-label="Quitar">✕</button>
+            </div>
+          </figure>
         ))}
-        {(remaining.length + previews.length) < maxFiles && (
-          <label className="image-upload-trigger">
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              onChange={(e) => {
-                if (e.target.files) handleFiles(e.target.files)
-                e.target.value = ''
-              }}
-              disabled={busy}
-              hidden
-            />
-            <span>+</span>
-            <small>Subir imagen</small>
-          </label>
+        {urls.map((u, idx) => (
+          <figure key={u} className="img-thumb pending">
+            <img src={u} alt="" onError={(e) => { e.currentTarget.classList.add('broken') }} />
+            <span className="img-badge url">{willBeMain && files.length === 0 && idx === 0 ? 'Principal · URL' : 'URL'}</span>
+            <div className="img-actions visible">
+              <button type="button" className="danger" onClick={() => setUrls((prev) => prev.filter((x) => x !== u))} aria-label="Quitar URL">✕</button>
+            </div>
+          </figure>
+        ))}
+        {remaining > 0 && (
+          <button
+            type="button"
+            className={`img-drop ${dragOver ? 'over' : ''}`}
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files) }}
+          >
+            <span className="plus">+</span>
+            <small>Subir fotos</small>
+          </button>
         )}
       </div>
-      {error && <p className="img-error">{error}</p>}
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ACCEPTED.join(',')}
+        multiple
+        hidden
+        onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = '' }}
+      />
+
+      <div className="url-row">
+        <input
+          type="url"
+          inputMode="url"
+          placeholder="Pega una o varias URLs de imagen (https://…); Cloudinary las cargará"
+          value={urlInput}
+          onChange={(e) => setUrlInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addUrls() } }}
+          disabled={remaining === 0}
+        />
+        <button type="button" onClick={addUrls} disabled={remaining === 0 || !urlInput.trim()}>Agregar URL</button>
+      </div>
+
+      {error && <p className="img-error" role="alert">{error}</p>}
       <small className="img-help">
-        JPG, PNG o WEBP · máximo 5 MB por archivo · hasta {maxFiles} imágenes · click ☆ para marcar principal
+        {total}/{maxImages} imágenes · JPG, PNG o WEBP de máx. 5 MB · las nuevas se guardan al presionar “Guardar”.
+        {productId ? ' ★ marca la foto principal (la que se ve en el catálogo).' : ' La primera será la foto principal.'}
       </small>
 
       <style>{`
-        .image-uploader { display: flex; flex-direction: column; gap: 0.5rem; }
-        .image-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 0.5rem; }
-        .image-thumb {
-          position: relative; aspect-ratio: 1/1; border-radius: 8px; overflow: hidden;
-          border: 2px solid transparent; background: var(--color-gray-100);
-        }
-        .image-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .image-thumb.main { border-color: var(--color-black, #000); }
-        .image-thumb.new { border-style: dashed; border-color: var(--color-gray-300, #ccc); }
-        .image-thumb .badge-new {
-          position: absolute; top: 4px; left: 4px; background: #dbeafe; color: #1e40af;
-          font-size: 0.6rem; padding: 1px 5px; border-radius: 3px;
-        }
-        .image-actions {
-          position: absolute; top: 4px; right: 4px; display: flex; gap: 2px;
-          opacity: 0; transition: opacity 0.15s;
-        }
-        .image-thumb:hover .image-actions { opacity: 1; }
-        .image-thumb.new .image-actions { opacity: 1; right: 4px; top: 4px; }
-        .img-btn {
-          background: rgba(255,255,255,0.95); border: none; cursor: pointer;
-          width: 24px; height: 24px; border-radius: 4px; font-size: 0.85rem;
-          display: flex; align-items: center; justify-content: center;
-        }
-        .img-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .img-btn.danger { color: #dc2626; }
-        .image-upload-trigger {
-          aspect-ratio: 1/1; border: 2px dashed var(--color-gray-300, #ccc);
-          border-radius: 8px; display: flex; flex-direction: column; align-items: center;
-          justify-content: center; cursor: pointer; color: var(--color-gray-500, #888);
-          font-size: 1.5rem; transition: all 0.15s; gap: 0.25rem;
-        }
-        .image-upload-trigger:hover { border-color: var(--color-black, #000); color: var(--color-black, #000); }
-        .image-upload-trigger small { font-size: 0.65rem; }
+        .img-manager { display: flex; flex-direction: column; gap: 0.6rem; }
+        .img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.5rem; }
+        .img-thumb { position: relative; margin: 0; aspect-ratio: 3/4; border-radius: 8px; overflow: hidden; background: #f3f3f3; border: 2px solid transparent; }
+        .img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .img-thumb img.broken { opacity: 0.2; }
+        .img-thumb.is-main { border-color: #111; }
+        .img-thumb.pending { border: 2px dashed #bbb; }
+        .img-badge { position: absolute; left: 4px; bottom: 4px; font-size: 0.6rem; background: #dbeafe; color: #1e40af; padding: 1px 6px; border-radius: 4px; }
+        .img-badge.main { background: #111; color: #fff; }
+        .img-badge.url { background: #fef3c7; color: #92400e; }
+        .img-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 3px; opacity: 0; transition: opacity .15s; }
+        .img-thumb:hover .img-actions, .img-actions.visible, .img-thumb:focus-within .img-actions { opacity: 1; }
+        @media (hover: none) { .img-actions { opacity: 1; } }
+        .img-actions button { width: 26px; height: 26px; border: none; border-radius: 5px; background: rgba(255,255,255,.95); cursor: pointer; font-size: 0.85rem; }
+        .img-actions button.danger { color: #dc2626; }
+        .img-actions button:disabled { opacity: .5; cursor: not-allowed; }
+        .img-drop { aspect-ratio: 3/4; border: 2px dashed #ccc; border-radius: 8px; background: #fff; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; color: #777; }
+        .img-drop.over, .img-drop:hover { border-color: #111; color: #111; }
+        .img-drop .plus { font-size: 1.6rem; line-height: 1; }
+        .url-row { display: flex; gap: 0.4rem; }
+        .url-row input { flex: 1; min-width: 0; padding: 0.5rem 0.65rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.8rem; }
+        .url-row button { padding: 0.5rem 0.8rem; border: 1px solid #111; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
+        .url-row button:disabled { opacity: .5; cursor: not-allowed; }
         .img-error { color: #991b1b; font-size: 0.8rem; margin: 0; }
-        .img-help { color: var(--color-gray-400, #888); font-size: 0.7rem; }
+        .img-help { color: #888; font-size: 0.72rem; }
       `}</style>
     </div>
   )

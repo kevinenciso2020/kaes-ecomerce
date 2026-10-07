@@ -60,7 +60,9 @@ export default function FeaturedProducts({
           {!loading &&
             products.map((product, i) => {
               const img = product.images?.[0]?.url;
-              const price = Number(product.price).toLocaleString("es-CO");
+              const price = Number(product.finalPrice ?? product.price).toLocaleString("es-CO");
+              const hasOffer = Number(product.finalPrice) < Number(product.price);
+              const offerPct = hasOffer ? Math.round((1 - Number(product.finalPrice) / Number(product.price)) * 100) : 0;
 
               return (
                 <RevealSection key={product.slug} custom={i}>
@@ -93,7 +95,15 @@ export default function FeaturedProducts({
                     <div className="product-info">
                       <p className="product-category">{product.category?.name}</p>
                       <h3 className="product-name">{product.name}</h3>
-                      <p className="product-price">${price}</p>
+                      <p className="product-price">
+                        {hasOffer && (
+                          <s style={{ opacity: 0.5, marginRight: "0.5rem", fontWeight: 400 }}>
+                            ${Number(product.price).toLocaleString("es-CO")}
+                          </s>
+                        )}
+                        ${price}
+                        {hasOffer && <span style={{ marginLeft: "0.5rem", color: "#b91c1c", fontSize: "0.8em" }}>-{offerPct}%</span>}
+                      </p>
                     </div>
                   </a>
                 </RevealSection>

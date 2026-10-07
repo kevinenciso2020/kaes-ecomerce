@@ -53,12 +53,58 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
 <script>
   import { api } from '../../lib/api.js'
-  import { setAuth } from '../../stores/auth.store.js'
+  import { setAuth, clearAuth } from '../../stores/auth.store.js'
 
   const emailInput    = document.getElementById('email')
   const passwordInput = document.getElementById('password')
   const loginBtn      = document.getElementById('login-btn')
   const errorDiv      = document.getElementById('auth-error')
+
+  const isAdmin = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN'
+
+  // Sólo rutas internas: evita redirecciones abiertas (?redirect=//evil.com o
+  // /\evil.com, que los navegadores tratan como //evil.com).
+  const toSafeRedirect = (value) => {
+    if (!value || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null
+    try {
+      const target = new URL(value, window.location.origin)
+      return target.origin === window.location.origin ? target.pathname + target.search + target.hash : null
+    } catch {
+      return null
+    }
+  }
+  const safeRedirect = toSafeRedirect(new URLSearchParams(window.location.search).get('redirect'))
+
+  const destinationFor = (user) => {
+    if (safeRedirect && (!safeRedirect.startsWith('/admin') || isAdmin(user.role))) return safeRedirect
+    return isAdmin(user.role) ? '/admin' : '/perfil'
+  }
+
+  // Reanudar sesión: el middleware de /admin redirige aquí cuando la cookie
+  // accessToken (15 min) venció, aunque el refresh token (7 días) siga vivo.
+  // /auth/me dispara el refresh automático de api.js; si funciona, volvemos
+  // a la página original sin pedir la contraseña. La marca en sessionStorage
+  // evita un bucle si el servidor sigue sin ver la cookie.
+  const RESUME_KEY = 'auth:resumeAt'
+  const tryResumeSession = async () => {
+    if (!safeRedirect) return
+    try {
+      const last = Number(sessionStorage.getItem(RESUME_KEY) || 0)
+      if (Date.now() - last < 15000) return
+      sessionStorage.setItem(RESUME_KEY, String(Date.now()))
+    } catch {
+      return
+    }
+    try {
+      const { user } = await api.auth.me()
+      if (!user) return
+      await setAuth(user).catch(() => {})
+      window.location.replace(destinationFor(user))
+    } catch {
+      await clearAuth().catch(() => {})
+    }
+  }
+  tryResumeSession()
 
   const showError = (msg) => {
     errorDiv.textContent = msg
@@ -89,10 +135,8 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
     try {
       const data = await api.auth.login({ email, password })
-      setAuth(data.user)
-
-      const redirectUrl = data.user.role === 'ADMIN' ? '/admin' : '/perfil'
-      window.location.href = redirectUrl
+      await setAuth(data.user).catch(() => {})
+      window.location.href = destinationFor(data.user)
     } catch (err) {
       showError(err.message || 'Error al iniciar sesión')
     } finally {

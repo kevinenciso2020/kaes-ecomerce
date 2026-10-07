@@ -30,7 +30,7 @@ import Icon from '../components/ui/Icon.astro'
           </div>
           <div class="summary-row">
             <span>Envío</span>
-            <span class="shipping-free">Gratis</span>
+            <span class="shipping-note">Se calcula en el checkout</span>
           </div>
         </div>
 
@@ -70,6 +70,7 @@ import Icon from '../components/ui/Icon.astro'
 <script>
   import { cartItems, cartTotal, removeFromCart, updateQuantity } from '../stores/cart.store.js'
   import { api } from '../lib/api.js'
+  import { applyCoupon, removeCoupon } from '../stores/coupon.store.js'
   import { sanitizeCartItem, escapeHtml } from '../lib/sanitize.js'
 
   const renderCart = (items) => {
@@ -178,8 +179,8 @@ import Icon from '../components/ui/Icon.astro'
       const subtotal = cartTotal.get()
       const coupon = await api.coupons.validate(code, subtotal)
 
-      localStorage.setItem('couponCode', coupon.code)
-      localStorage.setItem('couponDiscount', JSON.stringify(coupon))
+      // Mismo store que usa el checkout (allí el servidor recalcula el total).
+      applyCoupon(coupon.code, coupon)
 
       const discountFormatted = coupon.type === 'PERCENTAGE'
         ? `${coupon.value}%`
@@ -193,8 +194,7 @@ import Icon from '../components/ui/Icon.astro'
         totalEl.textContent = '$' + Number(Math.max(0, newTotal)).toLocaleString('es-CO')
       }
     } catch (err) {
-      localStorage.removeItem('couponCode')
-      localStorage.removeItem('couponDiscount')
+      removeCoupon()
       showCouponMessage(err.message || 'Cupón no válido', 'error')
     } finally {
       applyBtn.disabled = false
@@ -393,7 +393,7 @@ import Icon from '../components/ui/Icon.astro'
     font-size:       0.9rem;
     color:           var(--color-gray-600);
   }
-  .shipping-free { color: var(--color-success); font-weight: 500; }
+  .shipping-note { color: var(--color-gray-500); font-size: 0.85em; }
 
   .total-row {
     font-size:    1.1rem;

@@ -17,9 +17,12 @@ try {
   console.error('Error loading products:', e)
   hasError = true
 }
+
+// Catálogo cacheable en el CDN de Vercel: reduce carga al API y mejora TTFB.
+Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300')
 ---
 
-<ShopLayout title="Inicio" description="Ropa con personalidad. Prendas atemporales para quienes se atreven a definir su propio estilo.">
+<ShopLayout title="Inicio" description="Prendas atemporales para quienes se atreven a definir su propio estilo.">
   <HeroSection client:load />
   <CategoriesSection client:visible />
   <FeaturedProducts client:visible products={featuredProducts} loading={hasError && featuredProducts.length === 0} />

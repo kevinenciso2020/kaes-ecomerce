@@ -1,0 +1,84 @@
+---
+import ShopLayout from '../../../layouts/ShopLayout.astro'
+---
+
+<ShopLayout title="Mis pedidos">
+  <div class="orders-page container">
+    <a href="/perfil" class="back-link">← Mi cuenta</a>
+    <h1 class="page-title">Mis pedidos</h1>
+    <div id="orders-list" aria-live="polite">
+      <p class="muted">Cargando tus pedidos…</p>
+    </div>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, bootstrapAuth } from '../../../lib/api.js'
+  import { escapeHtml } from '../../../lib/sanitize.js'
+  import { ORDER_STATUS } from '../../../lib/order-status.js'
+
+  const listEl = document.getElementById('orders-list')
+  const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
+
+  ;(async () => {
+    const user = await bootstrapAuth()
+    if (!user) {
+      window.location.href = '/auth/login?redirect=/perfil/ordenes'
+      return
+    }
+    try {
+      const orders = await api.orders.list()
+      if (!orders.length) {
+        listEl.innerHTML = '<div class="empty"><p>Aún no tienes pedidos.</p><a href="/productos" class="btn btn-primary">Ver productos</a></div>'
+        return
+      }
+      listEl.innerHTML = orders.map((o) => {
+        const st = ORDER_STATUS[o.status] || { label: o.status, cls: '' }
+        const first = o.items?.[0]
+        const img = first?.product?.images?.[0]?.url
+        const count = (o.items || []).reduce((n, i) => n + i.quantity, 0)
+        const needsPay = o.status === 'PENDING' && !o.needsReview
+        return `
+          <a class="order-row" href="/perfil/ordenes/${encodeURIComponent(o.id)}">
+            <div class="thumb">${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" />` : ''}</div>
+            <div class="info">
+              <p class="oid">Pedido #${escapeHtml(o.id.slice(-8).toUpperCase())}</p>
+              <p class="meta">${new Date(o.createdAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })} · ${count} producto(s)</p>
+              ${needsPay ? '<p class="pay-hint">Pendiente de pago — toca para pagar</p>' : ''}
+            </div>
+            <div class="right">
+              <span class="status ${st.cls}">${escapeHtml(st.label)}</span>
+              <span class="total">${money(o.total)}</span>
+            </div>
+          </a>`
+      }).join('')
+    } catch (err) {
+      listEl.innerHTML = `<p class="error">${escapeHtml(err.message || 'No pudimos cargar tus pedidos')}</p>`
+    }
+  })()
+</script>
+
+<style>
+  .orders-page { padding-top: calc(var(--header-height) + 1.5rem); padding-bottom: 3rem; max-width: 760px; }
+  .back-link { display: inline-block; color: var(--color-gray-500); font-size: 0.85rem; margin-bottom: 1rem; }
+  .page-title { font-family: var(--font-serif); font-size: 1.6rem; font-weight: 600; margin-bottom: 1.25rem; }
+  .muted { color: var(--color-gray-500); }
+  .error { color: #991b1b; }
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--color-gray-500); display: flex; flex-direction: column; gap: 1rem; align-items: center; }
+  .order-row { display: flex; gap: 0.85rem; align-items: center; padding: 0.85rem; border: 1px solid var(--color-gray-200); border-radius: var(--radius-lg); margin-bottom: 0.6rem; background: var(--color-white); color: inherit; text-decoration: none; }
+  .order-row:hover { border-color: var(--color-black); }
+  .thumb { width: 52px; height: 64px; border-radius: var(--radius-md); overflow: hidden; background: var(--color-gray-100); flex-shrink: 0; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .info { flex: 1; min-width: 0; }
+  .oid { font-weight: 600; font-size: 0.9rem; margin: 0; }
+  .meta { font-size: 0.78rem; color: var(--color-gray-500); margin: 0.15rem 0 0; }
+  .pay-hint { font-size: 0.75rem; color: #92400e; margin: 0.2rem 0 0; font-weight: 500; }
+  .right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.3rem; }
+  .total { font-weight: 600; font-size: 0.9rem; }
+  .status { font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--color-gray-100); white-space: nowrap; }
+  .status.pending { background: #fef3c7; color: #92400e; }
+  .status.confirmed, .status.processing { background: #dbeafe; color: #1e40af; }
+  .status.shipped { background: #ede9fe; color: #5b21b6; }
+  .status.delivered { background: #dcfce7; color: #166534; }
+  .status.cancelled, .status.refunded { background: #fee2e2; color: #991b1b; }
+</style>

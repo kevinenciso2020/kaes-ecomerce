@@ -42,6 +42,7 @@ vi.mock('../../src/services/email.service.js', () => ({
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import * as AuthService from '../../src/services/auth.service.js'
+import { hashRefreshToken } from '../../src/utils/jwt.utils.js'
 
 beforeEach(() => {
   mocks.prisma.user.findUnique.mockReset()
@@ -124,6 +125,21 @@ describe('registerUser', () => {
 // loginUser
 // ─────────────────────────────────────────────────────────────
 describe('loginUser', () => {
+  it('lanza 403 si la cuenta está desactivada', async () => {
+    const hashed = await bcrypt.hash('secret123', 4)
+    mocks.prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u1', email: 'a@b.com', name: 'Ada', role: 'CUSTOMER', password: hashed, emailVerified: true, isActive: false,
+    })
+    await expect(AuthService.loginUser({ email: 'a@b.com', password: 'secret123' })).rejects.toMatchObject({ status: 403 })
+    expect(mocks.prisma.refreshToken.create).not.toHaveBeenCalled()
+  })
+
+  it('normaliza el email a minúsculas al buscar', async () => {
+    mocks.prisma.user.findUnique.mockResolvedValueOnce(null)
+    await expect(AuthService.loginUser({ email: ' Ada@B.com ', password: 'x' })).rejects.toMatchObject({ status: 401 })
+    expect(mocks.prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'ada@b.com' } })
+  })
+
   it('lanza 401 si el email no existe', async () => {
     mocks.prisma.user.findUnique.mockResolvedValueOnce(null)
 
@@ -169,6 +185,7 @@ describe('loginUser', () => {
     expect(mocks.prisma.refreshToken.create).toHaveBeenCalledOnce()
     const rtArg = mocks.prisma.refreshToken.create.mock.calls[0][0].data
     expect(rtArg.userId).toBe('u1')
+    expect(rtArg.token).toBe(hashRefreshToken(result.refreshToken))
     expect(rtArg.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000)
   })
 })
@@ -177,28 +194,80 @@ describe('loginUser', () => {
 // refreshAccessToken
 // ─────────────────────────────────────────────────────────────
 describe('refreshAccessToken', () => {
-  it('rota tokens (delete old + create new) y emite nuevos tokens', async () => {
-    const validToken = jwt.sign(
-      { id: 'u1', email: 'a@b.com' },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' },
-    )
+  const signRefresh = () => jwt.sign({ id: 'u1', jti: 'x' }, process.env.JWT_REFRESH_SECRET, { expiresIn: '7d' })
 
-    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
-      token: validToken, userId: 'u1', expiresAt: new Date(Date.now() + 60_000),
-    })
+  const mockActiveUser = () =>
     mocks.prisma.user.findUnique.mockResolvedValueOnce({
-      id: 'u1', email: 'a@b.com', name: 'Ada', role: 'CUSTOMER', emailVerified: true,
+      id: 'u1', email: 'a@b.com', name: 'Ada', role: 'CUSTOMER', emailVerified: true, isActive: true,
     })
-    mocks.prisma.refreshToken.delete.mockResolvedValueOnce({})
-    mocks.prisma.refreshToken.create.mockResolvedValueOnce({})
+  const mockTx = () => {
+    const txMock = {
+      refreshToken: { updateMany: vi.fn().mockResolvedValue({ count: 1 }), create: vi.fn().mockResolvedValue({}) },
+    }
+    mocks.prisma.$transaction.mockImplementation(async (cb) => cb(txMock))
+    return txMock
+  }
+
+  it('busca el token por HASH, rota (marca replacedAt + create hasheado) y emite nuevos tokens', async () => {
+    const validToken = signRefresh()
+    const txMock = mockTx()
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', token: hashRefreshToken(validToken), userId: 'u1', expiresAt: new Date(Date.now() + 60_000), replacedAt: null,
+    })
+    mockActiveUser()
 
     const result = await AuthService.refreshAccessToken(validToken)
 
-    expect(mocks.prisma.refreshToken.delete).toHaveBeenCalledWith({ where: { token: validToken } })
-    expect(mocks.prisma.refreshToken.create).toHaveBeenCalledOnce()
-    expect(result.accessToken).toBeTypeOf('string')
-    expect(result.refreshToken).not.toBe(validToken) // rotado
+    expect(mocks.prisma.refreshToken.findUnique).toHaveBeenCalledWith({ where: { token: hashRefreshToken(validToken) } })
+    const rotate = txMock.refreshToken.updateMany.mock.calls[0][0]
+    expect(rotate.where).toEqual({ id: 'rt1', replacedAt: null })
+    expect(rotate.data.replacedAt).toBeInstanceOf(Date)
+    // La fila rotada caduca pronto (1 h) para no acumular tokens viejos.
+    expect(rotate.data.expiresAt.getTime() - rotate.data.replacedAt.getTime()).toBe(60 * 60 * 1000)
+    const stored = txMock.refreshToken.create.mock.calls[0][0].data.token
+    expect(stored).toBe(hashRefreshToken(result.refreshToken))
+    expect(stored).not.toBe(result.refreshToken) // nunca en texto plano
+    expect(result.refreshToken).not.toBe(validToken)
+    expect(result.user).not.toHaveProperty('isActive')
+    expect(mocks.prisma.refreshToken.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('refresh concurrente (otra pestaña) con un token rotado hace < 30 s: emite sesión nueva SIN revocar las demás', async () => {
+    const validToken = signRefresh()
+    const txMock = mockTx()
+    txMock.refreshToken.updateMany.mockResolvedValueOnce({ count: 0 })
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() + 60_000), replacedAt: new Date(Date.now() - 5_000),
+    })
+    mockActiveUser()
+
+    const result = await AuthService.refreshAccessToken(validToken)
+
+    expect(result.refreshToken).toBeTruthy()
+    expect(txMock.refreshToken.create).toHaveBeenCalledTimes(1)
+    expect(mocks.prisma.refreshToken.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('token rotado reutilizado FUERA de la gracia → revoca TODAS las sesiones', async () => {
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() + 60_000), replacedAt: new Date(Date.now() - 60_000),
+    })
+    mocks.prisma.refreshToken.deleteMany.mockResolvedValueOnce({ count: 2 })
+
+    await expect(AuthService.refreshAccessToken(signRefresh())).rejects.toMatchObject({ status: 401 })
+
+    expect(mocks.prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
+    expect(mocks.prisma.refreshToken.create).not.toHaveBeenCalled()
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('token rotado cuya fila ya caducó también se trata como reuso (no como simple expiración)', async () => {
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() - 1_000), replacedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+    })
+    mocks.prisma.refreshToken.deleteMany.mockResolvedValueOnce({ count: 1 })
+    await expect(AuthService.refreshAccessToken(signRefresh())).rejects.toMatchObject({ status: 401 })
+    expect(mocks.prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
   })
 
   it('lanza 401 si el JWT no es válido', async () => {
@@ -207,21 +276,25 @@ describe('refreshAccessToken', () => {
     ).rejects.toMatchObject({ status: 401, message: expect.stringMatching(/inv[áa]lido/i) })
   })
 
-  it('lanza 401 si el token está expirado en DB (revocado)', async () => {
-    const validToken = jwt.sign(
-      { id: 'u1', email: 'a@b.com' },
-      process.env.JWT_REFRESH_SECRET,
-      { expiresIn: '7d' },
-    )
-
+  it('detecta reutilización: JWT válido pero ausente en BD → revoca TODAS las sesiones', async () => {
     mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce(null)
+    mocks.prisma.refreshToken.deleteMany.mockResolvedValueOnce({ count: 3 })
 
-    await expect(AuthService.refreshAccessToken(validToken)).rejects.toMatchObject({
-      status: 401,
-      message: expect.stringMatching(/expirado o revocado/i),
-    })
+    await expect(AuthService.refreshAccessToken(signRefresh())).rejects.toMatchObject({ status: 401 })
 
+    expect(mocks.prisma.refreshToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u1' } })
     expect(mocks.prisma.refreshToken.create).not.toHaveBeenCalled()
+  })
+
+  it('rechaza usuarios desactivados', async () => {
+    const validToken = signRefresh()
+    mocks.prisma.refreshToken.findUnique.mockResolvedValueOnce({
+      id: 'rt1', userId: 'u1', expiresAt: new Date(Date.now() + 60_000),
+    })
+    mocks.prisma.user.findUnique.mockResolvedValueOnce({
+      id: 'u1', email: 'a@b.com', name: 'Ada', role: 'CUSTOMER', emailVerified: true, isActive: false,
+    })
+    await expect(AuthService.refreshAccessToken(validToken)).rejects.toMatchObject({ status: 401 })
   })
 })
 
