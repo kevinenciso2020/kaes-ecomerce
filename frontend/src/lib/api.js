@@ -204,6 +204,8 @@ export const api = {
 
     discounts:      ()            => request('/admin/discounts'),
     createDiscount: (data)        => request('/admin/discounts', { method: 'POST', body: JSON.stringify(data) }),
+    updateDiscount: (id, data)    => request(`/admin/discounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    deleteDiscount: (id)          => request(`/admin/discounts/${id}`, { method: 'DELETE' }),
     coupons:        ()            => request('/admin/coupons'),
     createCoupon:   (data)        => request('/admin/coupons', { method: 'POST', body: JSON.stringify(data) }),
     updateCoupon:   (id, data)    => request(`/admin/coupons/${id}`, { method: 'PUT',  body: JSON.stringify(data) }),

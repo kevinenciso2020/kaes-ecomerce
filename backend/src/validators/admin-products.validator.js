@@ -1,7 +1,7 @@
 import { body, param, query } from 'express-validator'
 
 // imageUrls: JSON array o texto con URLs separadas por comas/saltos de línea.
-// La validación fina (dominio res.cloudinary.com) la hace el servicio.
+// La validación fina la hace el servicio.
 const imageUrlsRule = () =>
   body('imageUrls')
     .optional({ nullable: true })

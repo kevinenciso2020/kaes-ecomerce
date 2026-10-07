@@ -167,6 +167,8 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
             const productUrl = `/productos/${product.slug}`
             const imageUrl   = product.images?.[0]?.url
             const price      = Number(product.finalPrice ?? product.price).toLocaleString('es-CO')
+            const hasOffer   = Number(product.finalPrice) < Number(product.price)
+            const offerPct   = hasOffer ? Math.round((1 - Number(product.finalPrice) / Number(product.price)) * 100) : 0
             const sizes      = [...new Set((product.variants || []).map((v) => v.size).filter(Boolean))].slice(0, 3)
             return (
               <a href={productUrl} class="product-card" aria-label={`Ver producto ${product.name}`}>
@@ -183,7 +185,11 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
                   <p class="product-category">{product.category?.name}</p>
                   <h3 class="product-name">{product.name}</h3>
                   <div class="product-footer">
-                    <p class="product-price">${price}</p>
+                    <p class="product-price">
+                      {hasOffer && <s style="opacity:.5;margin-right:.5rem;font-weight:400">${Number(product.price).toLocaleString('es-CO')}</s>}
+                      ${price}
+                      {hasOffer && <span style="margin-left:.5rem;color:#b91c1c;font-size:.8em">-{offerPct}%</span>}
+                    </p>
                     {sizes.length > 0 && (
                       <div class="product-sizes">
                         {sizes.map((s) => <span class="size-tag">{s}</span>)}

@@ -309,14 +309,27 @@ describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () =
     expect(cloudinary.uploader.upload).not.toHaveBeenCalled()
   })
 
-  it('rechaza URLs que no son de res.cloudinary.com', async () => {
+  it('rechaza URLs http o de hosts privados', async () => {
     prisma.category.findUnique.mockResolvedValue({ id: 'cat1' })
-    const res = await request(app)
+    for (const bad of ['http://evil.example.com/x.jpg', 'https://127.0.0.1/x.jpg', 'https://localhost/x.jpg']) {
+      const res = await request(app)
+        .post('/api/v1/admin/products')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify([bad]) })
+      expect(res.status).toBe(400)
+    }
+    expect(prisma.product.create).not.toHaveBeenCalled()
+    expect(cloudinary.uploader.upload).not.toHaveBeenCalled()
+  })
+
+  it('pide a Cloudinary que cargue una URL https externa', async () => {
+    prisma.category.findUnique.mockResolvedValue({ id: 'cat1' })
+    cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'https://res.cloudinary.com/demo/image/upload/ecommerce-ropa/products/x.jpg', public_id: 'ecommerce-ropa/products/x' })
+    await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify(['https://evil.example.com/x.jpg']) })
-    expect(res.status).toBe(400)
-    expect(prisma.product.create).not.toHaveBeenCalled()
+      .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify(['https://cdn.ejemplo.com/foto.jpg']) })
+    expect(cloudinary.uploader.upload).toHaveBeenCalledWith('https://cdn.ejemplo.com/foto.jpg', expect.objectContaining({ folder: 'ecommerce-ropa/products' }))
   })
 
   it('genera un slug único si el nombre ya existe', async () => {

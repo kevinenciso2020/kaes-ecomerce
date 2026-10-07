@@ -219,6 +219,47 @@ export const createDiscount = async ({ name, type, value, startsAt, endsAt, prod
   return discount
 }
 
+export const updateDiscount = async (id, { name, type, value, startsAt, endsAt, isActive, productIds }) => {
+  const existing = await prisma.discount.findUnique({ where: { id } })
+  if (!existing) throw httpError(404, 'Descuento no encontrado')
+
+  const data = {}
+  if (name !== undefined)     data.name = name
+  if (type !== undefined)     data.type = type
+  if (value !== undefined)    data.value = parseFloat(value)
+  if (startsAt !== undefined) data.startsAt = startsAt ? new Date(startsAt) : null
+  if (endsAt !== undefined)   data.endsAt = endsAt ? new Date(endsAt) : null
+  if (isActive !== undefined) data.isActive = isActive === true || isActive === 'true'
+
+  const finalType = data.type ?? existing.type
+  const finalValue = data.value ?? Number(existing.value)
+  if (finalType === 'PERCENTAGE' && finalValue > 100) throw httpError(400, 'Un porcentaje no puede superar 100')
+
+  return prisma.$transaction(async (tx) => {
+    const discount = await tx.discount.update({ where: { id }, data })
+    if (Array.isArray(productIds)) {
+      await tx.productDiscount.deleteMany({ where: { discountId: id } })
+      if (productIds.length) {
+        await tx.productDiscount.createMany({
+          data: productIds.map((productId) => ({ productId, discountId: id })),
+          skipDuplicates: true,
+        })
+      }
+    }
+    return discount
+  })
+}
+
+export const deleteDiscount = async (id) => {
+  const existing = await prisma.discount.findUnique({ where: { id } })
+  if (!existing) throw httpError(404, 'Descuento no encontrado')
+  await prisma.$transaction([
+    prisma.productDiscount.deleteMany({ where: { discountId: id } }),
+    prisma.discount.delete({ where: { id } }),
+  ])
+  return { message: 'Descuento eliminado' }
+}
+
 export const createCoupon = async (data) => {
   return prisma.coupon.create({
     data: {

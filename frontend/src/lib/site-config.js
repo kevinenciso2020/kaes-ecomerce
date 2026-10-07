@@ -13,7 +13,7 @@ export const SITE_CONFIG = {
   legalName:   'Kaes Store',
   brandName:   'KAES',
   tagline:     'Moda que te define',
-  description: 'Tienda de ropa online. Ropa con personalidad y estilo atemporal.',
+  description: 'Tienda de ropa online. Ropa con estilo atemporal.',
 
   // Datos legales — usados en páginas /legal/* y emails
   nit:         '[NIT]',

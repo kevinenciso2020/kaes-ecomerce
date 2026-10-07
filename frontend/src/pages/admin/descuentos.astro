@@ -170,6 +170,14 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
         </div>
 
         <div class="form-group">
+          <label class="form-label">Estado</label>
+          <select id="discount-active" class="form-input">
+            <option value="true">Activo</option>
+            <option value="false">Inactivo</option>
+          </select>
+        </div>
+
+        <div class="form-group">
           <label class="form-label">Productos</label>
           <select id="discount-products" class="form-input" multiple size="5">
             <option value="">Cargando...</option>
@@ -274,6 +282,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
           <td><span class="status-badge ${d.isActive ? 'active' : 'inactive'}">${d.isActive ? 'Activo' : 'Inactivo'}</span></td>
           <td>
             <button class="btn-icon edit-discount-btn" data-id="${d.id}" title="Editar">✏️</button>
+            <button class="btn-icon delete-discount-btn" data-id="${d.id}" title="Eliminar">🗑️</button>
           </td>
         </tr>
       `
@@ -281,6 +290,17 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
     document.querySelectorAll('.edit-discount-btn').forEach(btn => {
       btn.addEventListener('click', () => openEditDiscountModal(btn.getAttribute('data-id')!))
+    })
+    document.querySelectorAll('.delete-discount-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este descuento? Los productos volverán a su precio normal.')) return
+        try {
+          await api.admin.deleteDiscount(btn.getAttribute('data-id')!)
+          loadData()
+        } catch (err: any) {
+          alert(err.message)
+        }
+      })
     })
   }
 
@@ -359,6 +379,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
     ;(document.getElementById('discount-value') as HTMLInputElement).value = d.value
     ;(document.getElementById('discount-start') as HTMLInputElement).value = d.startsAt?.split('T')[0] || ''
     ;(document.getElementById('discount-end') as HTMLInputElement).value = d.endsAt?.split('T')[0] || ''
+    ;(document.getElementById('discount-active') as HTMLSelectElement).value = String(d.isActive)
 
     const sel = document.getElementById('discount-products') as HTMLSelectElement
     const productIds = d.products?.map((p: any) => p.productId) || []
@@ -382,7 +403,8 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
     }
 
     try {
-      await api.admin.createCoupon(data)
+      if (id) await api.admin.updateCoupon(id, data)
+      else await api.admin.createCoupon(data)
       document.getElementById('coupon-modal')!.style.display = 'none'
       loadData()
     } catch (err: any) {
@@ -392,6 +414,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
   async function handleDiscountSubmit(e: Event) {
     e.preventDefault()
+    const id = (document.getElementById('discount-id') as HTMLInputElement).value
 
     const data = {
       name: (document.getElementById('discount-name') as HTMLInputElement).value,
@@ -399,11 +422,13 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
       value: (document.getElementById('discount-value') as HTMLInputElement).value,
       startsAt: (document.getElementById('discount-start') as HTMLInputElement).value || null,
       endsAt: (document.getElementById('discount-end') as HTMLInputElement).value || null,
+      isActive: (document.getElementById('discount-active') as HTMLSelectElement).value === 'true',
       productIds: Array.from((document.getElementById('discount-products') as HTMLSelectElement).selectedOptions).map(o => o.value),
     }
 
     try {
-      await api.admin.createDiscount(data)
+      if (id) await api.admin.updateDiscount(id, data)
+      else await api.admin.createDiscount(data)
       document.getElementById('discount-modal')!.style.display = 'none'
       loadData()
     } catch (err: any) {

@@ -10,12 +10,12 @@ vender. Marca cada casilla. Orden recomendado: de arriba hacia abajo.
   cd backend
   DATABASE_URL="postgresql://…neon…" DIRECT_URL="postgresql://…neon…" npm run cleanup:test-data
   ```
-  Revisa la lista (productos de prueba, `admin@ecommerce.com`, admins existentes).
+  Revisa la lista (productos de prueba, admins existentes).
 - [ ] Aplicar: repite el comando con `-- --confirm`.
 - [ ] Si `admin@ecommerce.com` existía: **rota** `JWT_SECRET` y `JWT_REFRESH_SECRET` en Railway (todas las sesiones se cierran).
-- [ ] Crea tu admin real (si no tienes uno):
+- [ ] Crea tu admin real y retira a los anteriores (simulación; agrega `-- --confirm` para aplicar):
   ```bash
-  SEED_ADMIN_EMAIL=tu@correo.com SEED_ADMIN_PASSWORD='una-clave-larga-2026' npm run db:seed
+  NEW_ADMIN_EMAIL=tu@correo.com NEW_ADMIN_PASSWORD='una-clave-larga-2026' npm run admin:replace
   ```
 - [ ] Crea un **branch de Neon** para desarrollo y cambia tu `backend/.env` local a ese branch (hoy apunta a producción).
 

@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "cleanup:test-data": "node scripts/cleanup-test-data.js",
+    "admin:replace": "node scripts/replace-admin.js",
     "test:db": "vitest run --config vitest.db.config.js"
   },
   "prisma": {

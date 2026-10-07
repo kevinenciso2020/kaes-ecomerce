@@ -84,16 +84,6 @@
   text-transform: lowercase;
 }
 
-.hero-tagline {
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  font-weight: 300;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--color-gray-500);
-  margin: 0;
-}
-
 .hero-subtitle {
   font-size: 1rem;
   color: var(--color-gray-600);
@@ -447,7 +437,6 @@
   .hero-right { align-items: flex-start; }
   .hero-actions { justify-content: flex-start; }
   .hero-subtitle { text-align: left; }
-  .hero-tagline { font-size: 1.1rem; letter-spacing: 0.35em; }
   .hero-eyebrow { font-size: 0.75rem; }
 
   .categories-section,

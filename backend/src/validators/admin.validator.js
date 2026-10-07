@@ -30,6 +30,22 @@ export const createDiscount = [
   })
 ]
 
+export const updateDiscount = [
+  param('id').trim().notEmpty().withMessage('ID de descuento inválido'),
+  body('name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('El nombre debe tener entre 2 y 100 caracteres'),
+  body('type').optional().trim().isIn(['PERCENTAGE', 'FIXED']).withMessage('Tipo de descuento inválido'),
+  body('value').optional().isFloat({ min: 0 }).withMessage('El valor debe ser un número positivo'),
+  body('startsAt').optional({ nullable: true, values: 'falsy' }).isISO8601().withMessage('La fecha de inicio debe ser una fecha válida (ISO 8601)'),
+  body('endsAt').optional({ nullable: true, values: 'falsy' }).isISO8601().withMessage('La fecha de fin debe ser una fecha válida (ISO 8601)'),
+  body('isActive').optional().isBoolean().withMessage('isActive debe ser true o false'),
+  body('productIds').optional().isArray().withMessage('Los IDs de productos deben ser un array'),
+  body('productIds.*').optional().isString().isLength({ min: 1, max: 100 }).withMessage('Cada ID de producto debe ser válido'),
+]
+
+export const deleteDiscount = [
+  param('id').trim().notEmpty().withMessage('ID de descuento inválido'),
+]
+
 export const createCoupon = [
   body('code')
     .trim()

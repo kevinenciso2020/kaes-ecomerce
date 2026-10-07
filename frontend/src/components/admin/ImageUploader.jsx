@@ -4,8 +4,8 @@ import { api } from '../../lib/api.js'
 /**
  * Gestión de imágenes de un producto:
  *  - Subir archivos (JPG/PNG/WEBP, máx 5 MB) → se suben a Cloudinary al guardar.
- *  - Pegar URLs de Cloudinary (https://res.cloudinary.com/…/image/upload/…) → se
- *    guardan tal cual al guardar.
+ *  - Pegar URLs https de imágenes (de cualquier sitio) → Cloudinary las descarga y
+ *    aloja al guardar; las que ya son de res.cloudinary.com se guardan tal cual.
  *  - En edición: ver las imágenes actuales, marcar la principal (★) y eliminar.
  *
  * Props:
@@ -16,6 +16,7 @@ import { api } from '../../lib/api.js'
  *  - maxImages (default 10)
  */
 export const CLOUDINARY_URL_RE = /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/.+/i
+export const IMAGE_URL_RE = /^https:\/\/[^/\s]+\.[^/\s]+\/\S+$/i
 
 const ACCEPTED = ['image/jpeg', 'image/png', 'image/webp']
 // Constante estable: un `[]` por defecto en los props sería un array nuevo en
@@ -62,9 +63,9 @@ export default function ImageUploader({ productId, images = NO_IMAGES, onChange,
     setError(null)
     const candidates = urlInput.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean)
     if (!candidates.length) return
-    const invalid = candidates.filter((u) => !CLOUDINARY_URL_RE.test(u))
+    const invalid = candidates.filter((u) => !IMAGE_URL_RE.test(u))
     if (invalid.length) {
-      setError(`URL no válida: ${invalid[0]}. Debe empezar por https://res.cloudinary.com/<tu-cuenta>/image/upload/…`)
+      setError(`URL no válida: ${invalid[0]}. Debe ser un enlace https directo a la imagen`)
       return
     }
     const fresh = candidates.filter((u) => !urls.includes(u) && !existing.some((img) => img.url === u))
@@ -173,7 +174,7 @@ export default function ImageUploader({ productId, images = NO_IMAGES, onChange,
         <input
           type="url"
           inputMode="url"
-          placeholder="Pega una o varias URLs de Cloudinary (https://res.cloudinary.com/…)"
+          placeholder="Pega una o varias URLs de imagen (https://…); Cloudinary las cargará"
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addUrls() } }}

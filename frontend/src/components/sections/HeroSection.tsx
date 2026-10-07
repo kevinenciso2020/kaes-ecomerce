@@ -93,16 +93,6 @@ export default function HeroSection() {
           </motion.h1>
 
           <motion.p
-            className="hero-tagline"
-            custom={2}
-            initial="hidden"
-            animate="visible"
-            variants={fadeSlideUp}
-          >
-            Ropa con personalidad
-          </motion.p>
-
-          <motion.p
             className="hero-subtitle"
             custom={3}
             initial="hidden"

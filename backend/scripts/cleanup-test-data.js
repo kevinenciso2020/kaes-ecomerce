@@ -4,6 +4,7 @@
 //   npm run cleanup:test-data -- --confirm → aplica los cambios
 //
 // Qué hace:
+//  • (Para cambiar de administrador usa `npm run admin:replace`.)
 //  • Elimina el admin por defecto del seed antiguo (admin@ecommerce.com / admin123)
 //    y cierra sus sesiones.
 //  • Productos cuyo nombre o descripción contiene palabras de prueba:

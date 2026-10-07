@@ -4,6 +4,7 @@ import { adminLimiter } from '../middleware/rateLimit.middleware.js'
 
 import {
   getDashboardStats, createDiscount, createCoupon, getCoupons, getDiscounts,
+  updateDiscount, deleteDiscount,
   getAllUsers, getUserById, updateUser, deleteUser, updateUserRole,
   resetUserPassword, updateCoupon,
 } from '../controllers/admin.controller.js'
@@ -27,6 +28,8 @@ import {
   updateCoupon as updateCouponValidator,
   createCoupon as createCouponValidator,
   createDiscount as createDiscountValidator,
+  updateDiscount as updateDiscountValidator,
+  deleteDiscount as deleteDiscountValidator,
 } from '../validators/admin.validator.js'
 
 import { getAllContactMessages, markContactMessageRead } from '../validators/contact.validator.js'
@@ -126,6 +129,8 @@ router.get('/dashboard/low-stock',    validate(dashboardLowStock),     Dashboard
 // ─────────────────────────────────────────
 router.get('/discounts',         getDiscounts)
 router.post('/discounts',        validate(createDiscountValidator), createDiscount)
+router.put('/discounts/:id',     validate(updateDiscountValidator), updateDiscount)
+router.delete('/discounts/:id',  validate(deleteDiscountValidator), deleteDiscount)
 router.get('/coupons',           getCoupons)
 router.post('/coupons',          validate(createCouponValidator), createCoupon)
 router.put('/coupons/:id',       validate(updateCouponValidator), updateCoupon)

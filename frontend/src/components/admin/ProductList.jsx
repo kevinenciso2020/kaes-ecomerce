@@ -128,6 +128,21 @@ export default function ProductList() {
     }
   }
 
+  const toggleFeatured = async (product) => {
+    setRowBusy(product.id)
+    try {
+      const fd = new FormData()
+      fd.append('isFeatured', String(!product.isFeatured))
+      await api.admin.updateProduct(product.id, fd)
+      notify({ type: 'success', message: product.isFeatured ? 'Quitado de destacados' : 'Producto destacado en el inicio' })
+      await loadProducts()
+    } catch (err) {
+      notify({ type: 'error', message: err.message })
+    } finally {
+      setRowBusy(null)
+    }
+  }
+
   const destroy = async (product) => {
     const typed = prompt(`Eliminar DEFINITIVAMENTE "${product.name}" y sus fotos.\nSolo es posible si nunca se ha vendido.\n\nEscribe ELIMINAR para confirmar:`)
     if (typed !== 'ELIMINAR') return
@@ -252,6 +267,11 @@ export default function ProductList() {
                       </td>
                       <td className="pl-actions">
                         <button className="pl-btn ghost" onClick={() => openEdit(p)} disabled={busy}>Editar</button>
+                        {p.isActive && (
+                          <button className="pl-btn ghost" onClick={() => toggleFeatured(p)} disabled={busy}>
+                            {p.isFeatured ? 'Quitar destacado' : '★ Destacar'}
+                          </button>
+                        )}
                         {p.isActive ? (
                           <button className="pl-btn ghost" onClick={() => archive(p)} disabled={busy}>Archivar</button>
                         ) : (

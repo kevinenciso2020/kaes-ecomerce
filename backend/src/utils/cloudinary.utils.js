@@ -69,7 +69,62 @@ export const parseImageUrls = (value) => {
     }
   }
   if (!Array.isArray(list)) throw badRequest('imageUrls debe ser una lista de URLs')
-  return list.map((u) => String(u).trim()).filter(Boolean).map(parseCloudinaryUrl)
+  const urls = list.map((u) => String(u).trim()).filter(Boolean)
+  if (urls.length > MAX_IMAGE_URLS) throw badRequest(`Máximo ${MAX_IMAGE_URLS} URLs de imágenes por solicitud`)
+  return urls.map(parseImageUrl)
+}
+
+const MAX_IMAGE_URLS = 10
+const PRIVATE_HOST = /^(localhost|.*\.local|.*\.internal|0\.0\.0\.0|127\..*|10\..*|192\.168\..*|169\.254\..*|172\.(1[6-9]|2\d|3[01])\..*|\[.*\])$/i
+
+/**
+ * Valida una URL de imagen. Las de res.cloudinary.com se guardan tal cual;
+ * cualquier otra URL https pública se marca `remote: true` para que Cloudinary
+ * la descargue y la aloje (ver importRemoteImages).
+ */
+const parseImageUrl = (rawUrl) => {
+  let url
+  try {
+    url = new URL(String(rawUrl).trim())
+  } catch {
+    throw badRequest(`URL de imagen inválida: ${rawUrl}`)
+  }
+  if (url.protocol !== 'https:') throw badRequest('Las URLs de imágenes deben usar https')
+  if (url.hostname === 'res.cloudinary.com') return parseCloudinaryUrl(rawUrl)
+  if (url.username || url.password || PRIVATE_HOST.test(url.hostname) || !url.hostname.includes('.')) {
+    throw badRequest('URL de imagen no permitida')
+  }
+  return { url: url.toString(), publicId: '', remote: true }
+}
+
+/**
+ * Pide a Cloudinary que descargue y aloje las imágenes remotas. Devuelve la
+ * lista final y `uploadedIds` (public_id nuevos, para revertir si la BD falla).
+ */
+export const importRemoteImages = async (images = []) => {
+  const uploadedIds = []
+  try {
+    const result = await Promise.all(
+      images.map(async (img) => {
+        if (!img.remote) return img
+        try {
+          const r = await cloudinary.uploader.upload(img.url, {
+            folder: PRODUCT_FOLDER,
+            transformation: [{ width: 1200, height: 1500, crop: 'limit', quality: 'auto', fetch_format: 'auto' }],
+          })
+          uploadedIds.push(r.public_id)
+          return { url: r.secure_url, publicId: r.public_id }
+        } catch (err) {
+          log.warn({ url: img.url, err: err?.message }, 'cloudinary.remote_upload_failed')
+          throw badRequest(`Cloudinary no pudo cargar la imagen: ${img.url}`)
+        }
+      }),
+    )
+    return { images: result, uploadedIds }
+  } catch (err) {
+    await destroyImages(uploadedIds)
+    throw err
+  }
 }
 
 /**

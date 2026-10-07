@@ -50,6 +50,18 @@ export const createDiscount = async (req, res, next) => {
   } catch (err) { next(err) }
 }
 
+export const updateDiscount = async (req, res, next) => {
+  try {
+    res.json(await AdminService.updateDiscount(req.params.id, req.body))
+  } catch (err) { next(err) }
+}
+
+export const deleteDiscount = async (req, res, next) => {
+  try {
+    res.json(await AdminService.deleteDiscount(req.params.id))
+  } catch (err) { next(err) }
+}
+
 export const createCoupon = async (req, res, next) => {
   try {
     const coupon = await AdminService.createCoupon(req.body)

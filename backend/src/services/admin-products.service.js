@@ -1,7 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { generateSlug } from '../utils/slug.utils.js'
 import { cleanupTempFiles } from '../middleware/upload.middleware.js'
-import { parseImageUrls, uploadProductFiles, destroyImages } from '../utils/cloudinary.utils.js'
+import { parseImageUrls, importRemoteImages, uploadProductFiles, destroyImages } from '../utils/cloudinary.utils.js'
 import { logger } from '../config/logger.js'
 
 const log = logger.child({ component: 'admin-products' })
@@ -189,7 +189,7 @@ const resolveCategoryId = async (data) => {
  * Crea un producto con imágenes y variantes.
  * Acepta (multipart/form-data):
  *   - images[]: archivos JPG/PNG/WEBP (se suben a Cloudinary)
- *   - imageUrls: JSON o lista separada por comas/saltos de línea con URLs https://res.cloudinary.com/…
+ *   - imageUrls: JSON o lista separada por comas/saltos de línea con URLs https (Cloudinary las descarga y aloja)
  *   - variants: JSON [{ size, color, colorHex?, stock, sku?, lowStockThreshold?, price? }]
  *   - sizeIds: JSON [id de Size]
  *   - name, description, price, stock, lowStockThreshold, categoryId|categorySlug, isFeatured, isActive
@@ -213,7 +213,14 @@ export const createProduct = async (data, files = []) => {
 
   // 1) Subir archivos a Cloudinary ANTES de abrir la transacción.
   const uploaded = await uploadProductFiles(files)
-  const images = [...uploaded, ...urlImages]
+  let imported
+  try {
+    imported = await importRemoteImages(urlImages)
+  } catch (err) {
+    await destroyImages(uploaded.map((u) => u.publicId))
+    throw err
+  }
+  const images = [...uploaded, ...imported.images]
 
   try {
     const product = await prisma.$transaction(async (tx) => {
@@ -241,7 +248,7 @@ export const createProduct = async (data, files = []) => {
     return getProductById(product.id)
   } catch (err) {
     // Si la BD falla, no dejar imágenes huérfanas en Cloudinary.
-    await destroyImages(uploaded.map((u) => u.publicId))
+    await destroyImages([...uploaded.map((u) => u.publicId), ...imported.uploadedIds])
     throw err
   }
 }
@@ -265,7 +272,14 @@ export const updateProduct = async (id, data, files = []) => {
   }
 
   const uploaded = await uploadProductFiles(files)
-  const newImages = [...uploaded, ...urlImages]
+  let imported
+  try {
+    imported = await importRemoteImages(urlImages)
+  } catch (err) {
+    await destroyImages(uploaded.map((u) => u.publicId))
+    throw err
+  }
+  const newImages = [...uploaded, ...imported.images]
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -306,7 +320,7 @@ export const updateProduct = async (id, data, files = []) => {
       }
     })
   } catch (err) {
-    await destroyImages(uploaded.map((u) => u.publicId))
+    await destroyImages([...uploaded.map((u) => u.publicId), ...imported.uploadedIds])
     throw err
   }
 

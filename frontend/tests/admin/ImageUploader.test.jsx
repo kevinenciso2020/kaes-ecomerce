@@ -24,7 +24,7 @@ describe('ImageUploader', () => {
   it('agrega URLs válidas y las reporta en onChange', () => {
     const onChange = vi.fn()
     render(<ImageUploader onChange={onChange} />)
-    const input = screen.getByPlaceholderText(/URLs de Cloudinary/)
+    const input = screen.getByPlaceholderText(/URLs de imagen/)
     fireEvent.change(input, { target: { value: 'https://res.cloudinary.com/demo/image/upload/a.jpg https://res.cloudinary.com/demo/image/upload/b.jpg' } })
     fireEvent.click(screen.getByText('Agregar URL'))
     expect(onChange).toHaveBeenLastCalledWith({
@@ -33,17 +33,17 @@ describe('ImageUploader', () => {
     })
   })
 
-  it('muestra error con una URL que no es de Cloudinary', () => {
+  it('muestra error con una URL que no es https', () => {
     const onChange = vi.fn()
     render(<ImageUploader onChange={onChange} />)
-    fireEvent.change(screen.getByPlaceholderText(/URLs de Cloudinary/), { target: { value: 'https://imgur.com/x.jpg' } })
+    fireEvent.change(screen.getByPlaceholderText(/URLs de imagen/), { target: { value: 'http://imgur.com/x.jpg' } })
     fireEvent.click(screen.getByText('Agregar URL'))
-    expect(screen.getByRole('alert').textContent).toMatch(/res\.cloudinary\.com/)
+    expect(screen.getByRole('alert').textContent).toMatch(/https/)
     expect(onChange).toHaveBeenLastCalledWith({ files: [], urls: [] })
   })
 
   it('respeta el máximo de imágenes', () => {
     render(<ImageUploader onChange={() => {}} maxImages={1} images={[{ id: 'i1', url: 'https://res.cloudinary.com/d/image/upload/x.jpg', isMain: true }]} />)
-    expect(screen.getByPlaceholderText(/URLs de Cloudinary/).disabled).toBe(true)
+    expect(screen.getByPlaceholderText(/URLs de imagen/).disabled).toBe(true)
   })
 })
