@@ -384,7 +384,7 @@
   font-weight: 600;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: var(--color-accent);
+  color: #e5202f;
   margin: 0;
 }
 
@@ -392,18 +392,18 @@
   font-family: var(--font-serif);
   font-size: clamp(1.75rem, 5vw, 2.75rem);
   font-weight: 400;
-  color: var(--color-white);
+  color: #e5202f;
   margin: 0;
 }
 
 .cta-text {
-  color: var(--color-gray-400);
+  color: #e5202f;
   font-size: 0.95rem;
   max-width: 50ch;
   margin: 0;
 }
 
-.cta-text strong { color: var(--color-accent); }
+.cta-text strong { color: #e5202f; }
 
 .cta-btn {
   background: var(--color-white);

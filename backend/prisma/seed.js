@@ -131,9 +131,9 @@ async function main() {
   })
 
   await prisma.coupon.upsert({
-    where:  { code: 'BIENVENIDO10' },
+    where:  { code: 'TRINITY' },
     update: {},
-    create: { code: 'BIENVENIDO10', type: 'PERCENTAGE', value: 10, minPurchase: 50000, maxUses: 100, isActive: true },
+    create: { code: 'TRINITY', type: 'PERCENTAGE', value: 10, minPurchase: 50000, maxUses: 100, isActive: true },
   })
 
   console.log('🎉 Seed completado con datos de demostración (desarrollo)')

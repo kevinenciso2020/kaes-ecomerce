@@ -18,7 +18,7 @@ export default function CtaBanner() {
           <p className="cta-eyebrow">Primera compra</p>
           <h2 className="cta-title">Tu estilo te espera</h2>
           <p className="cta-text">
-            Usa el cupón <strong>BIENVENIDO10</strong> y obtén 10% de descuento en tu primera orden.
+            Usa el cupón <strong>TRINITY</strong> y obtén 10% de descuento en tu primera orden.
           </p>
           <MagneticButton
             onClick={() => (window.location.href = "/auth/register")}
