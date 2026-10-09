@@ -384,7 +384,7 @@
   font-weight: 600;
   letter-spacing: 0.25em;
   text-transform: uppercase;
-  color: #e5202f;
+  color: var(--color-white);
   margin: 0;
 }
 
@@ -397,7 +397,7 @@
 }
 
 .cta-text {
-  color: #e5202f;
+  color: var(--color-white);
   font-size: 0.95rem;
   max-width: 50ch;
   margin: 0;
