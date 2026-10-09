@@ -102,11 +102,11 @@ export default function ProductList() {
   }
 
   const archive = async (product) => {
-    if (!confirm(`¿Archivar "${product.name}"?\n\nDeja de verse en la tienda, pero conserva fotos, historial y ventas. Puedes reactivarlo cuando quieras.`)) return
+    if (!confirm(`¿Eliminar "${product.name}" de la tienda?\n\nDeja de verse y de venderse en la tienda. Se conservan sus fotos y el historial de pedidos, y puedes reactivarlo desde el filtro "Eliminados".`)) return
     setRowBusy(product.id)
     try {
       await api.admin.deleteProduct(product.id)
-      notify({ type: 'success', message: 'Producto archivado' })
+      notify({ type: 'success', message: 'Producto eliminado de la tienda' })
       await loadProducts()
     } catch (err) {
       notify({ type: 'error', message: err.message })
@@ -210,7 +210,7 @@ export default function ProductList() {
             </select>
             <select value={filters.status} onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}>
               <option value="true">Activos</option>
-              <option value="false">Archivados</option>
+              <option value="false">Eliminados</option>
               <option value="">Todos</option>
             </select>
             <select value={filters.lowStock} onChange={(e) => setFilters((f) => ({ ...f, lowStock: e.target.value }))}>
@@ -263,7 +263,7 @@ export default function ProductList() {
                         {stock > 0 && p.lowStockCount > 0 && <small> · bajo</small>}
                       </td>
                       <td data-label="Estado">
-                        <span className={`status ${p.isActive ? 'on' : 'off'}`}>{p.isActive ? 'Activo' : 'Archivado'}</span>
+                        <span className={`status ${p.isActive ? 'on' : 'off'}`}>{p.isActive ? 'Activo' : 'Eliminado'}</span>
                       </td>
                       <td className="pl-actions">
                         <button className="pl-btn ghost" onClick={() => openEdit(p)} disabled={busy}>Editar</button>
@@ -273,11 +273,11 @@ export default function ProductList() {
                           </button>
                         )}
                         {p.isActive ? (
-                          <button className="pl-btn ghost" onClick={() => archive(p)} disabled={busy}>Archivar</button>
+                          <button className="pl-btn ghost danger" onClick={() => archive(p)} disabled={busy}>Eliminar</button>
                         ) : (
                           <>
                             <button className="pl-btn ghost" onClick={() => restore(p)} disabled={busy}>Reactivar</button>
-                            <button className="pl-btn ghost danger" onClick={() => destroy(p)} disabled={busy}>Eliminar</button>
+                            <button className="pl-btn ghost danger" onClick={() => destroy(p)} disabled={busy}>Borrar definitivamente</button>
                           </>
                         )}
                         {p.isActive && (
