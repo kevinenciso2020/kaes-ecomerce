@@ -28,8 +28,8 @@ const visibleSocials = socials.filter((s) => s.href && !s.href.startsWith('['))
 <footer class="footer">
   <div class="footer-inner">
     <div class="footer-brand">
-      <span class="footer-logo">kaes</span>
-      <p class="footer-tagline">simply eternal</p>
+      <span class="footer-logo">{SITE_CONFIG.name}</span>
+      <p class="footer-tagline">{SITE_CONFIG.tagline}</p>
       {visibleSocials.length > 0 && (
         <div class="footer-social" aria-label="Redes sociales">
           {visibleSocials.map((s) => (
@@ -91,12 +91,14 @@ const visibleSocials = socials.filter((s) => s.href && !s.href.startsWith('['))
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: var(--color-gray-800);
-    color: var(--color-white);
-    transition: background 150ms ease;
+    background: var(--color-gray-100);
+    color: var(--color-gray-700);
+    transition: all 150ms ease;
   }
 
   .footer-social a:hover {
-    background: var(--color-accent);
+    background: var(--color-black);
+    color: var(--color-white);
+    transform: translateY(-1px);
   }
 </style>

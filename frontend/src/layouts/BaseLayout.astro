@@ -31,8 +31,7 @@ const robots       = noindex ?? isNoIndexPath(Astro.url.pathname) ? 'noindex, no
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffffff" />
-    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content={metaDescription} />
     <meta name="robots" content={robots} />
     <title>{fullTitle}</title>
@@ -57,7 +56,7 @@ const robots       = noindex ?? isNoIndexPath(Astro.url.pathname) ? 'noindex, no
     {jsonLd && <script type="application/ld+json" set:html={safeJsonForScript(jsonLd)} />}
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600&display=swap" rel="stylesheet" />
   </head>
   <body>
     <a href="#main-content" class="skip-link">Saltar al contenido</a>
