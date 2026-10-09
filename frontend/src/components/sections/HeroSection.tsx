@@ -72,16 +72,6 @@ export default function HeroSection() {
         </div>
 
         <div className="hero-right">
-          <motion.p
-            className="hero-eyebrow"
-            custom={0}
-            initial="hidden"
-            animate="visible"
-            variants={fadeSlideUp}
-          >
-            simply eternal
-          </motion.p>
-
           <motion.h1
             className="hero-title"
             custom={1}
@@ -91,6 +81,17 @@ export default function HeroSection() {
           >
             <span className="hero-title-kaes">kaes</span>
           </motion.h1>
+
+          <motion.p
+            className="hero-eyebrow"
+            custom={2}
+            initial="hidden"
+            animate="visible"
+            variants={fadeSlideUp}
+          >
+            simply eternal
+          </motion.p>
+
 
           <motion.p
             className="hero-subtitle"
