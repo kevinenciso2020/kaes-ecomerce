@@ -35,9 +35,6 @@ export default function FeaturedProducts({
             <h2 className="section-title">Destacados</h2>
             <a href="/productos" className="see-all">
               Ver todos
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-              </svg>
             </a>
           </div>
         </RevealSection>
@@ -87,9 +84,8 @@ export default function FeaturedProducts({
                           </svg>
                         </div>
                       )}
-                      <div className="product-overlay" />
-                      {product.isFeatured && (
-                        <span className="badge-featured">Destacado</span>
+                      {hasOffer && (
+                        <span className="badge-featured">-{offerPct}%</span>
                       )}
                     </div>
                     <div className="product-info">
@@ -97,12 +93,12 @@ export default function FeaturedProducts({
                       <h3 className="product-name">{product.name}</h3>
                       <p className="product-price">
                         {hasOffer && (
-                          <s style={{ opacity: 0.5, marginRight: "0.5rem", fontWeight: 400 }}>
+                          <s style={{ color: "var(--color-gray-500)", marginRight: "0.5rem", fontWeight: 400 }}>
                             ${Number(product.price).toLocaleString("es-CO")}
                           </s>
                         )}
-                        ${price}
-                        {hasOffer && <span style={{ marginLeft: "0.5rem", color: "#b91c1c", fontSize: "0.8em" }}>-{offerPct}%</span>}
+                        <span style={hasOffer ? { color: "var(--color-accent)" } : undefined}>${price}</span>
+                        
                       </p>
                     </div>
                   </a>
