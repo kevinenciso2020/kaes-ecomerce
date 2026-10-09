@@ -12,14 +12,16 @@ interface Props {
   jsonLd?:     Record<string, unknown> | undefined
 }
 
-const { title, description = 'Tienda de ropa online', image, type = 'website', noindex, jsonLd } = Astro.props
+const { title, description = 'Tienda de ropa online', image: imageProp, type = 'website', noindex, jsonLd } = Astro.props
 
 // URL canónica sin query string (filtros, utm…). Con SITE_URL configurado
 // (astro.config) apunta siempre al dominio principal aunque se visite el
 // sitio por *.vercel.app.
 const siteUrl      = resolveSiteUrl(Astro.site, Astro.url.origin)
 const canonicalUrl = absoluteUrl(siteUrl, Astro.url.pathname)
-const metaDescription = truncateDescription(description)
+// Imagen por defecto (logo de Kaes) cuando la página no define una propia
+const image        = imageProp ?? absoluteUrl(siteUrl, '/kaes.jpeg')
+const metaDescription =truncateDescription(description)
 const fullTitle    = `${title} | Kaes Store`
 const robots       = noindex ?? isNoIndexPath(Astro.url.pathname) ? 'noindex, nofollow' : 'index, follow'
 ---
@@ -34,7 +36,10 @@ const robots       = noindex ?? isNoIndexPath(Astro.url.pathname) ? 'noindex, no
     <meta name="robots" content={robots} />
     <title>{fullTitle}</title>
     <link rel="canonical" href={canonicalUrl} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" href="/favicon-48.png" sizes="48x48" />
+    <link rel="icon" type="image/png" href="/favicon-192.png" sizes="192x192" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 
     <meta property="og:site_name" content={SITE_CONFIG.name} />
