@@ -43,8 +43,6 @@ export default function HeroSection() {
 
   return (
     <section className="hero-section">
-      <div className="hero-bg-pattern" aria-hidden="true" />
-
       <div className="hero-inner container">
         <div className="hero-left">
           <div className="hero-symbol-wrapper">
@@ -59,7 +57,7 @@ export default function HeroSection() {
                 d="M 433 0 A 440 440 90 0 0 866 750 A 440 440 90 0 0 0 750 A 440 440 90 0 0 433 0 Z"
                 transform="translate(40 40)"
                 fill="none"
-                stroke="var(--color-black)"
+                stroke="var(--color-accent)"
                 strokeWidth="35"
                 strokeLinecap="round"
                 strokeDasharray="40 60"
