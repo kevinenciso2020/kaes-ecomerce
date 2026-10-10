@@ -82,6 +82,15 @@ describe('PUT /admin/tax', () => {
     const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send(rate === undefined ? {} : { rate })
     expect(res.status).toBe(400)
   })
+  it.each([[19.123], ['19.999']])('rechaza rate=%s por más de 2 decimales', async (rate) => {
+    const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate })
+    expect(res.status).toBe(400)
+    expect(res.body.errors[0].message).toBe('La tasa de IVA admite máximo 2 decimales')
+  })
+  it.each([[19], [5.5], ['19.25'], [0]])('acepta rate=%s', async (rate) => {
+    const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate })
+    expect(res.status).not.toBe(400)
+  })
   it.each([[45], [-1], ['abc']])('rechaza rate=%s', async (rate) => {
     const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate })
     expect(res.status).toBe(400)

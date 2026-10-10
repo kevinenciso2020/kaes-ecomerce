@@ -583,3 +583,63 @@ describe('basePrice de variantes: validación', () => {
     expect(res.status).toBe(200)
   })
 })
+
+describe('Formulario de admin desactualizado y decimales de taxRate', () => {
+  const OBSOLETO = 'El formulario está desactualizado: recarga la página antes de guardar.'
+  const auth = () => ({ Authorization: `Bearer ${adminToken()}` })
+  const base = { name: 'Camiseta', basePrice: '20000', categorySlug: 'camisetas' }
+  const send = (method, url, body) => request(app)[method](`/api/v1/admin${url}`).set(auth()).send(body)
+
+  it('POST con price → 400 y no crea el producto', async () => {
+    const res = await send('post', '/products', { ...base, price: 23800 })
+    expect(res.status).toBe(400)
+    expect(res.body.errors).toEqual(expect.arrayContaining([{ field: 'price', message: OBSOLETO }]))
+    expect(prisma.product.create).not.toHaveBeenCalled()
+  })
+  it('PUT con price → 400', async () => {
+    const res = await send('put', '/products/p1', { price: 23800 })
+    expect(res.status).toBe(400)
+    expect(res.body.errors).toEqual(expect.arrayContaining([{ field: 'price', message: OBSOLETO }]))
+    expect(prisma.product.update).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['post', '/products'],
+    ['put', '/products/p1'],
+    ['patch', '/products/p1/variants'],
+  ])('%s %s: variantes con price y sin basePrice → 400 (array y JSON string)', async (method, url) => {
+    const variants = [{ size: 'M', color: 'Azul', stock: 1, price: 30000 }]
+    const body = method === 'post' ? base : {}
+    for (const v of [variants, JSON.stringify(variants)]) {
+      const res = await send(method, url, { ...body, variants: v })
+      expect(res.status).toBe(400)
+      expect(res.body.errors.some((e) => e.message === OBSOLETO)).toBe(true)
+    }
+  })
+  it.each([
+    ['solo basePrice', { size: 'M', color: 'Azul', stock: 1, basePrice: 30000 }],
+    ['price y basePrice', { size: 'M', color: 'Azul', stock: 1, price: 35700, basePrice: 30000 }],
+  ])('variantes con %s no se rechazan por obsoletas', async (_n, variant) => {
+    for (const [method, url] of [['post', '/products'], ['put', '/products/p1'], ['patch', '/products/p1/variants']]) {
+      const res = await send(method, url, { ...(method === 'post' ? base : {}), variants: [variant] })
+      const msgs = (res.body.errors || []).map((e) => e.message)
+      expect(msgs).not.toContain(OBSOLETO)
+    }
+  })
+  it('variants con JSON inválido no duplica el error de obsoleto', async () => {
+    const res = await send('post', '/products', { ...base, variants: '{no' })
+    expect(res.status).toBe(400)
+    expect(res.body.errors.filter((e) => e.field === 'variants')).toHaveLength(1)
+  })
+
+  it.each([['post', '/products'], ['put', '/products/p1']])('%s taxRate con más de 2 decimales → 400', async (method, url) => {
+    const res = await send(method, url, { ...(method === 'post' ? base : {}), taxRate: 19.123 })
+    expect(res.status).toBe(400)
+    expect(res.body.errors).toEqual(expect.arrayContaining([{ field: 'taxRate', message: 'La tasa de IVA admite máximo 2 decimales' }]))
+  })
+  it.each([[19], ['19'], [5.5], ['19.25'], [0]])('taxRate %s es válida', async (taxRate) => {
+    for (const [method, url] of [['post', '/products'], ['put', '/products/p1']]) {
+      const res = await send(method, url, { ...(method === 'post' ? base : {}), taxRate })
+      expect((res.body.errors || []).filter((e) => e.field === 'taxRate')).toEqual([])
+    }
+  })
+})

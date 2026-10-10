@@ -23,6 +23,32 @@ const assertVariantPrices = (variants) => {
   }
 }
 
+const MSG_OBSOLETO = 'El formulario está desactualizado: recarga la página antes de guardar.'
+const MSG_DECIMALES = 'La tasa de IVA admite máximo 2 decimales'
+
+// Un formulario viejo (pestaña abierta antes del despliegue) envía `price` en vez de `basePrice`.
+const rejectObsoletePrice = () =>
+  body('price').custom((_v, { req }) => {
+    if (req.body && Object.prototype.hasOwnProperty.call(req.body, 'price')) throw new Error(MSG_OBSOLETO)
+    return true
+  })
+
+// Variante con `price` pero sin `basePrice` = formulario viejo (borraría los precios propios).
+const assertNoObsoleteVariants = (variants) => {
+  for (const variant of variants) {
+    if (variant && typeof variant === 'object' && 'price' in variant && !('basePrice' in variant)) {
+      throw new Error(MSG_OBSOLETO)
+    }
+  }
+}
+
+const taxRateRule = () =>
+  body('taxRate')
+    .optional({ nullable: true })
+    .isFloat({ min: 0, max: 30 }).withMessage('La tasa de IVA debe estar entre 0 y 30')
+    .bail()
+    .isDecimal({ decimal_digits: '0,2' }).withMessage(MSG_DECIMALES)
+
 export const adminListProducts = [
   query('page')
     .optional()
@@ -71,9 +97,8 @@ export const adminCreateProduct = [
   body('basePrice')
     .notEmpty().withMessage('El precio sin IVA es requerido')
     .isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
-  body('taxRate')
-    .optional({ nullable: true })
-    .isFloat({ min: 0, max: 30 }).withMessage('La tasa de IVA debe estar entre 0 y 30'),
+  taxRateRule(),
+  rejectObsoletePrice(),
   imageUrlsRule(),
   body('stock')
     .optional({ nullable: true })
@@ -106,7 +131,10 @@ export const adminCreateProduct = [
       } else if (!Array.isArray(v)) {
         throw new Error('variants debe ser array')
       }
-      if (Array.isArray(parsed)) assertVariantPrices(parsed)
+      if (Array.isArray(parsed)) {
+        assertNoObsoleteVariants(parsed)
+        assertVariantPrices(parsed)
+      }
       return true
     }),
   body('sizeIds')
@@ -130,7 +158,8 @@ export const adminUpdateProduct = [
     .optional({ nullable: true }).trim()
     .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
   body('basePrice').optional().isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
-  body('taxRate').optional({ nullable: true }).isFloat({ min: 0, max: 30 }).withMessage('La tasa de IVA debe estar entre 0 y 30'),
+  taxRateRule(),
+  rejectObsoletePrice(),
   imageUrlsRule(),
   body('stock').optional().isInt({ min: 0 }).withMessage('El stock debe ser entero positivo'),
   body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('lowStockThreshold debe ser entero positivo'),
@@ -151,7 +180,10 @@ export const adminUpdateProduct = [
       } else if (!Array.isArray(v)) {
         throw new Error('variants debe ser array')
       }
-      if (Array.isArray(parsed)) assertVariantPrices(parsed)
+      if (Array.isArray(parsed)) {
+        assertNoObsoleteVariants(parsed)
+        assertVariantPrices(parsed)
+      }
       return true
     }),
   body('sizeIds')
@@ -178,6 +210,7 @@ export const adminUpsertVariants = [
           throw new Error('Cada variant.stock debe ser entero positivo')
         }
       }
+      assertNoObsoleteVariants(parsed)
       assertVariantPrices(parsed)
       return true
     }),
