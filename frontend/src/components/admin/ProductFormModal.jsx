@@ -39,18 +39,27 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
   const [name, setName] = useState(product?.name || '')
   const [description, setDescription] = useState(product?.description || '')
   const [price, setPrice] = useState(product?.basePrice != null ? String(Math.round(Number(product.basePrice) * 100) / 100) : '')
-  const [exempt, setExempt] = useState(product ? Number(product.taxRate) === 0 : false)
-  const [generalRate, setGeneralRate] = useState(19)
+  // Tasa propia del producto existente (null si no es numérica → se trata como "sin taxRate")
+  const ownRate = product && product.taxRate != null && Number.isFinite(Number(product.taxRate)) ? Number(product.taxRate) : null
+  const [exempt, setExempt] = useState(ownRate === 0)
+  const [generalRate, setGeneralRate] = useState(null)
+  const [rateFailed, setRateFailed] = useState(false)
   useEffect(() => {
     let alive = true
     Promise.resolve()
       .then(() => api.admin.tax())
-      .then((t) => { if (alive && Number.isFinite(Number(t?.rate))) setGeneralRate(Number(t.rate)) })
-      .catch(() => {})
+      .then((t) => {
+        if (!alive) return
+        if (Number.isFinite(Number(t?.rate))) setGeneralRate(Number(t.rate))
+        else setRateFailed(true)
+      })
+      .catch(() => { if (alive) setRateFailed(true) })
     return () => { alive = false }
   }, [])
-  // Un producto existente conserva su tasa propia; uno nuevo usa la vigente (o 0 si es exento).
-  const rate = exempt ? 0 : (product && Number(product.taxRate) !== 0 ? Number(product.taxRate) : generalRate)
+  // Tasa de la vista previa: exento → 0; existente → la suya; nuevo → la vigente (null mientras no cargue)
+  const rate = exempt ? 0 : (ownRate != null ? ownRate : generalRate)
+  // Tasa a enviar: exento → '0'; existente → la suya; nuevo no exento → no se envía (el backend usa la vigente)
+  const sendRate = exempt ? 0 : ownRate
   const [categoryId, setCategoryId] = useState(product?.categoryId || product?.category?.id || '')
   const [isActive, setIsActive] = useState(product?.isActive ?? true)
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured ?? false)
@@ -183,7 +192,7 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
       form.append('name', name.trim())
       form.append('description', description.trim())
       form.append('basePrice', String(Math.round(Number(price) * 100) / 100))
-      form.append('taxRate', String(rate))
+      if (sendRate != null) form.append('taxRate', String(sendRate))
       form.append('categoryId', categoryId)
       form.append('isActive', String(isActive))
       form.append('isFeatured', String(isFeatured))
@@ -238,10 +247,18 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
                   <span>Precio sin IVA (COP) *</span>
                   <input type="number" inputMode="numeric" min="100" step="100" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="50000" />
                 </label>
-                {Number(price) > 0 && (
-                  <small>
-                    IVA ({rate} %): {formatCOP(finalPrice(price, rate) - Number(price))} · <strong>Precio final: {formatCOP(finalPrice(price, rate))}</strong>
-                  </small>
+                {Number(price) > 0 && (rate == null ? (
+                  <small>Calculando IVA…</small>
+                ) : (() => {
+                  const base = Math.round(Number(price) * 100) / 100
+                  return (
+                    <small>
+                      IVA ({rate} %): {formatCOP(finalPrice(base, rate) - base)} · <strong>Precio final: {formatCOP(finalPrice(base, rate))}</strong>
+                    </small>
+                  )
+                })())}
+                {rateFailed && !isEdit && !exempt && (
+                  <small>No se pudo leer la tasa de IVA; se usará la vigente al guardar.</small>
                 )}
                 <div className="pf-check">
                   <input id="pf-exempt" type="checkbox" checked={exempt} onChange={(e) => setExempt(e.target.checked)} />
