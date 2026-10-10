@@ -34,8 +34,17 @@ export const setRate = async (rate, userId) => {
   if (!isValidRate(rate)) throw httpError(400, 'La tasa de IVA debe estar entre 0 y 30')
 
   return prisma.$transaction(async (tx) => {
+    // Serializa cambios concurrentes de tasa.
+    await tx.$queryRaw`SELECT 1 FROM "tax_settings" WHERE "id" = 1 FOR UPDATE`
     const oldRate = await getCurrentRate(tx)
     if (oldRate === rate) return { rate, changed: false, productsUpdated: 0 }
+
+    // Un producto con tasa propia igual a la nueva se mezclaría de forma irreversible con los generales.
+    const clash = await tx.$queryRaw`
+      SELECT 1 FROM "products" WHERE "taxRate" = ${rate}::numeric AND "taxRate" <> ${oldRate}::numeric LIMIT 1`
+    if (clash.length > 0) {
+      throw httpError(409, 'No se puede usar esa tasa como IVA general: hay productos con una tasa propia de ese valor (por ejemplo, exentos). Cámbiales la tasa primero.')
+    }
 
     const bp = Math.round(rate * 100)
 
@@ -46,7 +55,7 @@ export const setRate = async (rate, userId) => {
       FROM "products" p
       WHERE v."productId" = p."id" AND v."basePrice" IS NOT NULL AND p."taxRate" = ${oldRate}::numeric`
 
-    const productsUpdated = await tx.$executeRaw`
+    const updatedCount = await tx.$executeRaw`
       UPDATE "products"
       SET "taxRate" = ${rate}::numeric, "price" = ROUND("basePrice" * (10000 + ${bp}::int) / 10000)
       WHERE "taxRate" = ${oldRate}::numeric`
@@ -57,14 +66,19 @@ export const setRate = async (rate, userId) => {
       create: { id: 1, rate, updatedById: userId ?? null },
     })
 
+    const productsUpdated = Number(updatedCount)
     log.info({ userId, oldRate, newRate: rate, productsUpdated }, 'tax.rate_changed')
-    return { rate, changed: true, productsUpdated: Number(productsUpdated) }
+    return { rate, changed: true, productsUpdated }
   })
 }
 
 /** Aplica la tasa detectada por el job de revisión (acción manual del SUPER_ADMIN). */
 export const applyPendingRate = async (userId) => {
-  const { pendingRate } = await getTaxSetting()
+  const { rate, pendingRate } = await getTaxSetting()
   if (pendingRate === null) throw httpError(409, 'No hay una tasa pendiente por aplicar')
+  if (pendingRate === rate) {
+    await prisma.taxSetting.update({ where: { id: 1 }, data: { pendingRate: null } })
+    return { rate, changed: false, productsUpdated: 0 }
+  }
   return setRate(pendingRate, userId)
 }

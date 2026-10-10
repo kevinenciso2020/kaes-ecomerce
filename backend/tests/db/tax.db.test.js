@@ -1,3 +1,4 @@
+import { finalPrice } from '../../src/services/tax.service.js'
 import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 
 const { prisma } = await import('../../src/config/prisma.js')
@@ -41,7 +42,7 @@ describe('setRate', () => {
     const exento = await makeProduct({ basePrice: 10000, taxRate: 0 })
 
     const res = await setRate(5, 'u1')
-    expect(res).toMatchObject({ rate: 5, changed: true })
+    expect(res).toMatchObject({ rate: 5, changed: true, productsUpdated: 1 })
 
     const p = await prisma.product.findUnique({ where: { id: normal.id }, include: { variants: true } })
     expect(Number(p.taxRate)).toBe(5)
@@ -71,15 +72,81 @@ describe('setRate', () => {
   })
 
   it('misma tasa → changed:false y no toca nada', async () => {
-    const p = await makeProduct({ basePrice: 20000 })
+    const p = await makeProduct({
+      basePrice: 20000,
+      variants: [{ size: 'M', color: 'Azul', stock: 2, basePrice: 30000, price: 35700 }],
+    })
+    await prisma.taxSetting.update({ where: { id: 1 }, data: { pendingRate: 21 } })
     const res = await setRate(19, 'u1')
     expect(res.changed).toBe(false)
+    const vs = await prisma.productVariant.findMany({ where: { productId: p.id } })
+    expect(Number(vs[0].price)).toBe(35700)
+    expect((await getTaxSetting()).pendingRate).toBe(21)
     expect(Number((await prisma.product.findUnique({ where: { id: p.id } })).price)).toBe(23800)
   })
 
   it('rechaza tasas inválidas', async () => {
     await expect(setRate(45, 'u1')).rejects.toMatchObject({ status: 400 })
     await expect(setRate(-1, 'u1')).rejects.toMatchObject({ status: 400 })
+    await expect(setRate(NaN, 'u1')).rejects.toMatchObject({ status: 400 })
+    await expect(setRate('19', 'u1')).rejects.toMatchObject({ status: 400 })
+  })
+
+  it('409 si un producto con tasa propia ya tiene la nueva tasa; nada cambia', async () => {
+    const normal = await makeProduct({ basePrice: 20000 })
+    const exento = await makeProduct({ basePrice: 10000, taxRate: 0 })
+    await expect(setRate(0, 'u1')).rejects.toMatchObject({ status: 409 })
+    expect(await getCurrentRate()).toBe(19)
+    expect(Number((await prisma.product.findUnique({ where: { id: normal.id } })).price)).toBe(23800)
+    const e = await prisma.product.findUnique({ where: { id: exento.id } })
+    expect(Number(e.taxRate)).toBe(0)
+    expect(Number(e.price)).toBe(10000)
+  })
+
+  it('ida y vuelta 19 → 5 → 19 conserva al exento', async () => {
+    const normal = await makeProduct({ basePrice: 20000 })
+    const exento = await makeProduct({ basePrice: 10000, taxRate: 0 })
+    await setRate(5, 'u1')
+    await setRate(19, 'u1')
+    const e = await prisma.product.findUnique({ where: { id: exento.id } })
+    expect(Number(e.taxRate)).toBe(0)
+    expect(Number(e.price)).toBe(10000)
+    const n = await prisma.product.findUnique({ where: { id: normal.id } })
+    expect(Number(n.taxRate)).toBe(19)
+    expect(Number(n.price)).toBe(23800)
+  })
+
+  it('la variante de un producto exento no cambia', async () => {
+    const exento = await makeProduct({
+      basePrice: 10000, taxRate: 0,
+      variants: [{ size: 'M', color: 'Azul', stock: 2, basePrice: 12000, price: 12000 }],
+    })
+    await setRate(5, 'u1')
+    const v = await prisma.productVariant.findFirst({ where: { productId: exento.id } })
+    expect(Number(v.price)).toBe(12000)
+  })
+
+  it('maneja basePrice no entero', async () => {
+    const p = await makeProduct({ basePrice: 41932.77 })
+    expect(Number(p.price)).toBe(finalPrice(41932.77, 19))
+    await setRate(5, 'u1')
+    const after = await prisma.product.findUnique({ where: { id: p.id } })
+    expect(Number(after.price)).toBe(finalPrice(41932.77, 5))
+    expect(Number(after.price)).toBe(44029)
+  })
+
+  it('dos cambios concurrentes terminan en un estado consistente', async () => {
+    const p = await makeProduct({
+      basePrice: 20000,
+      variants: [{ size: 'M', color: 'Azul', stock: 2, basePrice: 30000, price: 35700 }],
+    })
+    await Promise.all([setRate(5, 'u1'), setRate(10, 'u2')])
+    const finalRate = await getCurrentRate()
+    expect([5, 10]).toContain(finalRate)
+    const after = await prisma.product.findUnique({ where: { id: p.id }, include: { variants: true } })
+    expect(Number(after.taxRate)).toBe(finalRate)
+    expect(Number(after.price)).toBe(finalPrice(20000, finalRate))
+    expect(Number(after.variants[0].price)).toBe(finalPrice(30000, finalRate))
   })
 })
 
@@ -92,6 +159,13 @@ describe('applyPendingRate', () => {
     const s = await getTaxSetting()
     expect(s.rate).toBe(21)
     expect(s.pendingRate).toBeNull()
+  })
+
+  it('si la pendiente igual a la vigente, la limpia sin cambios', async () => {
+    await prisma.taxSetting.update({ where: { id: 1 }, data: { pendingRate: 19 } })
+    const res = await applyPendingRate('u1')
+    expect(res).toEqual({ rate: 19, changed: false, productsUpdated: 0 })
+    expect((await getTaxSetting()).pendingRate).toBeNull()
   })
 
   it('409 si no hay tasa pendiente', async () => {
