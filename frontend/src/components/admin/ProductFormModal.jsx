@@ -56,10 +56,9 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
       .catch(() => { if (alive) setRateFailed(true) })
     return () => { alive = false }
   }, [])
-  // Tasa de la vista previa: exento → 0; existente → la suya; nuevo → la vigente (null mientras no cargue)
-  const rate = exempt ? 0 : (ownRate != null ? ownRate : generalRate)
-  // Tasa a enviar: exento → '0'; existente → la suya; nuevo no exento → no se envía (el backend usa la vigente)
-  const sendRate = exempt ? 0 : ownRate
+  // Tasa de la vista previa: exento → 0; existente con tasa propia distinta de 0 → la suya;
+  // en cualquier otro caso (nuevo, o existente que se quita de exento) → la vigente (null mientras no cargue)
+  const rate = exempt ? 0 : (isEdit && ownRate != null && ownRate !== 0 ? ownRate : generalRate)
   const [categoryId, setCategoryId] = useState(product?.categoryId || product?.category?.id || '')
   const [isActive, setIsActive] = useState(product?.isActive ?? true)
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured ?? false)
@@ -185,6 +184,17 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
       setError('Revisa los campos marcados')
       return
     }
+    // taxRate solo se envía cuando cambia el estado de exento; si no, el backend conserva/usa la vigente
+    const wasExempt = isEdit && ownRate === 0
+    let sendRate = null
+    if (exempt && !wasExempt) sendRate = '0'
+    else if (!exempt && wasExempt) {
+      if (generalRate == null) {
+        setError('No se pudo leer la tasa de IVA vigente; recarga la página para quitar la exención.')
+        return
+      }
+      sendRate = String(generalRate)
+    }
     setBusy(true)
     try {
       const variants = mode === 'variants' ? buildVariants() : []
@@ -192,7 +202,7 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
       form.append('name', name.trim())
       form.append('description', description.trim())
       form.append('basePrice', String(Math.round(Number(price) * 100) / 100))
-      if (sendRate != null) form.append('taxRate', String(sendRate))
+      if (sendRate != null) form.append('taxRate', sendRate)
       form.append('categoryId', categoryId)
       form.append('isActive', String(isActive))
       form.append('isFeatured', String(isFeatured))

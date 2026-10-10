@@ -68,14 +68,46 @@ const saveEdit = async (product, rate = 21) => {
 describe('ProductFormModal: tasa en edición y producto nuevo', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('existente con 19 y tasa general 21 envía 19', async () => {
-    expect((await saveEdit(editProduct({ taxRate: 19 }), 21)).get('taxRate')).toBe('19')
+  it('existente con 19 y tasa general 21, sin tocar exento, NO envía taxRate', async () => {
+    expect((await saveEdit(editProduct({ taxRate: 19 }), 21)).has('taxRate')).toBe(false)
   })
-  it('existente exento envía 0', async () => {
-    expect((await saveEdit(editProduct({ taxRate: 0 }), 21)).get('taxRate')).toBe('0')
+  it('existente exento sin tocar exento NO envía taxRate', async () => {
+    expect((await saveEdit(editProduct({ taxRate: 0 }), 21)).has('taxRate')).toBe(false)
   })
-  it('existente con 5 envía 5', async () => {
-    expect((await saveEdit(editProduct({ taxRate: 5 }), 21)).get('taxRate')).toBe('5')
+  it('existente con 5 sin tocar exento NO envía taxRate', async () => {
+    expect((await saveEdit(editProduct({ taxRate: 5 }), 21)).has('taxRate')).toBe(false)
+  })
+  it('existente no exento, al marcar exento envía 0', async () => {
+    api.admin.tax.mockResolvedValue({ rate: 21 })
+    api.admin.updateProduct.mockResolvedValue({ id: 'p9' })
+    const { container } = render(<ProductFormModal product={editProduct({ taxRate: 19 })} categories={categories} colors={[]} sizes={[]} onClose={() => {}} onSaved={() => {}} />)
+    await waitFor(() => expect(api.admin.tax).toHaveBeenCalled())
+    fireEvent.click(screen.getByLabelText('Producto exento de IVA'))
+    fireEvent.submit(container.querySelector('form'))
+    await waitFor(() => expect(api.admin.updateProduct).toHaveBeenCalledTimes(1))
+    expect(api.admin.updateProduct.mock.calls[0][1].get('taxRate')).toBe('0')
+  })
+  it('existente exento, al desmarcar envía la tasa general y la vista previa la usa', async () => {
+    api.admin.tax.mockResolvedValue({ rate: 19 })
+    api.admin.updateProduct.mockResolvedValue({ id: 'p9' })
+    const { container } = render(<ProductFormModal product={editProduct({ taxRate: 0 })} categories={categories} colors={[]} sizes={[]} onClose={() => {}} onSaved={() => {}} />)
+    await waitFor(() => expect(api.admin.tax).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByLabelText('Producto exento de IVA').checked).toBe(true))
+    fireEvent.click(screen.getByLabelText('Producto exento de IVA'))
+    await waitFor(() => expect(container.querySelector('.pf-field small').textContent).toContain('Precio final: $23.800'))
+    fireEvent.submit(container.querySelector('form'))
+    await waitFor(() => expect(api.admin.updateProduct).toHaveBeenCalledTimes(1))
+    expect(api.admin.updateProduct.mock.calls[0][1].get('taxRate')).toBe('19')
+  })
+  it('existente exento, al desmarcar sin tasa general: error y no llama a la API', async () => {
+    api.admin.tax.mockRejectedValue(new Error('fallo'))
+    const { container } = render(<ProductFormModal product={editProduct({ taxRate: 0 })} categories={categories} colors={[]} sizes={[]} onClose={() => {}} onSaved={() => {}} />)
+    await waitFor(() => expect(api.admin.tax).toHaveBeenCalled())
+    fireEvent.click(screen.getByLabelText('Producto exento de IVA'))
+    fireEvent.submit(container.querySelector('form'))
+    expect(await screen.findByText('No se pudo leer la tasa de IVA vigente; recarga la página para quitar la exención.')).toBeTruthy()
+    expect(api.admin.updateProduct).not.toHaveBeenCalled()
+    expect(api.admin.createProduct).not.toHaveBeenCalled()
   })
   it('existente sin taxRate numérico no envía taxRate', async () => {
     const form = await saveEdit(editProduct({ taxRate: undefined }), 21)
