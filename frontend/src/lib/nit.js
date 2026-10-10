@@ -22,9 +22,17 @@ export const BUYER_DOC_TYPES = [
 
 /** Valida y arma el bloque `buyer` del pedido. Devuelve { buyer } o { error }. */
 export const buildBuyer = ({ docType, docNumber, name }) => {
-  const number = String(docNumber ?? '').replace(/[.\s-]/g, '')
+  let number = String(docNumber ?? '').replace(/[.\s]/g, '')
   const cleanName = String(name ?? '').trim()
   if (!BUYER_DOC_TYPES.some((t) => t.value === docType)) return { error: 'Selecciona el tipo de documento.' }
+  if (docType === '31') {
+    // Es común escribir el NIT con su DV ("900123456-7"): se separa y se valida.
+    const m = /^(\d+)-(\d)$/.exec(number)
+    if (m) {
+      if (computeNitDv(m[1]) !== m[2]) return { error: 'El dígito de verificación no corresponde al NIT.' }
+      number = m[1]
+    }
+  }
   const alphanumeric = ['41', '47', '48'].includes(docType)
   if (alphanumeric ? !/^[A-Za-z0-9]{3,20}$/.test(number) : !/^[1-9]\d{4,14}$/.test(number)) {
     return { error: 'Ingresa un número de documento válido (sin puntos ni dígito de verificación).' }

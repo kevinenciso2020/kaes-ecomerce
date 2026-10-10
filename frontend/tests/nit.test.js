@@ -22,6 +22,13 @@ describe('buildBuyer', () => {
     expect(buildBuyer({ docType: '31', docNumber: '800197268', name: '' }).error).toMatch(/razón social/)
     expect(buildBuyer({ docType: '', docNumber: '1', name: 'x' }).error).toMatch(/tipo de documento/)
   })
+  it('separa el DV si el NIT se escribe con guion y lo valida', () => {
+    expect(buildBuyer({ docType: '31', docNumber: '800.197.268-4', name: 'DIAN' }).buyer).toEqual({ docType: '31', docNumber: '800197268', dv: '4', name: 'DIAN' })
+    expect(buildBuyer({ docType: '31', docNumber: '800197268-7', name: 'DIAN' }).error).toMatch(/dígito de verificación/)
+  })
+  it('no convierte un guion en parte del número para otros documentos', () => {
+    expect(buildBuyer({ docType: '13', docNumber: '1020304-5', name: 'Ana Pérez' }).error).toMatch(/número de documento/)
+  })
   it('acepta pasaporte alfanumérico', () => {
     expect(buildBuyer({ docType: '41', docNumber: 'AB123456', name: 'John Doe' }).buyer.docNumber).toBe('AB123456')
   })

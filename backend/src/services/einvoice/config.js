@@ -44,11 +44,14 @@ export const getConfig = () => {
   const environment = env('EINVOICE_ENV', '2')
   if (!['1', '2'].includes(environment)) errors.push('EINVOICE_ENV (1 = producción, 2 = habilitación)')
 
-  const nit = req('EINVOICE_ISSUER_NIT').replace(/\D/g, '')
-  const dv = env('EINVOICE_ISSUER_DV') || computeNitDv(nit)
-  if (nit && env('EINVOICE_ISSUER_DV') && env('EINVOICE_ISSUER_DV') !== computeNitDv(nit)) {
-    errors.push('EINVOICE_ISSUER_DV no corresponde al NIT')
-  }
+  // Acepta "900123456", "900.123.456" o "900123456-7" (con DV, que se valida).
+  const rawNit = req('EINVOICE_ISSUER_NIT').replace(/[.\s]/g, '')
+  const nitMatch = /^(\d{5,15})(?:-(\d))?$/.exec(rawNit)
+  if (rawNit && !nitMatch) errors.push('EINVOICE_ISSUER_NIT (solo dígitos, opcionalmente con -DV)')
+  const nit = nitMatch?.[1] ?? ''
+  const givenDv = nitMatch?.[2] || env('EINVOICE_ISSUER_DV')
+  const dv = computeNitDv(nit)
+  if (nit && givenDv && givenDv !== dv) errors.push('El DV del NIT del emisor no corresponde (EINVOICE_ISSUER_NIT / EINVOICE_ISSUER_DV)')
 
   const departamento = req('EINVOICE_ISSUER_DEPARTAMENTO')
   const municipio = req('EINVOICE_ISSUER_MUNICIPIO')

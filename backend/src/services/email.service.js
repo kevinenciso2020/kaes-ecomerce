@@ -414,7 +414,6 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;')
 }
 
-/** Avisa al dueño de la tienda que la fuente oficial indica otra tasa de IVA. */
 /**
  * Envía al adquiriente la factura / nota crédito electrónica: el ZIP con el
  * AttachedDocument (XML validado por la DIAN) y la representación gráfica en PDF.
@@ -470,6 +469,7 @@ export const sendEinvoiceAlert = async ({ fullNumber, orderId, type, problem, er
   }
 }
 
+/** Avisa al dueño de la tienda que la fuente oficial indica otra tasa de IVA. */
 export const sendTaxChangeAlert = async ({ currentRate, detectedRate, source }) => {
   const to = process.env.TAX_ALERT_EMAIL || FROM_EMAIL
   if (!to) return false

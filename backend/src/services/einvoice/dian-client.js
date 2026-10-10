@@ -110,13 +110,14 @@ const textOf = (root, name) => {
 }
 
 export class DianSoapError extends Error {
-  constructor(message, { status, body } = {}) {
+  constructor(message, { status, body, retryable } = {}) {
     super(message)
     this.name = 'DianSoapError'
     this.status = status
     this.body = body
-    // Errores HTTP 5xx / red se reintentan; un Fault de validación no.
-    this.retryable = status == null || status >= 500
+    // Red caída o HTTP 5xx se reintentan; un Fault atribuido al cliente
+    // (certificado no autorizado, sobre inválido) no.
+    this.retryable = retryable ?? (status == null || status >= 500)
   }
 }
 
@@ -125,7 +126,10 @@ const parseResponse = (xml) => {
   const fault = byLocalName(doc, 'Fault')[0]
   if (fault) {
     const reason = textOf(fault, 'Text') ?? textOf(fault, 'faultstring') ?? 'SOAP Fault'
-    throw new DianSoapError(`DIAN: ${reason}`, { status: 500, body: xml })
+    // SOAP 1.2: Code/Value = s:Sender (error del cliente) o s:Receiver (falla del servidor).
+    const code = textOf(fault, 'Value') ?? textOf(fault, 'faultcode') ?? ''
+    const clientFault = /Sender|Client/i.test(code)
+    throw new DianSoapError(`DIAN: ${reason}`, { status: 500, body: xml, retryable: !clientFault })
   }
   return doc
 }

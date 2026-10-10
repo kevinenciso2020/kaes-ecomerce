@@ -66,7 +66,7 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
               </div>
               <div class="form-group">
                 <label class="form-label" for="buyer-doc-number">Número <span id="buyer-dv" class="buyer-dv" hidden></span></label>
-                <input type="text" id="buyer-doc-number" class="form-input" placeholder="Sin puntos ni dígito de verificación" inputmode="numeric" autocomplete="off" maxlength="20" />
+                <input type="text" id="buyer-doc-number" class="form-input" placeholder="Sin puntos (el DV se calcula solo)" inputmode="numeric" autocomplete="off" maxlength="20" />
               </div>
             </div>
             <div class="form-group">
@@ -206,6 +206,8 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
     $(id)?.addEventListener('input', syncInvoiceFields)
     $(id)?.addEventListener('change', syncInvoiceFields)
   })
+  // El navegador puede restaurar la casilla marcada al volver a la página.
+  syncInvoiceFields()
   $('wants-invoice')?.addEventListener('change', () => {
     if ($('wants-invoice').checked && $('buyer-name') && !$('buyer-name').value) {
       $('buyer-name').value = $('full-name')?.value.trim() || ''

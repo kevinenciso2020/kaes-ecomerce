@@ -318,3 +318,116 @@ describe('habilitación (set de pruebas)', () => {
     expect(dian.getStatusZip).toHaveBeenCalledWith('zip-key-1')
   })
 })
+
+describe('robustez (hallazgos de la revisión)', () => {
+  it('un reintento manual mientras el documento se procesa responde 409 y no envía dos veces', async () => {
+    let releaseSend
+    dian.sendBillSync.mockImplementationOnce(() => new Promise((r) => { releaseSend = () => r(accepted()) }))
+    dian.sendBillSync.mockRejectedValueOnce(new DianSoapError('DIAN caída'))
+    const product = await makeProduct()
+    const o = await newOrder([{ productId: product.id, quantity: 1 }])
+    await approve(o)
+    // Primer envío queda "colgado" en la DIAN: el documento está bloqueado.
+    for (let i = 0; i < 100 && !releaseSend; i++) await new Promise((r) => setTimeout(r, 20))
+    const doc = await prisma.electronicDocument.findUnique({ where: { orderId_type: { orderId: o.id, type: 'INVOICE' } } })
+    await prisma.electronicDocument.update({ where: { id: doc.id }, data: { status: 'ERROR' } }) // simula ERROR visible en el admin
+    await expect(Einvoice.retryDocument(doc.id)).rejects.toMatchObject({ status: 409 })
+    releaseSend()
+    let done
+    for (let i = 0; i < 200; i++) {
+      done = await prisma.electronicDocument.findUnique({ where: { id: doc.id } })
+      if (!done.lockedUntil) break
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    expect(done.status).toBe('ACCEPTED')
+    expect(dian.sendBillSync).toHaveBeenCalledTimes(1)
+    expect(await prisma.invoiceSequence.findUnique({ where: { prefix: 'SETP' } })).toMatchObject({ next: 990000001 })
+  })
+
+  it('un error inesperado (p. ej. corte de la base de datos) se reintenta en vez de abandonarse', async () => {
+    dian.sendBillSync.mockRejectedValueOnce(Object.assign(new Error("Can't reach database server"), { code: 'P1001' }))
+    const product = await makeProduct()
+    const o = await newOrder([{ productId: product.id, quantity: 1 }])
+    await approve(o)
+    const doc = await settled(o.id)
+    expect(doc.status).toBe('ERROR')
+    expect(doc.nextAttemptAt).not.toBeNull()
+  })
+
+  it('un SOAP Fault del cliente no se reintenta y avisa al admin', async () => {
+    dian.sendBillSync.mockRejectedValueOnce(new DianSoapError('DIAN: certificado no autorizado', { status: 500, retryable: false }))
+    const product = await makeProduct()
+    const o = await newOrder([{ productId: product.id, quantity: 1 }])
+    await approve(o)
+    const doc = await settled(o.id)
+    expect(doc).toMatchObject({ status: 'ERROR', nextAttemptAt: null })
+    expect(sendEinvoiceAlert).toHaveBeenCalledWith(expect.objectContaining({ problem: expect.stringContaining('certificado no autorizado') }))
+  })
+
+  it('congela el adquiriente: la nota crédito usa la dirección de la factura aunque el cliente la cambie', async () => {
+    const product = await makeProduct()
+    const o = await newOrder([{ productId: product.id, quantity: 1 }])
+    await approve(o)
+    const invoice = await settled(o.id)
+    expect(invoice.buyerSnapshot.location.cityCode).toBe('05266')
+    await prisma.address.update({ where: { id: o.shippingAddressId }, data: { departamento: 'Atlántico', municipio: 'Barranquilla', street: 'Otra calle' } })
+    await updateOrderStatus(o.id, 'CANCELLED')
+    Einvoice.triggerCreditNote(o.id, 'Pedido cancelado')
+    const note = await settled(o.id, 'CREDIT_NOTE')
+    expect(note.status).toBe('ACCEPTED')
+    expect(note.xmlSigned).toContain('<cbc:ID>05266</cbc:ID>')
+    expect(note.xmlSigned).not.toContain('Otra calle')
+  })
+
+  it('nota crédito sobre una factura rechazada: queda en ERROR con aviso y se reactiva al validar la factura', async () => {
+    dian.sendBillSync.mockResolvedValueOnce({ isValid: false, statusCode: '99', errors: ['Regla: FAK24, Rechazo'], applicationResponse: null })
+    const product = await makeProduct()
+    const o = await newOrder([{ productId: product.id, quantity: 1 }])
+    await approve(o)
+    const invoice = await settled(o.id)
+    expect(invoice.status).toBe('REJECTED')
+
+    await updateOrderStatus(o.id, 'CANCELLED')
+    const created = await Einvoice.enqueueCreditNote(o.id, 'Pedido cancelado')
+    await Einvoice.processDocument(created.id)
+    let note = await prisma.electronicDocument.findUnique({ where: { id: created.id } })
+    expect(note).toMatchObject({ status: 'ERROR', nextAttemptAt: null, number: null })
+    expect(note.lastError).toContain('rechazada')
+    expect(sendEinvoiceAlert).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'CREDIT_NOTE' }))
+
+    await Einvoice.retryDocument(invoice.id)
+    note = await prisma.electronicDocument.findUnique({ where: { id: created.id } })
+    expect(note).toMatchObject({ status: 'PENDING', lastError: null })
+    await Einvoice.processPending()
+    expect((await settled(o.id, 'CREDIT_NOTE')).status).toBe('ACCEPTED')
+  })
+
+  it('correo fallido: se reintenta con límite y no se cuenta como entregado', async () => {
+    sendElectronicInvoice.mockResolvedValue(false)
+    const product = await makeProduct()
+    const o = await newOrder([{ productId: product.id, quantity: 1 }])
+    await approve(o)
+    let doc
+    for (let i = 0; i < 100; i++) {
+      doc = await prisma.electronicDocument.findUnique({ where: { orderId_type: { orderId: o.id, type: 'INVOICE' } } })
+      if (doc?.deliveryAttempts === 1 && !doc.lockedUntil) break
+      await new Promise((r) => setTimeout(r, 30))
+    }
+    expect(doc).toMatchObject({ status: 'ACCEPTED', emailedAt: null, deliveryAttempts: 1 })
+    expect(doc.applicationResponse).toContain('ApplicationResponse')
+    expect(doc.dianResponse.applicationResponse).toBeUndefined()
+
+    const age = () => prisma.$executeRaw`UPDATE "electronic_documents" SET "updatedAt" = NOW() - INTERVAL '1 hour' WHERE "id" = ${doc.id}`
+    for (let i = 0; i < 6; i++) {
+      await age()
+      expect((await Einvoice.processPending()).delivered).toBe(0)
+    }
+    expect((await prisma.electronicDocument.findUnique({ where: { id: doc.id } })).deliveryAttempts).toBe(Einvoice.MAX_DELIVERY_ATTEMPTS)
+    expect(sendElectronicInvoice).toHaveBeenCalledTimes(Einvoice.MAX_DELIVERY_ATTEMPTS)
+
+    sendElectronicInvoice.mockResolvedValue(true)
+    await prisma.electronicDocument.update({ where: { id: doc.id }, data: { deliveryAttempts: 0 } })
+    await age()
+    expect((await Einvoice.processPending()).delivered).toBe(1)
+  })
+})

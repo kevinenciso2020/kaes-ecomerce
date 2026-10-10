@@ -494,28 +494,36 @@ enum ElectronicDocumentStatus {
 
 /// Factura electrónica o nota crédito enviada a la DIAN. Una por (orden, tipo).
 model ElectronicDocument {
-  id            String                   @id @default(cuid())
-  orderId       String
-  type          ElectronicDocumentType
-  status        ElectronicDocumentStatus @default(PENDING)
-  prefix        String?
-  number        Int?
-  fullNumber    String?
-  cufe          String?
-  environment   String?                  @db.VarChar(1)
-  issuedAt      DateTime?
-  xmlSigned     String?                  @db.Text
-  fileName      String?
-  trackId       String?
-  dianResponse  Json?
-  attempts      Int                      @default(0)
-  lastError     String?                  @db.Text
-  nextAttemptAt DateTime?
-  emailedAt     DateTime?
-  reason        String?
-  referenceId   String?
-  createdAt     DateTime                 @default(now())
-  updatedAt     DateTime                 @updatedAt
+  id                  String                   @id @default(cuid())
+  orderId             String
+  type                ElectronicDocumentType
+  status              ElectronicDocumentStatus @default(PENDING)
+  prefix              String?
+  number              Int?
+  fullNumber          String?
+  cufe                String?
+  environment         String?                  @db.VarChar(1)
+  issuedAt            DateTime?
+  xmlSigned           String?                  @db.Text
+  fileName            String?
+  trackId             String?
+  dianResponse        Json?
+  attempts            Int                      @default(0)
+  lastError           String?                  @db.Text
+  nextAttemptAt       DateTime?
+  emailedAt           DateTime?
+  // Reintentos de envío del correo al cliente (se abandona tras 5).
+  deliveryAttempts    Int                      @default(0)
+  // Bloqueo de procesamiento: evita que el job y un reintento manual envíen a la vez.
+  lockedUntil         DateTime?
+  // Datos del adquiriente congelados en la primera generación (la nota crédito copia los de su factura).
+  buyerSnapshot       Json?
+  // ApplicationResponse de la DIAN (XML), aparte para no cargarlo en los listados.
+  applicationResponse String?                  @db.Text
+  reason              String?
+  referenceId         String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
 
   order     Order                @relation(fields: [orderId], references: [id], onDelete: Restrict)
   reference ElectronicDocument?  @relation("CreditNoteOf", fields: [referenceId], references: [id], onDelete: Restrict)

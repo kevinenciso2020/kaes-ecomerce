@@ -7,6 +7,7 @@
 //   ACCEPTED → validado por la DIAN (inmutable; se corrige con nota crédito)
 //   REJECTED → la DIAN lo rechazó; requiere corregir y "Reintentar" desde el admin
 //   ERROR    → falló el envío; se reintenta con backoff hasta MAX_ATTEMPTS
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma.js'
 import { logger } from '../../config/logger.js'
 import { captureError } from '../../config/sentry.js'
@@ -97,6 +98,7 @@ export const nextSequence = async (tx, prefix, start) => {
 const assignNumber = async (doc, config) => {
   if (doc.number != null) return doc
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "electronic_documents" WHERE "id" = ${doc.id} FOR UPDATE`
     const fresh = await tx.electronicDocument.findUnique({ where: { id: doc.id } })
     if (fresh.number != null) return fresh
     const isInvoice = doc.type === 'INVOICE'
@@ -160,7 +162,9 @@ export const amountsFromOrder = (order, config) =>
 
 const buildSignedDocument = async (doc, config) => {
   const order = await prisma.order.findUnique({ where: { id: doc.orderId }, include: ORDER_INCLUDE })
-  const buyer = buyerFromOrder(order)
+  const invoice = doc.type === 'CREDIT_NOTE' ? await prisma.electronicDocument.findUnique({ where: { id: doc.referenceId } }) : null
+  // El adquiriente se congela en la primera generación; la nota crédito usa el de su factura.
+  const buyer = doc.buyerSnapshot ?? invoice?.buyerSnapshot ?? buyerFromOrder(order)
   const amounts = amountsFromOrder(order, config)
   const { date: issueDate, time: issueTime } = colombiaDateTime(doc.issuedAt)
   const isInvoice = doc.type === 'INVOICE'
@@ -193,7 +197,6 @@ const buildSignedDocument = async (doc, config) => {
   if (isInvoice) {
     xml = buildInvoiceXml({ config, doc: base, buyer, amounts })
   } else {
-    const invoice = await prisma.electronicDocument.findUnique({ where: { id: doc.referenceId } })
     xml = buildCreditNoteXml({
       config,
       buyer,
@@ -209,6 +212,7 @@ const buildSignedDocument = async (doc, config) => {
   return {
     signed,
     cufe,
+    buyer,
     fileName: dianFileName({ kind, nit: config.issuer.nit, providerCode: config.software.providerCode, year, sequence: fileSeq }),
     zipName: dianFileName({ kind: 'z', nit: config.issuer.nit, providerCode: config.software.providerCode, year, sequence: fileSeq, ext: 'zip' }),
   }
@@ -216,19 +220,27 @@ const buildSignedDocument = async (doc, config) => {
 
 // ── Proceso ──────────────────────────────────────────────────────────────────
 
-/** Reclama el documento (lease) para que el job y el disparo inmediato no lo procesen a la vez. */
+const notLocked = (now) => ({ OR: [{ lockedUntil: null }, { lockedUntil: { lt: now } }] })
+
+/**
+ * Reclama el documento con un bloqueo temporal (lockedUntil) para que el job, el
+ * disparo inmediato y el reintento manual nunca lo procesen a la vez. Si el
+ * proceso muere a mitad, el bloqueo expira solo a los 5 minutos.
+ */
 const claim = async (id) => {
   const now = new Date()
   const res = await prisma.electronicDocument.updateMany({
     where: {
       id,
       status: { in: ['PENDING', 'ERROR', 'SENT'] },
-      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      AND: [{ OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }] }, notLocked(now)],
     },
-    data: { nextAttemptAt: new Date(now.getTime() + LEASE_MS), attempts: { increment: 1 } },
+    data: { lockedUntil: new Date(now.getTime() + LEASE_MS), attempts: { increment: 1 } },
   })
   return res.count === 1
 }
+
+const release = (id) => prisma.electronicDocument.updateMany({ where: { id }, data: { lockedUntil: null } })
 
 const summarize = (r) => ({
   isValid: r.isValid,
@@ -245,6 +257,14 @@ const summarize = (r) => ({
  */
 export const processDocument = async (id) => {
   if (!(await claim(id))) return null
+  try {
+    return await processClaimed(id)
+  } finally {
+    await release(id).catch((err) => log.error({ err, id }, 'einvoice.release_failed'))
+  }
+}
+
+const processClaimed = async (id) => {
   let doc = await prisma.electronicDocument.findUnique({ where: { id } })
 
   try {
@@ -253,6 +273,16 @@ export const processDocument = async (id) => {
 
     if (doc.type === 'CREDIT_NOTE') {
       const invoice = await prisma.electronicDocument.findUnique({ where: { id: doc.referenceId } })
+      const invoiceDead = invoice?.status === 'REJECTED' || (invoice?.status === 'ERROR' && !invoice.nextAttemptAt)
+      if (invoiceDead) {
+        // No se reintenta sola: se reactiva cuando la factura quede validada (markAccepted).
+        const problem = `la factura ${invoice.fullNumber ?? ''} que anula no está validada por la DIAN (${invoice.status === 'REJECTED' ? 'rechazada' : 'con error'}). Corrígela y reintenta la factura primero.`
+        sendEinvoiceAlert({ fullNumber: doc.fullNumber, orderId: doc.orderId, type: doc.type, problem }).catch(() => {})
+        return prisma.electronicDocument.update({
+          where: { id },
+          data: { status: 'ERROR', nextAttemptAt: null, lastError: `No se puede emitir: ${problem}` },
+        })
+      }
       if (invoice?.status !== 'ACCEPTED') {
         // Espera a que la factura quede validada antes de anularla.
         return prisma.electronicDocument.update({
@@ -274,7 +304,7 @@ export const processDocument = async (id) => {
       const built = await buildSignedDocument(doc, config)
       doc = await prisma.electronicDocument.update({
         where: { id },
-        data: { xmlSigned: built.signed, cufe: built.cufe, fileName: built.fileName },
+        data: { xmlSigned: built.signed, cufe: built.cufe, fileName: built.fileName, buyerSnapshot: built.buyer },
       })
       doc.zipName = built.zipName
     }
@@ -326,13 +356,22 @@ const markAccepted = async (doc, result, config) => {
     where: { id: doc.id },
     data: {
       status: 'ACCEPTED',
-      dianResponse: { ...summarize(result), applicationResponse: result.applicationResponse ?? null },
+      dianResponse: summarize(result),
+      applicationResponse: result.applicationResponse ?? null,
       lastError: null,
       nextAttemptAt: null,
     },
   })
   log.info({ id: doc.id, orderId: doc.orderId, fullNumber: doc.fullNumber, type: doc.type }, 'einvoice.accepted')
   await deliverDocument(updated, config).catch((err) => log.error({ err, id: doc.id }, 'einvoice.delivery_failed'))
+  if (doc.type === 'INVOICE') {
+    // Notas crédito que esperaban (o se detuvieron por) esta factura: se reactivan.
+    const woken = await prisma.electronicDocument.updateMany({
+      where: { referenceId: doc.id, status: { in: ['PENDING', 'ERROR'] } },
+      data: { status: 'PENDING', attempts: 0, nextAttemptAt: new Date(), lastError: null },
+    })
+    if (woken.count) log.info({ id: doc.id, count: woken.count }, 'einvoice.credit_notes_woken')
+  }
   return updated
 }
 
@@ -355,7 +394,9 @@ const markRejected = async (doc, result) => {
 const markError = async (doc, err) => {
   const attempts = doc?.attempts ?? 1
   const configProblem = err.code === 'EINVOICE_CONFIG' || err.code === 'EINVOICE_RANGE_EXHAUSTED'
-  const retryable = configProblem || err instanceof DianSoapError ? err.retryable !== false : false
+  // Todo se reintenta (red, DIAN caída, cortes de la base de datos…) salvo los
+  // errores que la DIAN atribuye al cliente (SOAP Fault "Sender").
+  const retryable = !(err instanceof DianSoapError && err.retryable === false)
   const giveUp = attempts >= MAX_ATTEMPTS || !retryable
   const updated = await prisma.electronicDocument.update({
     where: { id: doc.id },
@@ -380,10 +421,14 @@ const markError = async (doc, err) => {
 
 // ── Entrega al cliente ───────────────────────────────────────────────────────
 
+const validatedAt = (doc) => (doc.status === 'ACCEPTED' && doc.dianResponse?.receivedAt ? new Date(doc.dianResponse.receivedAt) : null)
+export const MAX_DELIVERY_ATTEMPTS = 5
+
 export const buildDeliveryFiles = async (doc, config) => {
   const order = await prisma.order.findUnique({ where: { id: doc.orderId }, include: ORDER_INCLUDE })
-  const buyer = buyerFromOrder(order)
-  const now = colombiaDateTime(new Date(doc.updatedAt ?? Date.now()))
+  const buyer = doc.buyerSnapshot ?? buyerFromOrder(order)
+  // Fecha real de validación de la DIAN (no la última modificación de la fila).
+  const now = colombiaDateTime(validatedAt(doc) ?? new Date())
   const { date: issueDate, time: issueTime } = colombiaDateTime(doc.issuedAt)
   const attached = signUblXml(
     buildAttachedDocument({
@@ -391,20 +436,21 @@ export const buildDeliveryFiles = async (doc, config) => {
       doc: { fullNumber: doc.fullNumber, issueDate, issueTime, cufe: doc.cufe, type: doc.type },
       buyer,
       signedXml: doc.xmlSigned,
-      applicationResponse: doc.dianResponse?.applicationResponse ?? '',
+      applicationResponse: doc.applicationResponse ?? doc.dianResponse?.applicationResponse ?? '',
       validation: { date: now.date, time: now.time },
     }),
     config.cert,
   )
   const adName = doc.fileName.replace(/^(fv|nc)/, 'ad')
   const zipName = doc.fileName.replace(/^(fv|nc)/, 'z').replace(/\.xml$/, '.zip')
-  const pdf = await renderPdf(doc.xmlSigned, { validatedAt: doc.updatedAt })
+  const pdf = await renderPdf(doc.xmlSigned, { validatedAt: validatedAt(doc) })
   const zip = Buffer.from(zipSync({ [adName]: strToU8(attached), [`${doc.fullNumber}.pdf`]: new Uint8Array(pdf) }))
   return { order, buyer, pdf, zip, zipName }
 }
 
+/** Envía el correo al adquiriente. Devuelve true si salió. */
 const deliverDocument = async (doc, config) => {
-  if (doc.emailedAt) return
+  if (doc.emailedAt) return true
   const { order, pdf, zip, zipName } = await buildDeliveryFiles(doc, config)
   const ok = await sendElectronicInvoice({
     to: order.user?.email,
@@ -416,7 +462,11 @@ const deliverDocument = async (doc, config) => {
     zipBuffer: zip,
     pdfBuffer: pdf,
   })
-  if (ok) await prisma.electronicDocument.update({ where: { id: doc.id }, data: { emailedAt: new Date() } })
+  await prisma.electronicDocument.update({
+    where: { id: doc.id },
+    data: ok ? { emailedAt: new Date() } : { deliveryAttempts: { increment: 1 } },
+  })
+  return ok
 }
 
 // ── Job y acciones del admin ─────────────────────────────────────────────────
@@ -435,13 +485,33 @@ export const processPending = async ({ limit = 20 } = {}) => {
 
   let delivered = 0
   const undelivered = await prisma.electronicDocument.findMany({
-    where: { status: 'ACCEPTED', emailedAt: null, updatedAt: { lte: new Date(now.getTime() - 10 * 60_000) } },
+    where: {
+      status: 'ACCEPTED',
+      emailedAt: null,
+      deliveryAttempts: { lt: MAX_DELIVERY_ATTEMPTS },
+      // Espera 10 min desde el último intento (cada intento fallido toca updatedAt).
+      updatedAt: { lte: new Date(now.getTime() - 10 * 60_000) },
+      ...notLocked(now),
+    },
     take: limit,
+    select: { id: true },
   })
   if (undelivered.length) {
     const config = getConfig()
-    for (const doc of undelivered) {
-      await deliverDocument(doc, config).then(() => delivered++).catch((err) => log.error({ err, id: doc.id }, 'einvoice.delivery_retry_failed'))
+    for (const { id } of undelivered) {
+      const lock = await prisma.electronicDocument.updateMany({
+        where: { id, emailedAt: null, ...notLocked(new Date()) },
+        data: { lockedUntil: new Date(Date.now() + LEASE_MS) },
+      })
+      if (lock.count !== 1) continue
+      try {
+        const doc = await prisma.electronicDocument.findUnique({ where: { id } })
+        if (await deliverDocument(doc, config)) delivered++
+      } catch (err) {
+        log.error({ err, id }, 'einvoice.delivery_retry_failed')
+      } finally {
+        await release(id)
+      }
     }
   }
   return { processed: due.length, delivered }
@@ -457,16 +527,20 @@ export const retryDocument = async (id) => {
   if (!['REJECTED', 'ERROR', 'PENDING'].includes(doc.status)) {
     throw conflict('Solo se pueden reintentar documentos rechazados o con error')
   }
-  await prisma.electronicDocument.update({
-    where: { id },
+  const now = new Date()
+  const res = await prisma.electronicDocument.updateMany({
+    where: { id, status: doc.status, ...notLocked(now) },
     data: {
       status: 'PENDING',
       attempts: 0,
-      nextAttemptAt: new Date(),
+      nextAttemptAt: now,
       // Tras un rechazo se regenera el XML (mismo número) con los datos corregidos.
-      ...(doc.status === 'REJECTED' ? { xmlSigned: null, cufe: null, trackId: null, issuedAt: new Date() } : {}),
+      ...(doc.status === 'REJECTED'
+        ? { xmlSigned: null, cufe: null, trackId: null, issuedAt: now, ...(doc.type === 'INVOICE' ? { buyerSnapshot: Prisma.DbNull } : {}) }
+        : {}),
     },
   })
+  if (res.count !== 1) throw conflict('El documento se está procesando en este momento. Intenta de nuevo en unos minutos.')
   await processDocument(id)
   return getDocumentsForOrder(doc.orderId)
 }
@@ -481,11 +555,7 @@ export const getDocumentsForOrder = async (orderId) => {
   const docs = await prisma.electronicDocument.findMany({ where: { orderId }, select: PUBLIC_FIELDS, orderBy: { createdAt: 'asc' } })
   return {
     enabled: isEnabled(),
-    documents: docs.map((d) => ({
-      ...d,
-      // El ApplicationResponse completo es grande; el admin solo necesita el resumen.
-      dianResponse: d.dianResponse ? { ...d.dianResponse, applicationResponse: undefined } : null,
-    })),
+    documents: docs,
   }
 }
 
@@ -498,7 +568,7 @@ export const getDocumentXml = async (id) => {
 export const getDocumentPdf = async (id) => {
   const doc = await prisma.electronicDocument.findUnique({ where: { id } })
   if (!doc?.xmlSigned) throw notFound('El documento aún no tiene XML')
-  const pdf = await renderPdf(doc.xmlSigned, { validatedAt: doc.status === 'ACCEPTED' ? doc.updatedAt : undefined })
+  const pdf = await renderPdf(doc.xmlSigned, { validatedAt: validatedAt(doc) ?? undefined })
   return { pdf, fileName: `${doc.fullNumber}.pdf` }
 }
 
@@ -509,16 +579,4 @@ export const getCustomerInvoicePdf = async (userId, orderId) => {
   const doc = await prisma.electronicDocument.findUnique({ where: { orderId_type: { orderId, type: 'INVOICE' } } })
   if (!doc || doc.status !== 'ACCEPTED') throw notFound('La factura electrónica de esta orden aún no está disponible')
   return getDocumentPdf(doc.id)
-}
-
-/** Resumen de documentos por orden para listados (estado de la factura). */
-export const getInvoiceStatusByOrder = async (orderIds) => {
-  if (!orderIds.length) return {}
-  const docs = await prisma.electronicDocument.findMany({
-    where: { orderId: { in: orderIds } },
-    select: { orderId: true, type: true, status: true, fullNumber: true },
-  })
-  const out = {}
-  for (const d of docs) (out[d.orderId] ??= {})[d.type === 'INVOICE' ? 'invoice' : 'creditNote'] = { status: d.status, fullNumber: d.fullNumber }
-  return out
 }

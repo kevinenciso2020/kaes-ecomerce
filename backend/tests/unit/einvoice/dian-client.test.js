@@ -83,10 +83,18 @@ describe('createDianClient', () => {
     expect(r.applicationResponse).toBeNull()
   })
 
-  it('un SOAP Fault lanza DianSoapError', async () => {
+  it('un SOAP Fault del cliente (Sender) no es reintentable', async () => {
     const fault = responseEnvelope('<s:Fault><s:Code><s:Value>s:Sender</s:Value></s:Code><s:Reason><s:Text xml:lang="es-CO">Error de autenticación</s:Text></s:Reason></s:Fault>')
     const { client } = makeClient(fault, 500)
-    await expect(client.getStatus('x')).rejects.toThrow('DIAN: Error de autenticación')
+    const err = await client.getStatus('x').catch((e) => e)
+    expect(err.message).toBe('DIAN: Error de autenticación')
+    expect(err.retryable).toBe(false)
+  })
+
+  it('un SOAP Fault del servidor (Receiver) sí es reintentable', async () => {
+    const fault = responseEnvelope('<s:Fault><s:Code><s:Value>s:Receiver</s:Value></s:Code><s:Reason><s:Text>Servicio no disponible</s:Text></s:Reason></s:Fault>')
+    const { client } = makeClient(fault, 500)
+    expect((await client.getStatus('x').catch((e) => e)).retryable).toBe(true)
   })
 
   it('un error de red es reintentable', async () => {
