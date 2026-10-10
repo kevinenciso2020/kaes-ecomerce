@@ -98,6 +98,7 @@ router.delete('/categories/:id', validate(adminIdParam),        Catalog.deleteCa
 router.get ('/tax',               Tax.getTax)
 router.put ('/tax',               authorizeRole('SUPER_ADMIN'), validate(updateTaxRate), Tax.updateRate)
 router.post('/tax/apply-pending', authorizeRole('SUPER_ADMIN'), Tax.applyPending)
+router.post('/tax/check',         authorizeRole('SUPER_ADMIN'), Tax.checkNow)
 
 // ─────────────────────────────────────────
 // Products — CRUD admin

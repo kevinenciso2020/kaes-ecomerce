@@ -29,4 +29,9 @@ export const captureError = (err, context) => {
   Sentry.captureException(err, context ? { extra: context } : undefined)
 }
 
+export const captureMessage = (message, context) => {
+  if (!initialized) return
+  Sentry.captureMessage(message, { level: 'warning', extra: context })
+}
+
 export default Sentry

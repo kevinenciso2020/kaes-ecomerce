@@ -11,9 +11,12 @@ vi.mock('../../src/config/prisma.js', () => ({
   },
 }))
 
+vi.mock('../../src/services/tax-check.service.js', () => ({ checkTaxRate: vi.fn().mockResolvedValue({ status: 'unchanged' }) }))
+
 import request from 'supertest'
 import app from '../../src/app.js'
 import { prisma } from '../../src/config/prisma.js'
+import { checkTaxRate } from '../../src/services/tax-check.service.js'
 
 const token = (role) =>
   jwt.sign({ id: 'u1', email: 'u@a.com', role }, process.env.JWT_SECRET, { expiresIn: '15m' })
@@ -27,6 +30,7 @@ beforeEach(() => {
   prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
   prisma.$executeRaw.mockResolvedValue(3)
   prisma.$queryRaw.mockResolvedValue([])
+  checkTaxRate.mockResolvedValue({ status: 'unchanged' }) // resetAllMocks borra el valor del mock
 })
 
 describe('GET /admin/tax', () => {
@@ -76,5 +80,16 @@ describe('POST /admin/tax/apply-pending', () => {
     prisma.taxSetting.findUnique.mockResolvedValue({ ...row, pendingRate: null })
     const res = await request(app).post('/api/v1/admin/tax/apply-pending').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`)
     expect(res.status).toBe(409)
+  })
+})
+
+describe('POST /admin/tax/check', () => {
+  it('ADMIN → 403', async () => {
+    expect((await request(app).post('/api/v1/admin/tax/check').set('Authorization', `Bearer ${token('ADMIN')}`)).status).toBe(403)
+  })
+  it('SUPER_ADMIN fuerza la revisión', async () => {
+    const res = await request(app).post('/api/v1/admin/tax/check').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`)
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('unchanged')
   })
 })

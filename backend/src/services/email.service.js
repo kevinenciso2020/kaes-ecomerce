@@ -413,3 +413,27 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
 }
+
+/** Avisa al dueño de la tienda que la fuente oficial indica otra tasa de IVA. */
+export const sendTaxChangeAlert = async ({ currentRate, detectedRate, source }) => {
+  const to = process.env.TAX_ALERT_EMAIL || process.env.SMTP_FROM_EMAIL || FROM_EMAIL
+  if (!to) return false
+  try {
+    await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to,
+      subject: `Posible cambio del IVA: ${detectedRate} % (tu tienda usa ${currentRate} %)`,
+      html: `
+        <p>La fuente oficial indica una tarifa general de IVA de <strong>${detectedRate} %</strong>,
+        pero tu tienda usa <strong>${currentRate} %</strong>.</p>
+        <p>Fuente: ${source}</p>
+        <p>No se cambió ningún precio. Si el cambio es correcto, entra a
+        <strong>Admin → IVA</strong> y pulsa "Aplicar". Confírmalo antes con tu contador.</p>`,
+    })
+    log.info({ to, currentRate, detectedRate }, 'email.tax_alert_sent')
+    return true
+  } catch (error) {
+    log.error({ err: error }, 'email.tax_alert_failed')
+    return false
+  }
+}

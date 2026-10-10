@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 import { captureError } from '../config/sentry.js'
+import { checkTaxRate } from '../services/tax-check.service.js'
 import { expireStaleOrders } from '../services/payment.service.js'
 
 const log = logger.child({ component: 'maintenance' })
@@ -22,6 +23,7 @@ export const runMaintenance = async () => {
       purgedVerificationTokens: verification.count,
       purgedResetTokens: reset.count,
     }, 'maintenance.done')
+    await checkTaxRate() // se auto-limita a 1 vez cada 23 h y no lanza
   } catch (err) {
     log.error({ err }, 'maintenance.failed')
     captureError(err, { job: 'maintenance' })

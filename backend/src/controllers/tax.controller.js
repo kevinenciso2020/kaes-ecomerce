@@ -1,3 +1,4 @@
+import { checkTaxRate } from '../services/tax-check.service.js'
 import * as Tax from '../services/tax-settings.service.js'
 
 export const getTax = async (req, res, next) => {
@@ -18,5 +19,11 @@ export const updateRate = async (req, res, next) => {
 export const applyPending = async (req, res, next) => {
   try {
     res.json(await Tax.applyPendingRate(req.user.id))
+  } catch (err) { next(err) }
+}
+
+export const checkNow = async (req, res, next) => {
+  try {
+    res.json(await checkTaxRate({ force: true }))
   } catch (err) { next(err) }
 }
