@@ -448,6 +448,37 @@ describe('Validation guards on product payloads', () => {
     expect(res.status).toBe(400)
   })
 
+  it.each([[0], [-10], ['abc']])('POST /products rechaza basePrice %s', async (bp) => {
+    const res = await request(app).post('/api/v1/admin/products').set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Test', basePrice: bp, categorySlug: 'camisetas' })
+    expect(res.status).toBe(400)
+    expect(res.body.errors).toEqual(expect.arrayContaining([{ field: 'basePrice', message: 'El precio debe ser un número mayor que 0' }]))
+  })
+
+  it('POST /products rechaza basePrice sobre el tope técnico', async () => {
+    const res = await request(app).post('/api/v1/admin/products').set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Test', basePrice: 70000001, categorySlug: 'camisetas' })
+    expect(res.status).toBe(400)
+    expect(res.body.errors).toEqual(expect.arrayContaining([{ field: 'basePrice', message: 'El precio es demasiado alto para el sistema (máximo $70.000.000)' }]))
+  })
+
+  it.each([[1], [50], [99], [70000000]])('POST /products acepta basePrice %s', async (bp) => {
+    const res = await request(app).post('/api/v1/admin/products').set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Test', basePrice: bp, categorySlug: 'camisetas' })
+    expect(JSON.stringify(res.body.errors || [])).not.toContain('basePrice')
+  })
+
+  it.each([[0], [-10], ['abc'], [70000001]])('PUT /products/:id rechaza basePrice %s', async (bp) => {
+    const res = await request(app).put('/api/v1/admin/products/p1').set('Authorization', `Bearer ${adminToken()}`).send({ basePrice: bp })
+    expect(res.status).toBe(400)
+    expect(res.body.errors.some((e) => e.field === 'basePrice')).toBe(true)
+  })
+
+  it.each([[1], [50], [70000000]])('PUT /products/:id acepta basePrice %s', async (bp) => {
+    const res = await request(app).put('/api/v1/admin/products/p1').set('Authorization', `Bearer ${adminToken()}`).send({ basePrice: bp })
+    expect(JSON.stringify(res.body.errors || [])).not.toContain('basePrice')
+  })
+
   it('POST /products rejects negative price', async () => {
     const res = await request(app)
       .post('/api/v1/admin/products')
@@ -554,11 +585,24 @@ describe('basePrice de variantes: validación', () => {
   const auth = () => ({ Authorization: `Bearer ${adminToken()}` })
   const variantsWith = (basePrice) => [{ size: 'M', color: 'Azul', stock: 1, basePrice }]
 
-  it.each([[-5], ['abc'], [0], [60000000]])('POST rechaza basePrice de variante %s', async (bp) => {
+  it.each([[-5], ['abc'], [0]])('POST rechaza basePrice de variante %s', async (bp) => {
     const res = await request(app).post('/api/v1/admin/products').set(auth())
       .send({ name: 'Camiseta', basePrice: 20000, categorySlug: 'c', variants: variantsWith(bp) })
     expect(res.status).toBe(400)
-    expect(JSON.stringify(res.body)).toContain('El precio de la variante debe ser un número entre $1 y $50.000.000')
+    expect(JSON.stringify(res.body)).toContain('El precio debe ser un número mayor que 0')
+  })
+
+  it('POST rechaza basePrice de variante sobre el tope técnico', async () => {
+    const res = await request(app).post('/api/v1/admin/products').set(auth())
+      .send({ name: 'Camiseta', basePrice: 20000, categorySlug: 'c', variants: variantsWith(70000001) })
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toContain('El precio es demasiado alto para el sistema (máximo $70.000.000)')
+  })
+
+  it.each([[1], [50], [70000000]])('POST acepta basePrice de variante %s', async (bp) => {
+    const res = await request(app).post('/api/v1/admin/products').set(auth())
+      .send({ name: 'Camiseta', basePrice: 20000, categorySlug: 'c', variants: variantsWith(bp) })
+    expect(JSON.stringify(res.body)).not.toContain('El precio')
   })
 
   it('PUT rechaza basePrice de variante negativo (variants como JSON string)', async () => {

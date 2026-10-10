@@ -11,15 +11,27 @@ const imageUrlsRule = () =>
       return true
     })
 
-// Precio propio de una variante (opcional): si viene, número finito entre $1 y $50.000.000.
+// Sin mínimo ni máximo de negocio: cualquier precio mayor que 0. El único tope es técnico:
+// las columnas son Decimal(10,2) (máx. 99.999.999,99) y precio final = base × (1 + IVA ≤ 30 %).
+export const MAX_BASE_PRICE = 70000000
+const MSG_PRECIO_MIN = 'El precio debe ser un número mayor que 0'
+const MSG_PRECIO_MAX = 'El precio es demasiado alto para el sistema (máximo $70.000.000)'
+
+const checkBasePrice = (v) => {
+  const n = typeof v === 'number' || typeof v === 'string' ? Number(v) : NaN
+  if (typeof v === 'string' && v.trim() === '') throw new Error(MSG_PRECIO_MIN)
+  if (!Number.isFinite(n) || n <= 0) throw new Error(MSG_PRECIO_MIN)
+  if (n > MAX_BASE_PRICE) throw new Error(MSG_PRECIO_MAX)
+  return true
+}
+
+// Precio propio de una variante (opcional): si viene, número finito mayor que 0 y bajo el tope técnico.
 const assertVariantPrices = (variants) => {
   for (const variant of variants) {
     const bp = variant?.basePrice
     if (bp === undefined || bp === null || bp === '') continue
     const n = typeof bp === 'number' || typeof bp === 'string' ? Number(bp) : NaN
-    if (!Number.isFinite(n) || n <= 0 || n > 50000000) {
-      throw new Error('El precio de la variante debe ser un número entre $1 y $50.000.000')
-    }
+    checkBasePrice(n)
   }
 }
 
@@ -96,7 +108,7 @@ export const adminCreateProduct = [
     .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
   body('basePrice')
     .notEmpty().withMessage('El precio sin IVA es requerido')
-    .isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+    .custom(checkBasePrice),
   taxRateRule(),
   rejectObsoletePrice(),
   imageUrlsRule(),
@@ -157,7 +169,7 @@ export const adminUpdateProduct = [
   body('description')
     .optional({ nullable: true }).trim()
     .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
-  body('basePrice').optional().isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+  body('basePrice').optional().custom(checkBasePrice),
   taxRateRule(),
   rejectObsoletePrice(),
   imageUrlsRule(),

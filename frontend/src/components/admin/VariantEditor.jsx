@@ -137,7 +137,7 @@ export default function VariantEditor({ colors = [], sizes = [], cells = {}, onC
               <div key={variantKey(c.size, c.color)} className="ve-adv-row">
                 <span className="ve-adv-label">{c.color ? <ColorSwatch hex={c.colorHex} name={label} size={10} /> : label}</span>
                 <input type="text" placeholder="SKU" value={cell.sku || ''} maxLength={60} onChange={(e) => update(c.size, c.color, 'sku', e.target.value)} />
-                <input type="number" min="0" step="100" placeholder="Precio sin IVA (vacío = el del producto)" value={cell.basePrice ?? ''} onChange={(e) => update(c.size, c.color, 'basePrice', e.target.value)} />
+                <input type="number" min="0" step="any" placeholder="Precio sin IVA (vacío = el del producto)" value={cell.basePrice ?? ''} onChange={(e) => update(c.size, c.color, 'basePrice', e.target.value)} />
               </div>
             )
           })}

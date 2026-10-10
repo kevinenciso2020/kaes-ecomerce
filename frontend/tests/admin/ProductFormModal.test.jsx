@@ -32,6 +32,40 @@ describe('ProductFormModal: precio sin IVA', () => {
     expect(container.querySelector('.pf-field small').textContent).toContain('Precio final: $20.000')
   })
 
+  const enviar = async (valor) => {
+    const { container } = await setup()
+    fireEvent.change(screen.getByPlaceholderText('50000'), { target: { value: valor } })
+    fireEvent.change(screen.getByPlaceholderText(/Camiseta/), { target: { value: 'Camisa lino' } })
+    fireEvent.change(container.querySelector('select'), { target: { value: 'c1' } })
+    fireEvent.submit(container.querySelector('form'))
+    return container
+  }
+
+  it('acepta un precio de $50 (sin mínimo de negocio)', async () => {
+    const container = await enviar('50')
+    await waitFor(() => expect(api.admin.createProduct).toHaveBeenCalledTimes(1))
+    expect(container.textContent).not.toContain('Precio mínimo')
+  })
+
+  it('el precio 0 muestra el error nuevo y no guarda', async () => {
+    const container = await enviar('0')
+    await waitFor(() => expect(container.textContent).toContain('Escribe un precio mayor que 0'))
+    expect(api.admin.createProduct).not.toHaveBeenCalled()
+  })
+
+  it('rechaza precios sobre el tope técnico', async () => {
+    const container = await enviar('70000001')
+    await waitFor(() => expect(container.textContent).toContain('máximo $70.000.000'))
+    expect(api.admin.createProduct).not.toHaveBeenCalled()
+  })
+
+  it('el input de precio no impone mínimo 100 ni paso de 100', async () => {
+    await setup()
+    const input = screen.getByPlaceholderText('50000')
+    expect(input.getAttribute('min')).not.toBe('100')
+    expect(input.getAttribute('step')).toBe('any')
+  })
+
   it('envía basePrice y taxRate, sin price', async () => {
     const { container } = await setup()
     fireEvent.change(screen.getByPlaceholderText('50000'), { target: { value: '20000' } })

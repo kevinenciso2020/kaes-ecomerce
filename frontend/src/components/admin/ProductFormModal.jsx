@@ -3,7 +3,7 @@ import { api } from '../../lib/api.js'
 import ImageUploader from './ImageUploader.jsx'
 import VariantEditor, { buildCombos, variantKey } from './VariantEditor.jsx'
 import ColorSwatch from './ColorSwatch.jsx'
-import { finalPrice, formatCOP } from '../../lib/tax.js'
+import { finalPrice, formatCOP, MAX_BASE_PRICE, MSG_PRECIO_MAX } from '../../lib/tax.js'
 
 /**
  * Crear / editar un producto.
@@ -166,7 +166,8 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
     const errs = {}
     if (name.trim().length < 2) errs.name = 'Mínimo 2 caracteres'
     const p = Number(price)
-    if (!price || Number.isNaN(p) || p < 100) errs.price = 'Precio mínimo $100'
+    if (!price || Number.isNaN(p) || p <= 0) errs.price = 'Escribe un precio mayor que 0'
+    else if (p > MAX_BASE_PRICE) errs.price = MSG_PRECIO_MAX
     if (!categoryId) errs.category = 'Elige una categoría'
     if (mode === 'variants' && selectedColors.size === 0 && selectedSizes.size === 0) {
       errs.variants = 'Elige al menos un color o una talla (o cambia a producto simple)'
@@ -255,7 +256,7 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
               <div className="pf-field">
                 <label className={`pf-field ${fieldErrors.price ? 'invalid' : ''}`}>
                   <span>Precio sin IVA (COP) *</span>
-                  <input type="number" inputMode="numeric" min="100" step="100" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="50000" />
+                  <input type="number" inputMode="decimal" min="1" step="any" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="50000" />
                 </label>
                 {Number(price) > 0 && (rate == null ? (
                   <small>Calculando IVA…</small>
