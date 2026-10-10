@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js'
 import { buildQuote } from './pricing.service.js'
+import { computeNitDv } from './einvoice/nit.js'
 
 export const PRIVACY_POLICY_VERSION = process.env.PRIVACY_POLICY_VERSION || '2026-09-21'
 
@@ -10,7 +11,21 @@ const badRequest = (message, extra = {}) =>
 export const quoteOrder = async ({ items, couponCode }) =>
   buildQuote({ items, couponCode }, { strictCoupon: false })
 
-export const createOrder = async (userId, { items, couponCode, shippingAddressId, notes, address, acceptTerms }) => {
+/** Datos del adquiriente para la factura electrónica (null = consumidor final). */
+export const buyerSnapshot = (buyer) => {
+  if (!buyer || !buyer.docType || !buyer.docNumber) return {}
+  const docNumber = String(buyer.docNumber).trim()
+  const isNit = buyer.docType === '31'
+  return {
+    buyerDocType: buyer.docType,
+    buyerDocNumber: docNumber,
+    buyerDv: isNit ? computeNitDv(docNumber) : null,
+    buyerName: String(buyer.name).trim().slice(0, 450),
+    buyerPersonType: buyer.personType || (isNit ? '1' : '2'),
+  }
+}
+
+export const createOrder = async (userId, { items, couponCode, shippingAddressId, notes, address, acceptTerms, buyer }) => {
   if (acceptTerms !== true && acceptTerms !== 'true') {
     throw badRequest('Debes aceptar los términos y la política de tratamiento de datos', { code: 'TERMS_REQUIRED' })
   }
@@ -73,6 +88,7 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
         shippingAddressId: finalShippingAddressId,
         notes: notes || null,
         termsAcceptedAt: now,
+        ...buyerSnapshot(buyer),
         items: {
           create: quote.items.map((i) => ({
             productId: i.productId,
@@ -81,6 +97,7 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
             price: i.unitPrice,
             size: i.size,
             color: i.color,
+            taxRate: i.taxRate,
             variantSnapshot: i.variantId
               ? { sku: i.sku, colorHex: i.colorHex, basePrice: i.basePrice }
               : undefined,
@@ -113,6 +130,8 @@ export const getOrderById = async (userId, orderId) => {
       items:           { include: { product: { include: { images: true } } } },
       payment:         true,
       shippingAddress: true,
+      // Solo documentos validados por la DIAN (para el botón "Descargar factura").
+      electronicDocuments: { where: { status: 'ACCEPTED' }, select: { type: true, fullNumber: true } },
     },
   })
 

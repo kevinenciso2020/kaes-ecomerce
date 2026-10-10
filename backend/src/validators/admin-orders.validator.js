@@ -40,3 +40,9 @@ export const adminUpdateOrderStatus = [
     .trim()
     .isLength({ max: 1000 }).withMessage('La nota no puede superar los 1000 caracteres'),
 ]
+
+export const adminEinvoiceDocId = [
+  param('docId')
+    .isString().notEmpty().withMessage('ID de documento requerido')
+    .isLength({ min: 1, max: 100 }).withMessage('ID inválido'),
+]

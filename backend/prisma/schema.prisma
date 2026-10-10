@@ -248,12 +248,20 @@ model Order {
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
   shippingAddressId String?
+  // Datos del adquiriente para la factura electrónica (snapshot al comprar).
+  // Todos nulos = "consumidor final" (222222222222).
+  buyerDocType      String?          @db.VarChar(2)
+  buyerDocNumber    String?          @db.VarChar(20)
+  buyerDv           String?          @db.VarChar(1)
+  buyerName         String?          @db.VarChar(450)
+  buyerPersonType   String?          @db.VarChar(1)
 
-  user            User             @relation(fields: [userId], references: [id])
-  items           OrderItem[]
-  payment         Payment?
-  shippingAddress Address?         @relation(fields: [shippingAddressId], references: [id])
-  statusLogs      OrderStatusLog[]
+  user                User                 @relation(fields: [userId], references: [id])
+  items               OrderItem[]
+  payment             Payment?
+  shippingAddress     Address?             @relation(fields: [shippingAddressId], references: [id])
+  statusLogs          OrderStatusLog[]
+  electronicDocuments ElectronicDocument[]
 
   @@index([status])
   @@index([userId])
@@ -263,15 +271,17 @@ model Order {
 }
 
 model OrderItem {
-  id              String  @id @default(cuid())
+  id              String   @id @default(cuid())
   orderId         String
   productId       String
   variantId       String?
   quantity        Int
-  price           Decimal @db.Decimal(10, 2)
+  price           Decimal  @db.Decimal(10, 2)
   size            String?
   color           String?
   variantSnapshot Json?
+  // Tarifa de IVA vigente al comprar (null en órdenes anteriores a la facturación electrónica).
+  taxRate         Decimal? @db.Decimal(5, 2)
 
   order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product Product         @relation(fields: [productId], references: [id])
@@ -467,4 +477,61 @@ model TaxSetting {
   pendingRate     Decimal?  @db.Decimal(5, 2)
 
   @@map("tax_settings")
+}
+
+enum ElectronicDocumentType {
+  INVOICE
+  CREDIT_NOTE
+}
+
+enum ElectronicDocumentStatus {
+  PENDING
+  SENT
+  ACCEPTED
+  REJECTED
+  ERROR
+}
+
+/// Factura electrónica o nota crédito enviada a la DIAN. Una por (orden, tipo).
+model ElectronicDocument {
+  id            String                   @id @default(cuid())
+  orderId       String
+  type          ElectronicDocumentType
+  status        ElectronicDocumentStatus @default(PENDING)
+  prefix        String?
+  number        Int?
+  fullNumber    String?
+  cufe          String?
+  environment   String?                  @db.VarChar(1)
+  issuedAt      DateTime?
+  xmlSigned     String?                  @db.Text
+  fileName      String?
+  trackId       String?
+  dianResponse  Json?
+  attempts      Int                      @default(0)
+  lastError     String?                  @db.Text
+  nextAttemptAt DateTime?
+  emailedAt     DateTime?
+  reason        String?
+  referenceId   String?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  order     Order                @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  reference ElectronicDocument?  @relation("CreditNoteOf", fields: [referenceId], references: [id], onDelete: Restrict)
+  notes     ElectronicDocument[] @relation("CreditNoteOf")
+
+  @@unique([orderId, type])
+  @@unique([prefix, number])
+  @@index([status, nextAttemptAt])
+  @@map("electronic_documents")
+}
+
+/// Consecutivo por prefijo (sin huecos): se toma con SELECT ... FOR UPDATE.
+model InvoiceSequence {
+  prefix    String   @id
+  next      Int
+  updatedAt DateTime @updatedAt
+
+  @@map("invoice_sequences")
 }

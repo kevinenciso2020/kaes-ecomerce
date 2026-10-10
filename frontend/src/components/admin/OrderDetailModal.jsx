@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import OrderStatusTimeline from './OrderStatusTimeline.jsx'
+import EinvoicePanel from './EinvoicePanel.jsx'
 
 const STATUS_LABELS = {
   PENDING:    { label: 'Pendiente',   cls: 'pending'    },
@@ -130,6 +131,8 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, onRes
               </div>
             )}
           </section>
+
+          <EinvoicePanel order={order} showToast={showToast} />
 
           <section className="detail-section">
             <h3>Productos ({order.items?.length || 0})</h3>

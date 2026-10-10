@@ -1,4 +1,5 @@
 import * as OrderService from '../services/order.service.js'
+import { getCustomerInvoicePdf } from '../services/einvoice/einvoice.service.js'
 
 export const quoteOrder = async (req, res, next) => {
   try {
@@ -25,5 +26,14 @@ export const getOrderById = async (req, res, next) => {
   try {
     const order = await OrderService.getOrderById(req.user.id, req.params.id)
     res.json(order)
+  } catch (err) { next(err) }
+}
+
+export const getInvoicePdf = async (req, res, next) => {
+  try {
+    const { pdf, fileName } = await getCustomerInvoicePdf(req.user.id, req.params.id)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+    res.send(pdf)
   } catch (err) { next(err) }
 }

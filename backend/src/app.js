@@ -73,6 +73,8 @@ const corsOptions = {
     callback(null, getAllowedOrigins().includes(origin))
   },
   credentials: true,
+  // El frontend lee el nombre del archivo al descargar facturas (PDF/XML).
+  exposedHeaders: ['Content-Disposition'],
 }
 app.use(cors(corsOptions))
 

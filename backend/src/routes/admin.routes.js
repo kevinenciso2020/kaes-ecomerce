@@ -42,7 +42,7 @@ import {
 } from '../validators/admin-products.validator.js'
 
 import {
-  adminListOrders, adminOrderId, adminUpdateOrderStatus,
+  adminListOrders, adminOrderId, adminUpdateOrderStatus, adminEinvoiceDocId,
 } from '../validators/admin-orders.validator.js'
 
 import {
@@ -123,6 +123,12 @@ router.get   ('/orders',                            validate(adminListOrders),  
 router.get   ('/orders/:id',                        validate(adminOrderId),          AdminOrders.getOrderById)
 router.put   ('/orders/:id/status',                 validate(adminUpdateOrderStatus), AdminOrders.updateOrderStatus)
 router.patch ('/orders/:id/resolve-review',         validate(adminOrderId),          AdminOrders.resolveReview)
+router.get   ('/orders/:id/einvoice',               validate(adminOrderId),          AdminOrders.getOrderEinvoice)
+
+// Facturación electrónica DIAN
+router.post  ('/einvoice/:docId/retry',             validate(adminEinvoiceDocId),    AdminOrders.retryEinvoice)
+router.get   ('/einvoice/:docId/xml',               validate(adminEinvoiceDocId),    AdminOrders.downloadEinvoiceXml)
+router.get   ('/einvoice/:docId/pdf',               validate(adminEinvoiceDocId),    AdminOrders.downloadEinvoicePdf)
 
 // ─────────────────────────────────────────
 // Dashboard — agregaciones

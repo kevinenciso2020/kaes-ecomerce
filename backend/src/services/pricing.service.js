@@ -150,6 +150,7 @@ export const buildQuote = async ({ items, couponCode }, { db = prisma, strictCou
       quantity: line.quantity,
       basePrice,
       unitPrice,
+      taxRate: Number(product.taxRate ?? 0),
       lineTotal: roundMoney(unitPrice * line.quantity),
     }
   })

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { isAdminRole } from '../../lib/roles.js'
 import { api, bootstrapAuth } from '../../lib/api.js'
 import { escapeHtml } from '../../lib/sanitize.js'
+import { EINVOICE_STATUS } from './EinvoicePanel.jsx'
 import OrderDetailModal from './OrderDetailModal.jsx'
 
 const STATUS_LABELS = {
@@ -223,7 +224,15 @@ export default function OrderList() {
                       }`}>{{ COMPLETED: 'Pagado', FAILED: 'Fallido', PENDING: 'Pendiente', REFUNDED: 'Reembolsado' }[o.payment.status] || o.payment.status}</span>
                     ) : <span className="muted">—</span>}
                   </td>
-                  <td><span className={`status-badge ${s.cls}`}>{s.label}</span></td>
+                  <td>
+                    <span className={`status-badge ${s.cls}`}>{s.label}</span>
+                    {(() => {
+                      const inv = o.electronicDocuments?.find((d) => d.type === 'INVOICE')
+                      if (!inv) return null
+                      const e = EINVOICE_STATUS[inv.status] ?? { label: inv.status, cls: '' }
+                      return <span className={`status-badge small einvoice-tag ${e.cls}`} title={`Factura electrónica ${inv.fullNumber || ''}: ${e.label}`}>FE {inv.status === 'ACCEPTED' ? '✓' : e.label}</span>
+                    })()}
+                  </td>
                   <td className="muted">{new Date(o.createdAt).toLocaleDateString('es-CO')}</td>
                   <td>
                     <div className="action-buttons">

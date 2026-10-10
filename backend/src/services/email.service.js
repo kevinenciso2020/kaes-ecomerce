@@ -415,6 +415,61 @@ function escapeHtml(str) {
 }
 
 /** Avisa al dueño de la tienda que la fuente oficial indica otra tasa de IVA. */
+/**
+ * Envía al adquiriente la factura / nota crédito electrónica: el ZIP con el
+ * AttachedDocument (XML validado por la DIAN) y la representación gráfica en PDF.
+ */
+export const sendElectronicInvoice = async ({ to, name, fullNumber, isCreditNote, orderId, zipFileName, zipBuffer, pdfBuffer }) => {
+  if (!to) return false
+  const label = isCreditNote ? 'Nota crédito electrónica' : 'Factura electrónica de venta'
+  const orderNumber = orderId ? orderId.slice(-8).toUpperCase() : ''
+  try {
+    await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to,
+      subject: `${label} ${fullNumber}${orderNumber ? ` - pedido #${orderNumber}` : ''} - ${FROM_NAME}`,
+      html: `
+        <p>Hola <strong>${escapeHtml(name || '')}</strong>,</p>
+        <p>Adjuntamos la <strong>${label.toLowerCase()} ${escapeHtml(fullNumber)}</strong>${orderNumber ? ` de tu pedido #${orderNumber}` : ''},
+        validada por la DIAN.</p>
+        <p>El archivo ZIP contiene el documento electrónico (XML) y el PDF es su representación gráfica.</p>
+        <p style="color:#999;font-size:12px;">© ${new Date().getFullYear()} ${FROM_NAME}</p>`,
+      attachments: [
+        { filename: zipFileName, content: zipBuffer, contentType: 'application/zip' },
+        { filename: `${fullNumber}.pdf`, content: pdfBuffer, contentType: 'application/pdf' },
+      ],
+    })
+    log.info({ to, fullNumber }, 'email.einvoice_sent')
+    return true
+  } catch (error) {
+    log.error({ err: error, fullNumber }, 'email.einvoice_failed')
+    return false
+  }
+}
+
+/** Aviso al administrador cuando la DIAN rechaza un documento o se agotan los reintentos. */
+export const sendEinvoiceAlert = async ({ fullNumber, orderId, type, problem, errors = [] }) => {
+  const to = process.env.EINVOICE_ALERT_EMAIL || process.env.TAX_ALERT_EMAIL || FROM_EMAIL
+  if (!to) return false
+  try {
+    await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to,
+      subject: `Factura electrónica con problemas: ${fullNumber || orderId}`,
+      html: `
+        <p>El documento ${type === 'CREDIT_NOTE' ? 'nota crédito' : 'factura'} <strong>${escapeHtml(fullNumber || '(sin número)')}</strong>
+        del pedido <strong>${escapeHtml(orderId)}</strong> requiere atención: ${escapeHtml(problem)}</p>
+        ${errors.length ? `<ul>${errors.slice(0, 20).map((e) => `<li>${escapeHtml(e)}</li>`).join('')}</ul>` : ''}
+        <p>Revísalo en <strong>Admin → Órdenes</strong>, corrige el dato y pulsa "Reintentar".</p>`,
+    })
+    log.info({ to, fullNumber, orderId }, 'email.einvoice_alert_sent')
+    return true
+  } catch (error) {
+    log.error({ err: error, orderId }, 'email.einvoice_alert_failed')
+    return false
+  }
+}
+
 export const sendTaxChangeAlert = async ({ currentRate, detectedRate, source }) => {
   const to = process.env.TAX_ALERT_EMAIL || FROM_EMAIL
   if (!to) return false

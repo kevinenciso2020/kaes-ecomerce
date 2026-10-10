@@ -5,6 +5,7 @@ import { captureError } from '../config/sentry.js'
 import { tryDeductStockForItems } from './stock.service.js'
 import { consumeCoupon } from './coupon.service.js'
 import { sendOrderConfirmation } from './email.service.js'
+import { triggerInvoice } from './einvoice/einvoice.service.js'
 
 const log = logger.child({ component: 'payments' })
 
@@ -231,6 +232,8 @@ export const processPaymentUpdate = async ({
     sendOrderConfirmation(orderId).catch((err) =>
       log.error({ err, orderId }, 'payment.confirmation_email_failed'),
     )
+    // Factura electrónica (no hace nada si EINVOICE_ENABLED no es true).
+    triggerInvoice(orderId)
   }
 
   return { ...result, duplicate: false, orderId }

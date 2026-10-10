@@ -16,7 +16,8 @@ export const SITE_CONFIG = {
   description: 'Tienda de ropa online. Ropa con estilo atemporal.',
 
   // Datos legales — usados en páginas /legal/* y emails
-  nit:         '[NIT]',
+  // PUBLIC_LEGAL_NIT: el mismo NIT (con DV) que EINVOICE_ISSUER_NIT del backend.
+  nit:         import.meta.env.PUBLIC_LEGAL_NIT || '[NIT]',
   address:     '[DIRECCIÓN]',
   city:        '[CIUDAD]',
   department:  '[DEPARTAMENTO]',

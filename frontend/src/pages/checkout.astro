@@ -2,6 +2,7 @@
 import ShopLayout from '../layouts/ShopLayout.astro'
 import UbicacionSelect from '../components/UbicacionSelect.jsx'
 import Icon from '../components/ui/Icon.astro'
+import { BUYER_DOC_TYPES } from '../lib/nit.js'
 ---
 
 <ShopLayout title="Checkout">
@@ -47,6 +48,32 @@ import Icon from '../components/ui/Icon.astro'
           <UbicacionSelect client:load id="ubicacion" required={true} />
           <input type="hidden" id="address-departamento" />
           <input type="hidden" id="address-municipio" />
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend class="section-title">Factura electrónica</legend>
+          <label class="consent-row">
+            <input type="checkbox" id="wants-invoice" aria-controls="invoice-fields" />
+            <span>¿Necesitas la factura a tu nombre o a nombre de tu empresa? Si no la marcas, se emite a <strong>consumidor final</strong>.</span>
+          </label>
+          <div id="invoice-fields" hidden>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label" for="buyer-doc-type">Tipo de documento</label>
+                <select id="buyer-doc-type" class="form-input">
+                  {BUYER_DOC_TYPES.map((t) => <option value={t.value}>{t.label}</option>)}
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="buyer-doc-number">Número <span id="buyer-dv" class="buyer-dv" hidden></span></label>
+                <input type="text" id="buyer-doc-number" class="form-input" placeholder="Sin puntos ni dígito de verificación" inputmode="numeric" autocomplete="off" maxlength="20" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="buyer-name" id="buyer-name-label">Nombre completo</label>
+              <input type="text" id="buyer-name" class="form-input" placeholder="Como aparece en tu documento o RUT" maxlength="450" />
+            </div>
+          </div>
         </fieldset>
 
         <fieldset class="form-section">
@@ -147,6 +174,7 @@ import Icon from '../components/ui/Icon.astro'
   import { applyCoupon, removeCoupon, getCouponCode } from '../stores/coupon.store.js'
   import { api, ApiError, bootstrapAuth } from '../lib/api.js'
   import { escapeHtml } from '../lib/sanitize.js'
+  import { computeNitDv, buildBuyer } from '../lib/nit.js'
 
   const $ = (id) => document.getElementById(id)
   const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
@@ -159,6 +187,29 @@ import Icon from '../components/ui/Icon.astro'
     const detail = e.detail
     if ($('address-departamento')) $('address-departamento').value = detail?.departamento || ''
     if ($('address-municipio')) $('address-municipio').value = detail?.municipio || ''
+  })
+
+  // Datos de facturación (opcionales): sin ellos se factura a consumidor final.
+  const syncInvoiceFields = () => {
+    const wants = $('wants-invoice')?.checked
+    if ($('invoice-fields')) $('invoice-fields').hidden = !wants
+    const isNit = $('buyer-doc-type')?.value === '31'
+    const dv = isNit ? computeNitDv($('buyer-doc-number')?.value) : ''
+    if ($('buyer-dv')) {
+      $('buyer-dv').hidden = !dv
+      $('buyer-dv').textContent = dv ? `DV ${dv}` : ''
+    }
+    if ($('buyer-name-label')) $('buyer-name-label').textContent = isNit ? 'Razón social' : 'Nombre completo'
+    if ($('buyer-doc-number')) $('buyer-doc-number').inputMode = ['41', '47', '48'].includes($('buyer-doc-type')?.value) ? 'text' : 'numeric'
+  }
+  ;['wants-invoice', 'buyer-doc-type', 'buyer-doc-number'].forEach((id) => {
+    $(id)?.addEventListener('input', syncInvoiceFields)
+    $(id)?.addEventListener('change', syncInvoiceFields)
+  })
+  $('wants-invoice')?.addEventListener('change', () => {
+    if ($('wants-invoice').checked && $('buyer-name') && !$('buyer-name').value) {
+      $('buyer-name').value = $('full-name')?.value.trim() || ''
+    }
   })
 
   const cartPayload = () =>
@@ -338,6 +389,17 @@ import Icon from '../components/ui/Icon.astro'
       return showError(errorEl, 'Debes aceptar los términos y autorizar el tratamiento de tus datos para continuar.')
     }
 
+    let buyer
+    if ($('wants-invoice')?.checked) {
+      const result = buildBuyer({
+        docType: $('buyer-doc-type')?.value,
+        docNumber: $('buyer-doc-number')?.value,
+        name: $('buyer-name')?.value,
+      })
+      if (result.error) return showError(errorEl, result.error)
+      buyer = result.buyer
+    }
+
     const method = document.querySelector('input[name="payment"]:checked')?.value || 'wompi'
     placing = true
     btn.disabled = true
@@ -350,6 +412,7 @@ import Icon from '../components/ui/Icon.astro'
         couponCode: getCouponCode() || undefined,
         acceptTerms: true,
         address: { fullName, phone, street, zipCode: zipCode || undefined, departamento, municipio, label: 'Casa' },
+        ...(buyer ? { buyer } : {}),
       })
 
       btn.textContent = 'Conectando con la pasarela…'
@@ -519,6 +582,9 @@ import Icon from '../components/ui/Icon.astro'
   .consent-row { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.8rem; color: var(--color-gray-600); margin: 0 0 1rem; line-height: 1.45; cursor: pointer; }
   .consent-row input { margin-top: 0.2rem; width: 18px; height: 18px; flex-shrink: 0; }
   .consent-row a { text-decoration: underline; }
+  #invoice-fields { display: grid; gap: 0.85rem; }
+  #invoice-fields[hidden] { display: none; }
+  .buyer-dv { font-weight: 600; color: var(--color-gray-600); margin-left: 0.35rem; }
   .checkout-hint { font-size: 0.75rem; color: var(--color-gray-500); text-align: center; margin-top: 0.6rem; }
   .tax-note { font-size: 0.72rem; color: var(--color-gray-500); text-align: right; margin: 0.25rem 0 0; }
   .payment-option[hidden] { display: none; }

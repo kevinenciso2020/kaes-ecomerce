@@ -114,3 +114,15 @@ Orden estricto:
 - [ ] 8. Configura `TAX_ALERT_EMAIL` en Railway.
 
 Advertencia: cambia la **tasa general** con los admins fuera del panel de productos. Así evitas una carrera de milisegundos que dejaría un producto guardado con la tasa anterior.
+
+## 10. Facturación electrónica DIAN
+
+Ya está desplegada pero **apagada** (`EINVOICE_ENABLED=false`). Para activarla:
+
+1. Haz los trámites: RUT con responsabilidad 52, certificado de firma digital, registro como
+   "software propio" en el portal de habilitación y resolución de numeración.
+2. Configura las variables `EINVOICE_*` en Railway y `PUBLIC_LEGAL_NIT` en Vercel.
+3. Corre `npm run einvoice:check`, envía el set con `npm run einvoice:habilitacion` y luego cambia a
+   producción.
+
+La guía completa está en `docs/FACTURACION_ELECTRONICA.md`.

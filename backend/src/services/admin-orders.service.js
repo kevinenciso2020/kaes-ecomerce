@@ -5,6 +5,9 @@ const ORDER_INCLUDE = {
   user: {
     select: { id: true, name: true, email: true, phone: true },
   },
+  electronicDocuments: {
+    select: { type: true, status: true, fullNumber: true },
+  },
   items: {
     include: {
       product: {

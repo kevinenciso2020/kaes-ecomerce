@@ -1,4 +1,9 @@
 import { body, param } from 'express-validator'
+import { computeNitDv } from '../services/einvoice/nit.js'
+
+// Tipos de documento del adquiriente (tabla 13.2.1 del Anexo DIAN 1.9).
+export const BUYER_DOC_TYPES = ['13', '22', '31', '41', '47', '48']
+const ALPHANUMERIC_DOC_TYPES = ['41', '47', '48']
 
 export const createOrder = [
   body('items')
@@ -77,7 +82,36 @@ export const createOrder = [
   body('shippingAddressId')
     .optional()
     .isString().withMessage('El ID de dirección debe ser válido')
-    .isLength({ min: 1 }).withMessage('El ID de dirección debe ser válido')
+    .isLength({ min: 1 }).withMessage('El ID de dirección debe ser válido'),
+  // Datos para la factura electrónica (opcional: sin ellos se factura a consumidor final).
+  body('buyer')
+    .optional({ nullable: true })
+    .isObject().withMessage('Los datos de facturación deben ser un objeto'),
+  body('buyer.docType')
+    .if(body('buyer').exists({ values: 'null' }))
+    .isIn(BUYER_DOC_TYPES).withMessage('Tipo de documento no válido'),
+  body('buyer.docNumber')
+    .if(body('buyer').exists({ values: 'null' }))
+    .trim()
+    .custom((value, { req }) => {
+      const type = req.body.buyer?.docType
+      const v = String(value ?? '')
+      if (ALPHANUMERIC_DOC_TYPES.includes(type)) return /^[A-Za-z0-9]{3,20}$/.test(v)
+      return /^[1-9]\d{4,14}$/.test(v)
+    })
+    .withMessage('Número de documento no válido (solo números, sin puntos, sin ceros a la izquierda)'),
+  body('buyer.dv')
+    .optional({ values: 'falsy' })
+    .trim()
+    .custom((value, { req }) => req.body.buyer?.docType === '31' && value === computeNitDv(req.body.buyer?.docNumber))
+    .withMessage('El dígito de verificación no corresponde al NIT'),
+  body('buyer.name')
+    .if(body('buyer').exists({ values: 'null' }))
+    .trim()
+    .isLength({ min: 3, max: 450 }).withMessage('El nombre o razón social debe tener entre 3 y 450 caracteres'),
+  body('buyer.personType')
+    .optional({ values: 'falsy' })
+    .isIn(['1', '2']).withMessage('Tipo de persona no válido'),
 ]
 
 export const quoteOrder = [

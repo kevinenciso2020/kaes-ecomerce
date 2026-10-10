@@ -68,7 +68,7 @@ export class ApiError extends Error {
   }
 }
 
-const request = async (endpoint, options = {}) => {
+const request = async (endpoint, { raw = false, ...options } = {}) => {
   const isFormData = options.body instanceof FormData
 
   const config = {
@@ -115,7 +115,20 @@ const request = async (endpoint, options = {}) => {
     throw new ApiError(message, { status: res.status, code: body.code, body })
   }
 
-  return res.json()
+  return raw ? res : res.json()
+}
+
+/** Descarga un archivo autenticado (PDF/XML) y lo guarda en el navegador. */
+const downloadFile = async (endpoint, fallbackName) => {
+  const res = await request(endpoint, { raw: true })
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] || fallbackName
+  const url = URL.createObjectURL(await res.blob())
+  const a = Object.assign(document.createElement('a'), { href: url, download: fileName })
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 const bootstrapAuth = async () => {
@@ -163,6 +176,7 @@ export const api = {
     create: (data) => request('/orders',      { method: 'POST', body: JSON.stringify(data) }),
     list:   ()     => request('/orders'),
     detail: (id)   => request(`/orders/${id}`),
+    downloadInvoice: (id) => downloadFile(`/orders/${id}/invoice.pdf`, `factura-${id}.pdf`),
   },
   admin: {
     stats:          ()            => request('/admin/stats'),
@@ -186,6 +200,10 @@ export const api = {
     orderDetail:    (id)          => request(`/admin/orders/${id}`),
     updateOrder:    (id, status, note) => request(`/admin/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
     resolveReview:  (id, note)    => request(`/admin/orders/${id}/resolve-review`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+    einvoice:       (orderId)     => request(`/admin/orders/${orderId}/einvoice`),
+    retryEinvoice:  (docId)       => request(`/admin/einvoice/${docId}/retry`, { method: 'POST' }),
+    downloadEinvoiceXml: (docId)  => downloadFile(`/admin/einvoice/${docId}/xml`, `${docId}.xml`),
+    downloadEinvoicePdf: (docId)  => downloadFile(`/admin/einvoice/${docId}/pdf`, `${docId}.pdf`),
 
     dashboard: {
       overview:     ()              => request('/admin/dashboard/overview'),

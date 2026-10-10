@@ -1,4 +1,5 @@
 import { logger } from './logger.js'
+import { describeConfig, isEnabled as einvoiceEnabled } from '../services/einvoice/config.js'
 
 // Variables sin las cuales el backend no debe arrancar en producción.
 const REQUIRED = [
@@ -34,6 +35,14 @@ export const validateEnv = () => {
 
   if (recommendedMissing.length) {
     logger.warn({ missing: recommendedMissing }, 'env.recommended_missing')
+  }
+
+  // Facturación electrónica encendida pero mal configurada: se avisa sin bloquear
+  // la tienda (las facturas quedan en ERROR y se reintentan al corregir).
+  if (einvoiceEnabled()) {
+    const einvoice = describeConfig()
+    if (einvoice.ok) logger.info({ environment: einvoice.environment, prefix: einvoice.prefix }, 'env.einvoice_enabled')
+    else logger.error({ missing: einvoice.missing }, 'env.einvoice_config_invalid')
   }
 
   if (process.env.NODE_ENV === 'production') {

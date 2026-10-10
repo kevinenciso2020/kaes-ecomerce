@@ -3,6 +3,7 @@ import { logger } from '../config/logger.js'
 import { captureError } from '../config/sentry.js'
 import { checkTaxRate } from '../services/tax-check.service.js'
 import { expireStaleOrders } from '../services/payment.service.js'
+import { processPending as processPendingEinvoices } from '../services/einvoice/einvoice.service.js'
 
 const log = logger.child({ component: 'maintenance' })
 
@@ -34,6 +35,15 @@ export const runMaintenance = async () => {
   } catch (err) {
     log.error({ err }, 'maintenance.tax_check_failed')
     captureError(err, { job: 'maintenance', step: 'tax-check' })
+  }
+
+  // Facturación electrónica: reintentos, consultas de estado y correos pendientes.
+  try {
+    const result = await processPendingEinvoices()
+    if (result.processed || result.delivered) log.info(result, 'maintenance.einvoice_done')
+  } catch (err) {
+    log.error({ err }, 'maintenance.einvoice_failed')
+    captureError(err, { job: 'maintenance', step: 'einvoice' })
   }
 }
 

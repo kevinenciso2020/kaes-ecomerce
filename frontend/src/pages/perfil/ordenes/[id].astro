@@ -35,6 +35,13 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
           <p class="pay-error" id="pay-error" role="alert" hidden></p>
         </div>
 
+        <div class="order-card" id="invoice-card" hidden>
+          <h2 class="card-title">Factura electrónica</h2>
+          <p class="pay-text" id="invoice-text"></p>
+          <button type="button" class="btn btn-outline btn-full" id="invoice-download">Descargar factura (PDF)</button>
+          <p class="pay-error" id="invoice-error" role="alert" hidden></p>
+        </div>
+
         <div class="order-card">
           <h2 class="card-title">Envío</h2>
           <div id="order-shipping"></div>
@@ -165,6 +172,26 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
         <div class="total-row"><span>Envío</span><span>${Number(order.shipping) > 0 ? money(order.shipping) : 'Gratis'}</span></div>
         <div class="total-row total-final"><span>Total</span><span>$${Number(order.total).toLocaleString('es-CO')}</span></div>
       `
+
+      const invoice = (order.electronicDocuments || []).find((d) => d.type === 'INVOICE')
+      if (invoice) {
+        document.getElementById('invoice-card').hidden = false
+        document.getElementById('invoice-text').textContent = `Factura ${invoice.fullNumber}, validada por la DIAN. También la enviamos a tu correo.`
+        document.getElementById('invoice-download').onclick = async (e) => {
+          const btn = e.currentTarget
+          const errEl = document.getElementById('invoice-error')
+          btn.disabled = true
+          errEl.hidden = true
+          try {
+            await api.orders.downloadInvoice(order.id)
+          } catch (err) {
+            errEl.textContent = err.message || 'No se pudo descargar la factura'
+            errEl.hidden = false
+          } finally {
+            btn.disabled = false
+          }
+        }
+      }
 
       const shippingEl = document.getElementById('order-shipping')
       if (order.shippingAddress) {
