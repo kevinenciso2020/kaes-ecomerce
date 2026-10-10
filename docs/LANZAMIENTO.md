@@ -27,7 +27,7 @@ Lista completa y comentada en `backend/.env.example` y `frontend/.env.example`.
 `JWT_SECRET`, `JWT_REFRESH_SECRET` (≥32 caracteres, distintos), `JWT_EXPIRES_IN=15m`, `JWT_REFRESH_EXPIRES_IN=7d`,
 `CLOUDINARY_*`, `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`,
 `SSR_API_KEY`, `SENTRY_DSN`, `SMTP_*`, `SHIPPING_FLAT_RATE`, `FREE_SHIPPING_FROM`.
-Opcional: `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`, `COOKIE_DOMAIN`.
+Opcional: `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`, `COOKIE_DOMAIN`, `TAX_SOURCE_URL` (fuente oficial del IVA que revisa el job diario), `TAX_ALERT_EMAIL` (correo que recibe el aviso si la tasa difiere).
 
 **Vercel (frontend):** `PUBLIC_API_URL` (termina en `/api/v1`), `SSR_API_KEY` (mismo valor que en Railway, sin `PUBLIC_`).
 Puedes **borrar** `JWT_SECRET` de Vercel: el middleware ya no lo usa.
@@ -87,7 +87,7 @@ Hoy: Vercel (EE. UU.) → Railway (Miami) → Neon (São Paulo) ≈ 1,7 s de TTF
 - [ ] Completa en `frontend/src/lib/site-config.js`: NIT, dirección, ciudad, departamento, email, teléfono, WhatsApp, redes, fecha de actualización, días de despacho (`processingDays`), días para reportar defectos (`warrantyNoticeDays`) y confirma `exchangeDays` (30). Mientras falten, las páginas legales muestran un aviso amarillo.
 - [ ] Revisión de las 3 páginas legales por un abogado (son plantillas).
 - [ ] **Contador**: RUT, responsabilidad de IVA, registro mercantil y si debes emitir **factura electrónica** (SAS o persona natural responsable de IVA → desde la primera venta).
-- [ ] Define si tus precios incluyen IVA (la tienda los muestra como "IVA incluido").
+- [ ] **IVA:** al crear un producto se escribe el precio **sin IVA**; la tienda suma la tasa (19 %) y muestra el precio final. La tasa se cambia en Admin → IVA (sólo SUPER_ADMIN). Un job diario compara con el Estatuto Tributario y avisa por correo/Sentry si difiere (configura `TAX_ALERT_EMAIL` si quieres otro correo). Confirma la tasa con tu contador antes de aplicar cualquier cambio.
 
 ## 8. Después del lanzamiento (primeras semanas)
 
