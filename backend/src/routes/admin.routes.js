@@ -52,7 +52,9 @@ import {
 
 import { productUpload, uploadConstants } from '../middleware/upload.middleware.js'
 import { isAuth, isAdmin } from '../middleware/auth.middleware.js'
-import { canManageAdmins } from '../middleware/authorization.middleware.js'
+import { canManageAdmins, authorizeRole } from '../middleware/authorization.middleware.js'
+import * as Tax from '../controllers/tax.controller.js'
+import { updateTaxRate } from '../validators/tax.validator.js'
 
 const router = Router()
 
@@ -89,6 +91,13 @@ router.get   ('/categories',     Catalog.listCategories)
 router.post  ('/categories',     validate(adminCreateCategory), Catalog.createCategory)
 router.put   ('/categories/:id', validate(adminUpdateCategory), Catalog.updateCategory)
 router.delete('/categories/:id', validate(adminIdParam),        Catalog.deleteCategory)
+
+// ─────────────────────────────────────────
+// IVA — la tasa la gestiona sólo el SUPER_ADMIN
+// ─────────────────────────────────────────
+router.get ('/tax',               Tax.getTax)
+router.put ('/tax',               authorizeRole('SUPER_ADMIN'), validate(updateTaxRate), Tax.updateRate)
+router.post('/tax/apply-pending', authorizeRole('SUPER_ADMIN'), Tax.applyPending)
 
 // ─────────────────────────────────────────
 // Products — CRUD admin
