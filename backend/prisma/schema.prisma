@@ -105,6 +105,8 @@ model Product {
   slug              String   @unique
   description       String
   price             Decimal  @db.Decimal(10, 2)
+  basePrice         Decimal  @db.Decimal(10, 2) // precio SIN IVA (lo que escribe el admin)
+  taxRate           Decimal  @default(19) @db.Decimal(5, 2) // % de IVA con el que se calculó price
   stock             Int      @default(0)
   lowStockThreshold Int      @default(5)
   isActive          Boolean  @default(true)
@@ -151,6 +153,7 @@ model ProductVariant {
   stock             Int      @default(0)
   lowStockThreshold Int?
   price             Decimal? @db.Decimal(10, 2)
+  basePrice         Decimal? @db.Decimal(10, 2) // sin IVA; null = usa el del producto
 
   product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   orderItems OrderItem[]
@@ -443,4 +446,18 @@ enum PaymentProvider {
 enum DiscountType {
   PERCENTAGE
   FIXED
+}
+
+/// Configuración global del IVA. Una sola fila (id = 1).
+model TaxSetting {
+  id              Int       @id @default(1)
+  rate            Decimal   @default(19) @db.Decimal(5, 2)
+  updatedAt       DateTime  @updatedAt
+  updatedById     String?
+  lastCheckAt     DateTime?
+  lastCheckRate   Decimal?  @db.Decimal(5, 2)
+  lastCheckSource String?
+  pendingRate     Decimal?  @db.Decimal(5, 2)
+
+  @@map("tax_settings")
 }

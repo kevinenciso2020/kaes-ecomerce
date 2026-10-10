@@ -116,6 +116,7 @@ async function main() {
       slug:        'camiseta-basica-blanca',
       description: 'Camiseta básica de algodón 100%, perfecta para el día a día.',
       price:       49900,
+      basePrice:   41933,
       stock:       0,
       categoryId:  camisetas.id,
       isFeatured:  true,

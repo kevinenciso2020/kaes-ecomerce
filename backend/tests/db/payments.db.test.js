@@ -44,7 +44,7 @@ const makeProduct = async ({ price = 50000, stock = 10, variants } = {}) => {
   })
   return prisma.product.create({
     data: {
-      name: `Producto ${++seq}`, slug: `producto-${seq}`, description: '', price, stock, categoryId: category.id,
+      name: `Producto ${++seq}`, slug: `producto-${seq}`, description: '', price, basePrice: Math.round(price / 1.19), stock, categoryId: category.id,
       variants: variants ? { create: variants } : undefined,
     },
     include: { variants: true },
