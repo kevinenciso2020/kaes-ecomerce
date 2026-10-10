@@ -94,3 +94,23 @@ Hoy: Vercel (EE. UU.) → Railway (Miami) → Neon (São Paulo) ≈ 1,7 s de TTF
 - Revisa a diario Admin → Órdenes: el banner naranja muestra pagos que requieren acción (reembolsos).
 - Los reembolsos se hacen en el panel de Wompi/MercadoPago; luego marca la orden como "Reembolsada" (devuelve el stock).
 - Pendientes técnicos conocidos: Sentry en el frontend, códigos DIVIPOLA en las direcciones, quitar columnas antiguas `city`/`department`.
+
+## 9. Despliegue del IVA automático
+
+Orden estricto:
+
+- [ ] 1. Crea un **snapshot/branch de Neon** antes de tocar nada (punto de retorno).
+- [ ] 2. **Avisa a los admins** que no editen productos mientras dure el despliegue.
+- [ ] 3. Despliega el **backend en Railway**; la migración corre al arrancar.
+- [ ] 4. Verifica con SQL (en el branch/consola de Neon):
+  - `SELECT count(*) FROM products WHERE ROUND("basePrice"*1.19) <> "price";` debe dar **0**.
+  - `SELECT * FROM tax_settings;` debe tener **una fila** con rate 19.
+- [ ] 5. Despliega el **frontend en Vercel** y pide a los admins que **recarguen las pestañas** del panel (un formulario viejo es rechazado con 400).
+- [ ] 6. Prueba manual:
+  - Producto de prueba con base 20.000 → precio final 23.800.
+  - Editar un producto existente no cambia su precio.
+  - `/admin/iva` con SUPER_ADMIN y con ADMIN, y el botón "Revisar ahora".
+- [ ] 7. Marca como **exentos** los productos que lo sean (la migración deja todos con IVA 19 %).
+- [ ] 8. Configura `TAX_ALERT_EMAIL` en Railway.
+
+Advertencia: cambia la **tasa general** con los admins fuera del panel de productos. Así evitas una carrera de milisegundos que dejaría un producto guardado con la tasa anterior.
