@@ -91,5 +91,6 @@ describe('POST /admin/tax/check', () => {
     const res = await request(app).post('/api/v1/admin/tax/check').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`)
     expect(res.status).toBe(200)
     expect(res.body.status).toBe('unchanged')
+    expect(checkTaxRate).toHaveBeenCalledWith({ force: true })
   })
 })

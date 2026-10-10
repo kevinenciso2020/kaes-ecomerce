@@ -23,10 +23,17 @@ export const runMaintenance = async () => {
       purgedVerificationTokens: verification.count,
       purgedResetTokens: reset.count,
     }, 'maintenance.done')
-    await checkTaxRate() // se auto-limita a 1 vez cada 23 h y no lanza
   } catch (err) {
     log.error({ err }, 'maintenance.failed')
     captureError(err, { job: 'maintenance' })
+  }
+
+  // Paso independiente: un fallo de las purgas no debe impedir la revisión del IVA.
+  try {
+    await checkTaxRate() // se auto-limita a 1 vez cada 23 h y no lanza
+  } catch (err) {
+    log.error({ err }, 'maintenance.tax_check_failed')
+    captureError(err, { job: 'maintenance', step: 'tax-check' })
   }
 }
 

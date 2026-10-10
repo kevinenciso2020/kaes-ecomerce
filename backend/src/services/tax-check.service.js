@@ -6,8 +6,23 @@ import { getTaxSetting } from './tax-settings.service.js'
 
 import { isValidRate } from './tax.service.js'
 
+const ENTIDADES = {
+  nbsp: ' ', aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', ntilde: 'ñ',
+  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ',
+  uuml: 'ü', ordm: 'º', deg: '°', quot: '"', apos: "'", lt: '<', gt: '>',
+}
+
+const codePoint = (n) => {
+  try { return String.fromCodePoint(n) } catch { return ' ' }
+}
+
+// `&amp;` va al final para no doble-decodificar (p. ej. "&amp;aacute;" debe quedar "&aacute;").
 const decodeEntities = (s) =>
-  s.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+  s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => codePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, n) => codePoint(Number(n)))
+    .replace(/&([a-z]+);/gi, (m, name) => ENTIDADES[name] ?? m)
+    .replace(/&amp;/gi, '&')
 
 const toPlainText = (html) =>
   decodeEntities(String(html ?? '').replace(/<[^>]*>/g, ' '))
@@ -21,11 +36,11 @@ const toPlainText = (html) =>
  */
 export const parseGeneralRate = (html) => {
   const text = toPlainText(html)
-  const start = text.search(/articulo 468\./)
-  if (start === -1) return null
-  // Sólo se mira el tramo del propio artículo (hasta el siguiente "articulo NNN.").
-  const rest = text.slice(start + 12)
-  const next = rest.search(/articulo \d+\./)
+  const anchor = text.match(/articulo 468\./)
+  if (!anchor) return null
+  // Sólo se mira el tramo del propio artículo (hasta el siguiente "articulo NNN." o "NNN-N.").
+  const rest = text.slice(anchor.index + anchor[0].length)
+  const next = rest.search(/articulo \d+(?:-\d+)?\./)
   const article = next === -1 ? rest.slice(0, 1500) : rest.slice(0, next)
 
   const m = article.match(/tarifa general del impuesto sobre las ventas es del [^()]{0,80}\(\s*(\d{1,3}(?:[.,]\d{1,2})?)\s*%\s*\)/)
@@ -119,7 +134,8 @@ export const checkTaxRate = async ({ fetchFn = fetch, db = prisma, now = new Dat
     if (current.pendingRate !== detected) {
       log.warn({ currentRate: current.rate, detected, source }, 'tax.rate_change_detected')
       captureMessage('La fuente oficial indica otra tarifa de IVA', { currentRate: current.rate, detected, source })
-      await sendTaxChangeAlert({ currentRate: current.rate, detectedRate: detected, source })
+      const sent = await sendTaxChangeAlert({ currentRate: current.rate, detectedRate: detected, source })
+      if (sent === false) log.warn({ currentRate: current.rate, detected }, 'tax.alert_email_not_sent')
     }
     return { status: 'pending', detected }
   } catch (err) {

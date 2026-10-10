@@ -9,6 +9,32 @@ const { sendTaxChangeAlert } = await import('../../src/services/email.service.js
 
 const page = (art) => `<html><body><p>ARTICULO 467. otro texto 5%</p>${art}<p>ARTICULO 469. más texto 10%</p></body></html>`
 
+describe('parseGeneralRate: entidades y artículos vecinos', () => {
+  const frase = (n, w = 'diecinueve') => `La tarifa general del impuesto sobre las ventas es del ${w} por ciento (${n}%).`
+  it('decodifica entidades nombradas (Art&iacute;culo)', () => {
+    expect(parseGeneralRate(page(`<p>Art&iacute;culo 468. ${frase(19)}</p>`))).toBe(19)
+  })
+  it('decodifica entidades numéricas hex y decimales', () => {
+    expect(parseGeneralRate(page(`<p>Art&#xED;culo 468. ${frase(19)}</p>`))).toBe(19)
+    expect(parseGeneralRate(page(`<p>Art&#237;culo 468. ${frase(19)}</p>`))).toBe(19)
+  })
+  it('no doble-decodifica &amp;', () => {
+    expect(parseGeneralRate(page(`<p>ARTICULO 468. &amp;aacute; ${frase(19)}</p>`))).toBe(19)
+  })
+  it('una lectura de 0 % devuelve 0 (no null)', () => {
+    expect(parseGeneralRate(page(`<p>ARTICULO 468. ${frase(0, 'cero')}</p>`))).toBe(0)
+  })
+  it('un 468-1 posterior sin la frase no confunde: devuelve null', () => {
+    expect(parseGeneralRate(page(`<p>ARTICULO 468. Sin frase.</p><p>ARTICULO 468-1. ${frase(5, 'cinco')}</p>`))).toBeNull()
+  })
+  it('un 468-1 anterior no confunde: devuelve el valor del 468', () => {
+    expect(parseGeneralRate(page(`<p>ARTICULO 468-1. ${frase(5, 'cinco')}</p><p>ARTICULO 468. ${frase(19)}</p>`))).toBe(19)
+  })
+  it('null si sólo aparece el 468-1', () => {
+    expect(parseGeneralRate(page(`<p>ARTICULO 468-1. ${frase(5, 'cinco')}</p>`))).toBeNull()
+  })
+})
+
 describe('parseGeneralRate', () => {
   it('lee la tarifa del artículo 468', () => {
     const html = page('<p><b>ARTICULO 468. TARIFA GENERAL DEL IMPUESTO SOBRE LAS VENTAS.</b> La tarifa general del impuesto sobre las ventas es del diecinueve por ciento (19%).</p>')
@@ -100,6 +126,7 @@ describe('checkTaxRate', () => {
     await checkTaxRate({ fetchFn: okFetch(html(21, 'veintiuno')), db, force: true })
     expect(sendTaxChangeAlert).not.toHaveBeenCalled()
     expect(captureMessage).not.toHaveBeenCalled()
+    expect(db.taxSetting.upsert.mock.calls[0][0].update).toMatchObject({ pendingRate: 21, lastCheckRate: 21 })
   })
 
   it('se salta si ya se revisó hace menos de 23 h (sin force)', async () => {
@@ -143,6 +170,36 @@ describe('checkTaxRate', () => {
     const db = makeDb(base)
     const r = await checkTaxRate({ fetchFn: okFetch(html(190, 'ciento noventa')), db })
     expect(r.status).toBe('error')
+    expect(db.taxSetting.upsert.mock.calls[0][0].update).not.toHaveProperty('pendingRate')
+  })
+
+  it('nunca lanza: si todo rechaza devuelve error / el estado correspondiente', async () => {
+    const boom = new Error('boom')
+    // getTaxSetting rechaza
+    const db1 = makeDb(base); db1.taxSetting.findUnique.mockRejectedValue(boom)
+    await expect(checkTaxRate({ fetchFn: okFetch(html(21, 'veintiuno')), db: db1 })).resolves.toEqual({ status: 'error' })
+    // upsert rechaza
+    const db2 = makeDb(base); db2.taxSetting.upsert.mockRejectedValue(boom)
+    await expect(checkTaxRate({ fetchFn: okFetch(html(21, 'veintiuno')), db: db2 })).resolves.toEqual({ status: 'error' })
+    // captureMessage rechaza (lanza)
+    captureMessage.mockImplementationOnce(() => { throw boom })
+    const db3 = makeDb(base)
+    await expect(checkTaxRate({ fetchFn: okFetch(html(21, 'veintiuno')), db: db3 })).resolves.toEqual({ status: 'error' })
+    expect(db3.taxSetting.upsert.mock.calls[0][0].update.pendingRate).toBe(21)
+  })
+
+  it('si el correo falla igualmente se guardó pendingRate y no lanza', async () => {
+    sendTaxChangeAlert.mockRejectedValueOnce(new Error('smtp'))
+    const db = makeDb(base)
+    const r = await checkTaxRate({ fetchFn: okFetch(html(21, 'veintiuno')), db })
+    expect(r.status).toBe('error')
+    expect(db.taxSetting.upsert.mock.calls[0][0].update.pendingRate).toBe(21)
+  })
+
+  it('si el correo devuelve false sigue en pending (y avisa en el log)', async () => {
+    sendTaxChangeAlert.mockResolvedValueOnce(false)
+    const r = await checkTaxRate({ fetchFn: okFetch(html(21, 'veintiuno')), db: makeDb(base) })
+    expect(r).toEqual({ status: 'pending', detected: 21 })
   })
 })
 
