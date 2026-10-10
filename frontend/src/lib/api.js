@@ -177,6 +177,10 @@ export const api = {
     setMainImage:   (productId, imageId) => request(`/admin/products/${productId}/images/${imageId}/main`, { method: 'PATCH' }),
     upsertVariants: (productId, variants) => request(`/admin/products/${productId}/variants`, { method: 'PATCH', body: JSON.stringify({ variants }) }),
     lowStock:       (params = {}) => request(`/admin/products/low-stock?${new URLSearchParams(params)}`),
+    tax:             ()     => request('/admin/tax'),
+    setTaxRate:      (rate) => request('/admin/tax', { method: 'PUT', body: JSON.stringify({ rate }) }),
+    applyPendingTax: ()     => request('/admin/tax/apply-pending', { method: 'POST' }),
+    checkTax:        ()     => request('/admin/tax/check', { method: 'POST' }),
 
     orders:         (params = {}) => request(`/admin/orders?${new URLSearchParams(params)}`),
     orderDetail:    (id)          => request(`/admin/orders/${id}`),

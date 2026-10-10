@@ -12,7 +12,7 @@ import ColorSwatch from './ColorSwatch.jsx'
  * Props:
  *  - colors: [{ name, hex }]      colores seleccionados
  *  - sizes:  [{ id, value }]      tallas seleccionadas (en orden)
- *  - cells:  { [key]: { stock, sku, price } }   key = `${talla}::${color}`
+ *  - cells:  { [key]: { stock, sku, basePrice } }   key = `${talla}::${color}`
  *  - onChange(nextCells)
  */
 export const variantKey = (size, color) => `${size ?? ''}::${color ?? ''}`
@@ -34,7 +34,7 @@ export default function VariantEditor({ colors = [], sizes = [], cells = {}, onC
     return <p className="ve-empty">Selecciona al menos un color o una talla para cargar el stock.</p>
   }
 
-  const get = (size, color) => cells[variantKey(size, color)] || { stock: 0, sku: '', price: '' }
+  const get = (size, color) => cells[variantKey(size, color)] || { stock: 0, sku: '', basePrice: '' }
 
   const update = (size, color, field, raw) => {
     const key = variantKey(size, color)
@@ -53,7 +53,7 @@ export default function VariantEditor({ colors = [], sizes = [], cells = {}, onC
     const next = { ...cells }
     for (const c of combos) {
       const key = variantKey(c.size, c.color)
-      next[key] = { ...(next[key] || { sku: '', price: '' }), stock: n }
+      next[key] = { ...(next[key] || { sku: '', basePrice: '' }), stock: n }
     }
     onChange?.(next)
   }
@@ -137,7 +137,7 @@ export default function VariantEditor({ colors = [], sizes = [], cells = {}, onC
               <div key={variantKey(c.size, c.color)} className="ve-adv-row">
                 <span className="ve-adv-label">{c.color ? <ColorSwatch hex={c.colorHex} name={label} size={10} /> : label}</span>
                 <input type="text" placeholder="SKU" value={cell.sku || ''} maxLength={60} onChange={(e) => update(c.size, c.color, 'sku', e.target.value)} />
-                <input type="number" min="0" step="100" placeholder="Precio (vacío = el del producto)" value={cell.price ?? ''} onChange={(e) => update(c.size, c.color, 'price', e.target.value)} />
+                <input type="number" min="0" step="100" placeholder="Precio sin IVA (vacío = el del producto)" value={cell.basePrice ?? ''} onChange={(e) => update(c.size, c.color, 'basePrice', e.target.value)} />
               </div>
             )
           })}

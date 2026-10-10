@@ -3,6 +3,7 @@ import { api } from '../../lib/api.js'
 import ImageUploader from './ImageUploader.jsx'
 import VariantEditor, { buildCombos, variantKey } from './VariantEditor.jsx'
 import ColorSwatch from './ColorSwatch.jsx'
+import { finalPrice, formatCOP } from '../../lib/tax.js'
 
 /**
  * Crear / editar un producto.
@@ -25,7 +26,7 @@ const initialCells = (product) => {
     cells[variantKey(v.size, v.color)] = {
       stock: v.stock ?? 0,
       sku: v.sku || '',
-      price: v.price != null ? Number(v.price) : '',
+      basePrice: v.basePrice != null ? Number(v.basePrice) : '',
     }
   }
   return cells
@@ -37,7 +38,19 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
 
   const [name, setName] = useState(product?.name || '')
   const [description, setDescription] = useState(product?.description || '')
-  const [price, setPrice] = useState(product?.price != null ? String(Math.round(Number(product.price))) : '')
+  const [price, setPrice] = useState(product?.basePrice != null ? String(Math.round(Number(product.basePrice) * 100) / 100) : '')
+  const [exempt, setExempt] = useState(product ? Number(product.taxRate) === 0 : false)
+  const [generalRate, setGeneralRate] = useState(19)
+  useEffect(() => {
+    let alive = true
+    Promise.resolve()
+      .then(() => api.admin.tax())
+      .then((t) => { if (alive && Number.isFinite(Number(t?.rate))) setGeneralRate(Number(t.rate)) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  // Un producto existente conserva su tasa propia; uno nuevo usa la vigente (o 0 si es exento).
+  const rate = exempt ? 0 : (product && Number(product.taxRate) !== 0 ? Number(product.taxRate) : generalRate)
   const [categoryId, setCategoryId] = useState(product?.categoryId || product?.category?.id || '')
   const [isActive, setIsActive] = useState(product?.isActive ?? true)
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured ?? false)
@@ -137,7 +150,7 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
         colorHex: c.colorHex,
         stock: Number.parseInt(cell.stock, 10) || 0,
         sku: cell.sku?.trim() || null,
-        price: cell.price !== '' && cell.price != null ? Number(cell.price) : null,
+        basePrice: cell.basePrice !== '' && cell.basePrice != null ? Number(cell.basePrice) : null,
       }
     })
 
@@ -169,7 +182,8 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
       const form = new FormData()
       form.append('name', name.trim())
       form.append('description', description.trim())
-      form.append('price', String(Math.round(Number(price))))
+      form.append('basePrice', String(Math.round(Number(price) * 100) / 100))
+      form.append('taxRate', String(rate))
       form.append('categoryId', categoryId)
       form.append('isActive', String(isActive))
       form.append('isFeatured', String(isFeatured))
@@ -219,12 +233,22 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
                 placeholder="Material, horma, cuidados, medidas…" />
             </label>
             <div className="pf-row">
-              <label className={`pf-field ${fieldErrors.price ? 'invalid' : ''}`}>
-                <span>Precio (COP, IVA incluido) *</span>
-                <input type="number" inputMode="numeric" min="100" step="100" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="59900" />
-                {price && !Number.isNaN(Number(price)) && <small>${Math.round(Number(price)).toLocaleString('es-CO')}</small>}
+              <div className="pf-field">
+                <label className={`pf-field ${fieldErrors.price ? 'invalid' : ''}`}>
+                  <span>Precio sin IVA (COP) *</span>
+                  <input type="number" inputMode="numeric" min="100" step="100" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="50000" />
+                </label>
+                {Number(price) > 0 && (
+                  <small>
+                    IVA ({rate} %): {formatCOP(finalPrice(price, rate) - Number(price))} · <strong>Precio final: {formatCOP(finalPrice(price, rate))}</strong>
+                  </small>
+                )}
+                <div className="pf-check">
+                  <input id="pf-exempt" type="checkbox" checked={exempt} onChange={(e) => setExempt(e.target.checked)} />
+                  <label htmlFor="pf-exempt">Producto exento de IVA</label>
+                </div>
                 {fieldErrors.price && <em>{fieldErrors.price}</em>}
-              </label>
+              </div>
               <label className={`pf-field ${fieldErrors.category ? 'invalid' : ''}`}>
                 <span>Categoría *</span>
                 {newCategory === null ? (
@@ -367,6 +391,8 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
         .pf-field { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; flex: 1; min-width: 0; }
         .pf-field > span { font-weight: 500; }
         .pf-field input, .pf-field textarea, .pf-field select { padding: 0.55rem 0.7rem; border: 1px solid #ddd; border-radius: 7px; font: inherit; font-size: 0.9rem; min-width: 0; }
+        .pf-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
+        .pf-check input { padding: 0; }
         .pf-field small { color: #888; font-size: 0.72rem; }
         .pf-field em { color: #b91c1c; font-size: 0.75rem; font-style: normal; }
         .pf-field.invalid input, .pf-field.invalid select { border-color: #ef4444; }

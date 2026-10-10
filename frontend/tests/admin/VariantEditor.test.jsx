@@ -35,7 +35,7 @@ describe('VariantEditor', () => {
     const onChange = vi.fn()
     render(<VariantEditor colors={[negro]} sizes={[S, M]} cells={{}} onChange={onChange} />)
     fireEvent.change(screen.getByLabelText('Stock Negro talla M'), { target: { value: '7' } })
-    expect(onChange).toHaveBeenCalledWith({ [variantKey('M', 'Negro')]: { stock: 7, sku: '', price: '' } })
+    expect(onChange).toHaveBeenCalledWith({ [variantKey('M', 'Negro')]: { stock: 7, sku: '', basePrice: '' } })
   })
 
   it('no acepta stock negativo', () => {
