@@ -112,7 +112,7 @@ const productJson = JSON.stringify({
           {hasDiscount && <del class="price-before">${fmt(basePrice)}</del>}
           <span class="currency-symbol">$</span><span id="price-value">{fmt(finalPrice)}</span> <span class="currency">COP</span>
         </p>
-        <p class="tax-note">IVA incluido</p>
+        {Number(product.taxRate) === 0 && <p class="tax-note">IVA incluido</p>}
         {soldOut && <p class="sold-out-badge" role="status">Agotado</p>}
 
         {product.description && (

@@ -120,6 +120,9 @@ export const adminCreateProduct = [
     .isInt({ min: 0 }).withMessage('lowStockThreshold debe ser entero positivo'),
   body('categoryId').optional().isString().withMessage('categoryId debe ser texto'),
   body('categorySlug').optional().isString().withMessage('categorySlug debe ser texto'),
+  body('gender')
+    .optional({ values: 'falsy' })
+    .isIn(['HOMBRE', 'MUJER']).withMessage('El género debe ser HOMBRE o MUJER'),
   body('categoryId').custom((value, { req }) => {
     if (!value && !req.body.categorySlug) {
       throw new Error('La categoría es requerida (categoryId o categorySlug)')
@@ -177,6 +180,7 @@ export const adminUpdateProduct = [
   body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('lowStockThreshold debe ser entero positivo'),
   body('categoryId').optional().isString(),
   body('categorySlug').optional().isString(),
+  body('gender').optional({ values: 'falsy' }).isIn(['HOMBRE', 'MUJER']).withMessage('El género debe ser HOMBRE o MUJER'),
   body('isFeatured').optional()
     .custom((v) => v === 'true' || v === 'false' || typeof v === 'boolean')
     .withMessage('isFeatured debe ser boolean'),

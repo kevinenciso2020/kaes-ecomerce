@@ -8,7 +8,7 @@ const withFinalPrice = (product) => ({
   finalPrice: applyProductDiscounts(parseFloat(product.price), product.discounts || []),
 })
 
-export const getProducts = async ({ page = 1, limit = 12, category, minPrice, maxPrice, size, color, search, featured }) => {
+export const getProducts = async ({ page = 1, limit = 12, category, gender, minPrice, maxPrice, size, color, search, featured }) => {
   page = Math.max(1, Number.parseInt(page, 10) || 1)
   limit = Math.min(48, Math.max(1, Number.parseInt(limit, 10) || 12))
   const skip = (page - 1) * limit
@@ -17,6 +17,7 @@ export const getProducts = async ({ page = 1, limit = 12, category, minPrice, ma
   const where = { isActive: true }
 
   if (category)           where.category  = { slug: category }
+  if (gender === 'HOMBRE' || gender === 'MUJER') where.gender = gender
   if (featured === 'true') where.isFeatured = true
   if (search) {
     where.OR = [

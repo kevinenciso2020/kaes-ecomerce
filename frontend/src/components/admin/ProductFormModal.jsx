@@ -60,6 +60,7 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
   // en cualquier otro caso (nuevo, o existente que se quita de exento) → la vigente (null mientras no cargue)
   const rate = exempt ? 0 : (isEdit && ownRate != null && ownRate !== 0 ? ownRate : generalRate)
   const [categoryId, setCategoryId] = useState(product?.categoryId || product?.category?.id || '')
+  const [gender, setGender] = useState(product?.gender || '')
   const [isActive, setIsActive] = useState(product?.isActive ?? true)
   const [isFeatured, setIsFeatured] = useState(product?.isFeatured ?? false)
   const [lowStockThreshold, setLowStockThreshold] = useState(product?.lowStockThreshold ?? 5)
@@ -205,6 +206,7 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
       form.append('basePrice', String(Math.round(Number(price) * 100) / 100))
       if (sendRate != null) form.append('taxRate', sendRate)
       form.append('categoryId', categoryId)
+      form.append('gender', gender)
       form.append('isActive', String(isActive))
       form.append('isFeatured', String(isFeatured))
       form.append('lowStockThreshold', String(Number.parseInt(lowStockThreshold, 10) || 0))
@@ -296,6 +298,14 @@ export default function ProductFormModal({ product, categories, colors, sizes, o
                   </div>
                 )}
                 {fieldErrors.category && <em>{fieldErrors.category}</em>}
+              </label>
+              <label className="pf-field">
+                <span>Género</span>
+                <select value={gender} onChange={(e) => setGender(e.target.value)}>
+                  <option value="">Sin clasificar</option>
+                  <option value="HOMBRE">Hombre</option>
+                  <option value="MUJER">Mujer</option>
+                </select>
               </label>
             </div>
             <div className="pf-checks">

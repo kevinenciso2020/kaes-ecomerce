@@ -266,6 +266,7 @@ export const createProduct = async (data, files = []) => {
           isFeatured:        toBool(data.isFeatured),
           isActive:          data.isActive === undefined ? true : toBool(data.isActive),
           categoryId,
+          gender:            data.gender || null,
           variants:       variants.length ? { create: variants } : undefined,
           availableSizes: sizeIds.length ? { create: sizeIds.map((sizeId) => ({ sizeId })) } : undefined,
           images: images.length
@@ -342,6 +343,7 @@ export const updateProduct = async (id, data, files = []) => {
       if (data.isFeatured !== undefined)        updateData.isFeatured = toBool(data.isFeatured)
       if (data.isActive !== undefined)          updateData.isActive = toBool(data.isActive)
       if (categoryId)                           updateData.categoryId = categoryId
+      if (data.gender !== undefined)            updateData.gender = data.gender || null
 
       await tx.product.update({ where: { id }, data: updateData })
 

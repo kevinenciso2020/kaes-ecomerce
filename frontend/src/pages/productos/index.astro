@@ -15,6 +15,7 @@ const search   = searchParams.get('search')   || ''
 const minPrice = searchParams.get('minPrice') || ''
 const maxPrice = searchParams.get('maxPrice') || ''
 const size     = searchParams.get('size')     || ''
+const gender   = ['HOMBRE', 'MUJER'].includes(searchParams.get('gender')) ? searchParams.get('gender') : ''
 
 const queryParams = { page, limit: '12' }
 if (category) queryParams.category = category
@@ -22,6 +23,7 @@ if (search)   queryParams.search   = search
 if (minPrice) queryParams.minPrice = minPrice
 if (maxPrice) queryParams.maxPrice = maxPrice
 if (size)     queryParams.size     = size
+if (gender)   queryParams.gender   = gender
 
 try {
   const [productsData, categoriesData, sizesData] = await Promise.all([
@@ -37,8 +39,8 @@ try {
   console.error('Error:', e)
 }
 
-const hasFilters = !!(category || search || minPrice || maxPrice || size)
-const activeFiltersCount = [category, search, minPrice, maxPrice, size].filter(Boolean).length
+const hasFilters = !!(category || search || minPrice || maxPrice || size || gender)
+const activeFiltersCount = [category, search, minPrice, maxPrice, size, gender].filter(Boolean).length
 
 // Catálogo cacheable en el CDN de Vercel: reduce carga al API y mejora TTFB.
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300')
@@ -70,6 +72,23 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
               value={search}
               autocomplete="off"
             />
+          </div>
+
+          <div class="filter-group">
+            <span class="filter-label">Género</span>
+            <div class="filter-options">
+              {[['', 'Todos'], ['HOMBRE', 'Hombre'], ['MUJER', 'Mujer']].map(([value, label]) => {
+                const params = new URLSearchParams(searchParams)
+                params.delete('page')
+                if (value) params.set('gender', value); else params.delete('gender')
+                const qs = params.toString()
+                return (
+                  <a href={qs ? `/productos?${qs}` : '/productos'} class={gender === value ? 'filter-option active' : 'filter-option'}>
+                    {label}
+                  </a>
+                )
+              })}
+            </div>
           </div>
 
           <div class="filter-group">
@@ -190,6 +209,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
                       ${price}
                       {hasOffer && <span style="margin-left:.5rem;color:#b91c1c;font-size:.8em">-{offerPct}%</span>}
                     </p>
+                    {Number(product.taxRate) === 0 && <p style="margin:0;font-size:.7rem;opacity:.6">IVA incluido</p>}
                     {sizes.length > 0 && (
                       <div class="product-sizes">
                         {sizes.map((s) => <span class="size-tag">{s}</span>)}

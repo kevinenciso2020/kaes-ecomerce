@@ -111,6 +111,7 @@ model Product {
   lowStockThreshold Int      @default(5)
   isActive          Boolean  @default(true)
   isFeatured        Boolean  @default(false)
+  gender            Gender? // null = sin clasificar (productos anteriores)
   categoryId        String
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -125,6 +126,7 @@ model Product {
 
   @@index([categoryId])
   @@index([isActive, createdAt])
+  @@index([gender])
   @@map("products")
 }
 
@@ -412,6 +414,11 @@ model ContactMessage {
   @@index([createdAt])
   @@index([isRead])
   @@map("contact_messages")
+}
+
+enum Gender {
+  HOMBRE
+  MUJER
 }
 
 enum Role {
