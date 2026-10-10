@@ -145,3 +145,41 @@ describe('checkTaxRate', () => {
     expect(r.status).toBe('error')
   })
 })
+
+describe('checkTaxRate: decodificación del cuerpo', () => {
+  beforeEach(() => vi.clearAllMocks())
+  const texto = '<p>ARTÍCULO 468. La tarifa general del impuesto sobre las ventas es del diecinueve por ciento (19%).</p>'
+  const bufFetch = (bytes, contentType) => vi.fn().mockResolvedValue({
+    ok: true,
+    headers: { get: (h) => (h.toLowerCase() === 'content-type' ? contentType ?? null : null) },
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  })
+  const utf8 = (s) => new Uint8Array(Buffer.from(s, 'utf-8'))
+  const latin1 = (s) => new Uint8Array(Buffer.from(s, 'latin1'))
+
+  it('bytes UTF-8 sin charset declarado', async () => {
+    const r = await checkTaxRate({ fetchFn: bufFetch(utf8(texto)), db: makeDb(base) })
+    expect(r).toEqual({ status: 'unchanged', detected: 19 })
+  })
+  it('bytes Latin-1 sin charset declarado (cae a windows-1252)', async () => {
+    const r = await checkTaxRate({ fetchFn: bufFetch(latin1(texto)), db: makeDb(base) })
+    expect(r).toEqual({ status: 'unchanged', detected: 19 })
+  })
+  it('respeta charset=iso-8859-1 del header', async () => {
+    const r = await checkTaxRate({ fetchFn: bufFetch(latin1(texto), 'text/html; charset=iso-8859-1'), db: makeDb(base) })
+    expect(r).toEqual({ status: 'unchanged', detected: 19 })
+  })
+  it('respeta charset=utf-8 del header', async () => {
+    const r = await checkTaxRate({ fetchFn: bufFetch(utf8(texto), 'text/html; charset=UTF-8'), db: makeDb(base) })
+    expect(r).toEqual({ status: 'unchanged', detected: 19 })
+  })
+  it('usa <meta charset> cuando el header no lo trae', async () => {
+    const r = await checkTaxRate({ fetchFn: bufFetch(latin1(`<meta charset="iso-8859-1">${texto}`), 'text/html'), db: makeDb(base) })
+    expect(r).toEqual({ status: 'unchanged', detected: 19 })
+  })
+  it('usa <meta http-equiv ... charset=> cuando el header no lo trae', async () => {
+    const meta = '<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">'
+    const r = await checkTaxRate({ fetchFn: bufFetch(latin1(meta + texto)), db: makeDb(base) })
+    expect(r).toEqual({ status: 'unchanged', detected: 19 })
+  })
+})

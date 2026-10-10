@@ -40,10 +40,35 @@ const DEFAULT_SOURCE = 'https://www.secretariasenado.gov.co/senado/basedoc/estat
 const MIN_INTERVAL_MS = 23 * 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 15000
 
-const decodeBody = async (res) => {
-  // La página puede venir en ISO-8859-1; si el fetch entrega ArrayBuffer lo decodificamos.
-  if (typeof res.arrayBuffer === 'function') return new TextDecoder('iso-8859-1').decode(await res.arrayBuffer())
-  return res.text()
+const CHARSET_RE = /charset\s*=\s*["']?\s*([\w.:-]+)/i
+
+const decodeConCharset = (bytes, charset) => {
+  try { return new TextDecoder(charset).decode(bytes) } catch { return null } // charset desconocido
+}
+
+/**
+ * Decodifica el cuerpo según, en orden: charset del header content-type, <meta charset> de los
+ * primeros ~2048 bytes y, si no hay ninguno, UTF-8 estricto con respaldo a windows-1252.
+ */
+export const decodeBody = async (res) => {
+  if (typeof res.arrayBuffer !== 'function') return res.text()
+  const bytes = new Uint8Array(await res.arrayBuffer())
+
+  const contentType = res.headers?.get?.('content-type') ?? ''
+  let charset = contentType.match(CHARSET_RE)?.[1]
+  if (!charset) {
+    const head = new TextDecoder('latin1').decode(bytes.subarray(0, 2048))
+    charset = head.match(/<meta[^>]+charset\s*=\s*["']?\s*([\w.:-]+)/i)?.[1]
+  }
+  if (charset) {
+    const decoded = decodeConCharset(bytes, charset)
+    if (decoded !== null) return decoded
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes)
+  }
 }
 
 /**
