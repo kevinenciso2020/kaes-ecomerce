@@ -34,8 +34,9 @@ export default function TaxSettings() {
     setBusy(true); setMsg(null)
     try {
       const r = await fn()
-      await load()
       setMsg({ type: 'ok', text: okText(r) })
+      try { await load() }
+      catch { setMsg({ type: 'error', text: 'El cambio se guardó, pero no se pudo recargar la pantalla. Recarga la página.' }) }
     } catch (err) {
       setMsg({ type: 'error', text: err.message || 'No se pudo completar la acción' })
     } finally { setBusy(false) }
@@ -43,7 +44,7 @@ export default function TaxSettings() {
 
   const save = () => {
     const next = Number(rate)
-    if (!Number.isFinite(next) || next < 0 || next > 30) { setMsg({ type: 'error', text: 'La tasa debe estar entre 0 y 30' }); return }
+    if (String(rate).trim() === '' || !Number.isFinite(next) || next < 0 || next > 30) { setMsg({ type: 'error', text: 'Escribe una tasa entre 0 y 30' }); return }
     if (!confirm(`¿Cambiar el IVA a ${next} %?\n\nSe recalcularán los precios de todos los productos con IVA general. Los pedidos ya hechos no cambian.`)) return
     run(() => api.admin.setTaxRate(next), (r) => r.changed ? `IVA actualizado a ${r.rate} %: ${r.productsUpdated} producto(s) recalculados` : 'La tasa ya era esa; no hubo cambios')
   }
@@ -56,14 +57,14 @@ export default function TaxSettings() {
   const checkNow = () =>
     run(() => api.admin.checkTax(), (r) => ({
       unchanged: 'La fuente oficial coincide con tu tasa',
-      pending: `La fuente oficial indica ${r.detected} %`,
+      pending: `La fuente oficial indica ${r.detected} %. No se cambió ningún precio; revisa el aviso de arriba para aplicarla.`,
       error: 'No se pudo leer la fuente oficial (revisa los logs)',
       skipped: 'Revisada hace poco',
     }[r.status] || 'Revisión terminada'))
 
-  if (state === 'loading') return <div className="container" style={{ padding: '6rem 0' }}>Cargando…</div>
+  if (state === 'loading') return <div className="container" style={{ padding: '6rem 16px' }}>Cargando…</div>
   if (state === 'denied') {
-    return <div className="container" style={{ padding: '6rem 0' }}><p>Solo el super administrador puede gestionar el IVA.</p></div>
+    return <div className="container" style={{ padding: '6rem 16px' }}><p>Solo el super administrador puede gestionar el IVA.</p></div>
   }
 
   return (
@@ -85,9 +86,9 @@ export default function TaxSettings() {
         </div>
       )}
 
-      <label style={{ display: 'block', margin: '1.5rem 0 .25rem' }}>Tasa vigente (%)</label>
+      <label htmlFor="iva-rate" style={{ display: 'block', margin: '1.5rem 0 .25rem' }}>Tasa vigente (%)</label>
       <div className="tax-row">
-        <input type="number" min="0" max="30" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} disabled={busy} />
+        <input id="iva-rate" type="number" min="0" max="30" step="0.01" value={rate} onChange={(e) => setRate(e.target.value)} disabled={busy} />
         <button className="btn btn-primary" onClick={save} disabled={busy}>Guardar tasa</button>
       </div>
 
