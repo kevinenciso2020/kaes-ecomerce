@@ -14,5 +14,6 @@ export default defineConfig({
     setupFiles: ['./tests/db/setup.js'],
     fileParallelism: false,
     testTimeout: 30_000,
+    hookTimeout: 60_000, // los TRUNCATE de beforeEach superan 10 s bajo carga
   },
 })
