@@ -1,0 +1,8 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+import TaxSettings from '../../components/admin/TaxSettings.jsx'
+---
+
+<ShopLayout title="Admin - IVA">
+  <TaxSettings client:only="react" />
+</ShopLayout>

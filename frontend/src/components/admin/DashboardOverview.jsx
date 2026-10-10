@@ -26,12 +26,14 @@ export default function DashboardOverview() {
   const [error, setError]       = useState(null)
   const [loading, setLoading]   = useState(true)
   const [accessDenied, setAccessDenied] = useState(false)
+  const [isSuper, setIsSuper] = useState(false)
 
   useEffect(() => {
     let mounted = true
     ;(async () => {
       const user = await bootstrapAuth()
       if (!mounted) return
+      setIsSuper(user?.role === 'SUPER_ADMIN')
       if (!user || !isAdminRole(user.role)) {
         setAccessDenied(true)
         setLoading(false)
@@ -132,6 +134,13 @@ export default function DashboardOverview() {
             <h3>Usuarios</h3>
             <p>Gestionar cuentas</p>
           </a>
+          {isSuper && (
+            <a href="/admin/iva" className="action-card">
+              <span className="action-icon">🧾</span>
+              <h3>IVA</h3>
+              <p>Tasa e impuestos</p>
+            </a>
+          )}
         </div>
       </section>
 
