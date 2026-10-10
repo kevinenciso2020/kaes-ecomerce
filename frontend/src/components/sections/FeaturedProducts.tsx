@@ -104,7 +104,6 @@ export default function FeaturedProducts({
                         ${price}
                         {hasOffer && <span style={{ marginLeft: "0.5rem", color: "#b91c1c", fontSize: "0.8em" }}>-{offerPct}%</span>}
                       </p>
-                      {Number(product.taxRate) === 0 && <p style={{ margin: 0, fontSize: "0.7rem", opacity: 0.6 }}>IVA incluido</p>}
                     </div>
                   </a>
                 </RevealSection>

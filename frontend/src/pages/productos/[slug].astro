@@ -2,6 +2,7 @@
 import ShopLayout from '../../layouts/ShopLayout.astro'
 import Icon from '../../components/ui/Icon.astro'
 import { api } from '../../lib/api.js'
+import { ivaBreakdown, formatCOP } from '../../lib/tax.js'
 import { SITE_CONFIG } from '../../lib/site-config.js'
 import { absoluteUrl, productJsonLd, resolveSiteUrl } from '../../lib/seo.js'
 
@@ -34,6 +35,8 @@ const basePrice   = Number(product.price)
 const finalPrice  = Number(product.finalPrice ?? product.price)
 const hasDiscount = finalPrice < basePrice
 const fmt = (n) => Number(n).toLocaleString('es-CO')
+const taxRate = Number(product.taxRate) || 0
+const breakdown = ivaBreakdown(finalPrice, taxRate)
 
 // SEO: imagen para compartir en redes y datos estructurados para Google.
 const productUrl = absoluteUrl(resolveSiteUrl(Astro.site, Astro.url.origin), `/productos/${encodeURIComponent(product.slug)}`)
@@ -47,6 +50,7 @@ const productJson = JSON.stringify({
   name:          product.name,
   price:         finalPrice,
   basePrice,
+  taxRate,
   discountRatio: basePrice > 0 ? finalPrice / basePrice : 1,
   images:        (product.images || []).map((i) => ({ url: i.url, isMain: i.isMain })),
   hasVariants,
@@ -112,7 +116,11 @@ const productJson = JSON.stringify({
           {hasDiscount && <del class="price-before">${fmt(basePrice)}</del>}
           <span class="currency-symbol">$</span><span id="price-value">{fmt(finalPrice)}</span> <span class="currency">COP</span>
         </p>
-        {Number(product.taxRate) === 0 && <p class="tax-note">IVA incluido</p>}
+        <dl class="tax-breakdown" aria-label="Desglose del precio">
+          <div><dt>Precio de la prenda</dt><dd id="bd-base">{formatCOP(breakdown.base)}</dd></div>
+          <div><dt>IVA{taxRate > 0 ? ` (${taxRate}%)` : ''}</dt><dd id="bd-iva">{formatCOP(breakdown.iva)}</dd></div>
+          <div class="bd-total"><dt>Total a pagar</dt><dd id="bd-total">{formatCOP(breakdown.total)}</dd></div>
+        </dl>
         {soldOut && <p class="sold-out-badge" role="status">Agotado</p>}
 
         {product.description && (
@@ -206,6 +214,7 @@ const productJson = JSON.stringify({
 
 <script>
   import { addToCart } from '../../stores/cart.store.js'
+  import { ivaBreakdown, formatCOP } from '../../lib/tax.js'
 
   let selectedSize = null
   let selectedColor = null
@@ -289,11 +298,14 @@ const productJson = JSON.stringify({
   const priceEl = document.getElementById('price-value')
   const refreshSelection = () => {
     const variant = findVariant()
-    if (priceEl) {
-      priceEl.textContent = variant?.price != null
-        ? Math.round(variant.price * (product.discountRatio || 1)).toLocaleString('es-CO')
-        : Number(product.price).toLocaleString('es-CO')
-    }
+    const unit = variant?.price != null
+      ? Math.round(variant.price * (product.discountRatio || 1))
+      : Number(product.price)
+    if (priceEl) priceEl.textContent = unit.toLocaleString('es-CO')
+    const bd = ivaBreakdown(unit, product.taxRate)
+    document.getElementById('bd-base').textContent = formatCOP(bd.base)
+    document.getElementById('bd-iva').textContent = formatCOP(bd.iva)
+    document.getElementById('bd-total').textContent = formatCOP(bd.total)
     // Tachar tallas/colores agotados según la otra opción elegida
     sizeButtons.forEach((b) => {
       const v = (product.variants || []).find((x) => x.size === b.dataset.size && (!hasColors || !selectedColor || x.color === selectedColor))
@@ -352,7 +364,10 @@ const productJson = JSON.stringify({
 
 <style>
   .price-before { color: var(--color-gray-400); font-size: 0.9em; margin-right: 0.5rem; }
-  .tax-note { font-size: 0.75rem; color: var(--color-gray-500); margin: -0.5rem 0 0.75rem; }
+  .tax-breakdown { margin: -0.25rem 0 1rem; max-width: 22rem; font-size: 0.85rem; color: var(--color-gray-500); }
+  .tax-breakdown div { display: flex; justify-content: space-between; gap: 1rem; padding: 0.15rem 0; }
+  .tax-breakdown dt, .tax-breakdown dd { margin: 0; }
+  .tax-breakdown .bd-total { margin-top: 0.25rem; padding-top: 0.35rem; border-top: 1px solid var(--color-gray-200, #e5e5e5); font-weight: 600; color: var(--color-black); }
   .sold-out-badge { display: inline-block; background: #fee2e2; color: #991b1b; font-weight: 600; font-size: 0.8rem; padding: 0.25rem 0.75rem; border-radius: 999px; margin-bottom: 0.75rem; }
   .color-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); margin-right: 6px; vertical-align: middle; }
   .size-btn.unavailable, .color-btn.unavailable { opacity: 0.4; text-decoration: line-through; }

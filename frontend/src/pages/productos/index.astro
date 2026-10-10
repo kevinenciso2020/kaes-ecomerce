@@ -209,7 +209,6 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
                       ${price}
                       {hasOffer && <span style="margin-left:.5rem;color:#b91c1c;font-size:.8em">-{offerPct}%</span>}
                     </p>
-                    {Number(product.taxRate) === 0 && <p style="margin:0;font-size:.7rem;opacity:.6">IVA incluido</p>}
                     {sizes.length > 0 && (
                       <div class="product-sizes">
                         {sizes.map((s) => <span class="size-tag">{s}</span>)}
