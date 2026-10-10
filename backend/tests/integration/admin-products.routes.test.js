@@ -15,10 +15,11 @@ vi.mock('../../src/config/prisma.js', () => ({
     },
     productVariant: {
       findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn(),
-      createMany: vi.fn(), deleteMany: vi.fn(), upsert: vi.fn(), create: vi.fn(),
+      createMany: vi.fn(), deleteMany: vi.fn(), upsert: vi.fn(), create: vi.fn(), update: vi.fn(),
     },
     productAvailableSize: { deleteMany: vi.fn(), createMany: vi.fn() },
     category: { findUnique: vi.fn(), findMany: vi.fn() },
+    taxSetting: { findUnique: vi.fn() },
     color: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), aggregate: vi.fn(), delete: vi.fn() },
     size: { findMany: vi.fn(), findUnique: vi.fn() },
     orderItem: { count: vi.fn() },
@@ -58,6 +59,7 @@ beforeEach(() => {
   prisma.user.findFirst.mockResolvedValue({ id: 'admin' })
   cloudinary.uploader.upload.mockResolvedValue({ secure_url: 'https://x/y.jpg', public_id: 'pid' })
   cloudinary.uploader.destroy.mockResolvedValue({ result: 'ok' })
+  prisma.taxSetting.findUnique.mockResolvedValue({ id: 1, rate: 19 })
 })
 
 describe('GET /api/v1/admin/colors', () => {
@@ -286,6 +288,52 @@ describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () =
     prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
   }
 
+  it('guarda price = base + IVA (19 %) y la tasa usada', async () => {
+    setupCreate()
+    const res = await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Camiseta', basePrice: '20000', categorySlug: 'camisetas' })
+    expect(res.status).toBe(201)
+    const data = prisma.product.create.mock.calls[0][0].data
+    expect(data.basePrice).toBe(20000)
+    expect(data.taxRate).toBe(19)
+    expect(data.price).toBe(23800)
+  })
+
+  it('producto exento: taxRate 0 → price = base', async () => {
+    setupCreate()
+    await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'Libro', basePrice: '45000', taxRate: '0', categorySlug: 'camisetas' })
+    const data = prisma.product.create.mock.calls[0][0].data
+    expect(data.taxRate).toBe(0)
+    expect(data.price).toBe(45000)
+  })
+
+  it('variante con precio propio: calcula su price con la tasa del producto', async () => {
+    setupCreate()
+    await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({
+        name: 'Camiseta', basePrice: '20000', categorySlug: 'camisetas',
+        variants: JSON.stringify([{ size: 'M', color: 'Azul', stock: 3, basePrice: 30000 }, { size: 'L', color: 'Azul', stock: 1 }]),
+      })
+    const v = prisma.product.create.mock.calls[0][0].data.variants.create
+    expect(v[0]).toMatchObject({ basePrice: 30000, price: 35700 })
+    expect(v[1]).toMatchObject({ basePrice: null, price: null })
+  })
+
+  it('rechaza la tasa fuera de 0–30', async () => {
+    const res = await request(app)
+      .post('/api/v1/admin/products')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .send({ name: 'X', basePrice: 1000, taxRate: 45, categorySlug: 'camisetas' })
+    expect(res.status).toBe(400)
+  })
+
   it('crea el producto con las URLs de Cloudinary como imágenes (la primera es la principal)', async () => {
     setupCreate()
     const res = await request(app)
@@ -293,7 +341,7 @@ describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () =
       .set('Authorization', `Bearer ${adminToken()}`)
       // (multer está mockeado en los tests; el form llega como JSON)
       .send({
-        name: 'Camiseta', price: '59900', categorySlug: 'camisetas',
+        name: 'Camiseta', basePrice: '59900', categorySlug: 'camisetas',
         imageUrls: JSON.stringify([
           'https://res.cloudinary.com/test_cloud/image/upload/v1/ecommerce-ropa/products/a.jpg',
           'https://res.cloudinary.com/test_cloud/image/upload/w_800,c_fill/b.png',
@@ -315,7 +363,7 @@ describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () =
       const res = await request(app)
         .post('/api/v1/admin/products')
         .set('Authorization', `Bearer ${adminToken()}`)
-        .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify([bad]) })
+        .send({ name: 'Camiseta', basePrice: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify([bad]) })
       expect(res.status).toBe(400)
     }
     expect(prisma.product.create).not.toHaveBeenCalled()
@@ -328,7 +376,7 @@ describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () =
     await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify(['https://cdn.ejemplo.com/foto.jpg']) })
+      .send({ name: 'Camiseta', basePrice: '59900', categorySlug: 'camisetas', imageUrls: JSON.stringify(['https://cdn.ejemplo.com/foto.jpg']) })
     expect(cloudinary.uploader.upload).toHaveBeenCalledWith('https://cdn.ejemplo.com/foto.jpg', expect.objectContaining({ folder: 'ecommerce-ropa/products' }))
   })
 
@@ -344,7 +392,7 @@ describe('POST /api/v1/admin/products — imágenes por URL de Cloudinary', () =
     const res = await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ name: 'Camiseta', price: '59900', categorySlug: 'camisetas' })
+      .send({ name: 'Camiseta', basePrice: '59900', categorySlug: 'camisetas' })
     expect(res.status).toBe(201)
     expect(prisma.product.create.mock.calls[0][0].data.slug).toBe('camiseta-2')
   })
@@ -379,7 +427,7 @@ describe('Validation guards on product payloads', () => {
     const res = await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ price: 100, categorySlug: 'camisetas' })
+      .send({ basePrice: 100, categorySlug: 'camisetas' })
     expect(res.status).toBe(400)
     expect(res.body.errors.some((e) => e.field === 'name')).toBe(true)
   })
@@ -388,7 +436,7 @@ describe('Validation guards on product payloads', () => {
     const res = await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ name: 'Test', price: 100 })
+      .send({ name: 'Test', basePrice: 100 })
     expect(res.status).toBe(400)
   })
 
@@ -396,7 +444,7 @@ describe('Validation guards on product payloads', () => {
     const res = await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ name: 'Test', price: 100, categorySlug: 'camisetas', variants: 'not-json' })
+      .send({ name: 'Test', basePrice: 100, categorySlug: 'camisetas', variants: 'not-json' })
     expect(res.status).toBe(400)
   })
 
@@ -404,7 +452,45 @@ describe('Validation guards on product payloads', () => {
     const res = await request(app)
       .post('/api/v1/admin/products')
       .set('Authorization', `Bearer ${adminToken()}`)
-      .send({ name: 'Test', price: -10, categorySlug: 'camisetas' })
+      .send({ name: 'Test', basePrice: -10, categorySlug: 'camisetas' })
     expect(res.status).toBe(400)
+  })
+})
+
+describe('PUT /api/v1/admin/products/:id (IVA)', () => {
+  const existing = { id: 'p1', name: 'X', slug: 'x', basePrice: 20000, taxRate: 19, price: 23800 }
+  const full = { id: 'p1', images: [], variants: [], availableSizes: [], discounts: [] }
+  const setupUpdate = () => {
+    prisma.product.findUnique.mockResolvedValueOnce(existing).mockResolvedValue(full)
+    prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
+    prisma.product.update.mockResolvedValue({})
+    prisma.productVariant.findMany.mockResolvedValue([])
+  }
+
+  it('cambiar basePrice recalcula price', async () => {
+    setupUpdate()
+    await request(app).put('/api/v1/admin/products/p1')
+      .set('Authorization', `Bearer ${adminToken()}`).send({ basePrice: 30000 })
+    const data = prisma.product.update.mock.calls[0][0].data
+    expect(data.basePrice).toBe(30000)
+    expect(data.price).toBe(35700)
+  })
+
+  it('pasar a exento (taxRate 0) recalcula price desde la base existente', async () => {
+    setupUpdate()
+    await request(app).put('/api/v1/admin/products/p1')
+      .set('Authorization', `Bearer ${adminToken()}`).send({ taxRate: 0 })
+    const data = prisma.product.update.mock.calls[0][0].data
+    expect(data.taxRate).toBe(0)
+    expect(data.price).toBe(20000)
+  })
+
+  it('sin tocar precio ni tasa no escribe price', async () => {
+    setupUpdate()
+    await request(app).put('/api/v1/admin/products/p1')
+      .set('Authorization', `Bearer ${adminToken()}`).send({ stock: 9 })
+    const data = prisma.product.update.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('price')
+    expect(data).not.toHaveProperty('basePrice')
   })
 })

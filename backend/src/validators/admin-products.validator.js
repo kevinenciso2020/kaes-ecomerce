@@ -56,9 +56,12 @@ export const adminCreateProduct = [
     .optional({ nullable: true })
     .trim()
     .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
-  body('price')
-    .notEmpty().withMessage('El precio es requerido')
+  body('basePrice')
+    .notEmpty().withMessage('El precio sin IVA es requerido')
     .isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+  body('taxRate')
+    .optional({ nullable: true })
+    .isFloat({ min: 0, max: 30 }).withMessage('La tasa de IVA debe estar entre 0 y 30'),
   imageUrlsRule(),
   body('stock')
     .optional({ nullable: true })
@@ -112,7 +115,8 @@ export const adminUpdateProduct = [
   body('description')
     .optional({ nullable: true }).trim()
     .isLength({ max: 5000 }).withMessage('La descripción no puede superar los 5000 caracteres'),
-  body('price').optional().isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+  body('basePrice').optional().isFloat({ min: 100, max: 50000000 }).withMessage('El precio debe estar entre $100 y $50.000.000 COP'),
+  body('taxRate').optional({ nullable: true }).isFloat({ min: 0, max: 30 }).withMessage('La tasa de IVA debe estar entre 0 y 30'),
   imageUrlsRule(),
   body('stock').optional().isInt({ min: 0 }).withMessage('El stock debe ser entero positivo'),
   body('lowStockThreshold').optional().isInt({ min: 0 }).withMessage('lowStockThreshold debe ser entero positivo'),

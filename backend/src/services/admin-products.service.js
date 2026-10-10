@@ -3,6 +3,8 @@ import { generateSlug } from '../utils/slug.utils.js'
 import { cleanupTempFiles } from '../middleware/upload.middleware.js'
 import { parseImageUrls, importRemoteImages, uploadProductFiles, destroyImages } from '../utils/cloudinary.utils.js'
 import { logger } from '../config/logger.js'
+import { finalPrice } from './tax.service.js'
+import { getCurrentRate } from './tax-settings.service.js'
 
 const log = logger.child({ component: 'admin-products' })
 
@@ -149,15 +151,23 @@ const parseJsonArray = (value, field) => {
 
 const toBool = (v) => v === true || v === 'true'
 
-const normalizeVariant = (v) => ({
-  size:              v.size ? String(v.size).trim() : null,
-  color:             v.color ? String(v.color).trim() : null,
-  colorHex:          v.colorHex || null,
-  sku:               v.sku ? String(v.sku).trim() : null,
-  stock:             Math.max(0, parseInt(v.stock) || 0),
-  lowStockThreshold: v.lowStockThreshold !== undefined && v.lowStockThreshold !== null && v.lowStockThreshold !== '' ? parseInt(v.lowStockThreshold) : null,
-  price:             v.price !== undefined && v.price !== null && v.price !== '' ? parseFloat(v.price) : null,
-})
+const normalizeVariant = (v, rate) => {
+  const hasBase = v.basePrice !== undefined && v.basePrice !== null && v.basePrice !== ''
+  const basePrice = hasBase ? Math.round(parseFloat(v.basePrice) * 100) / 100 : null
+  return {
+    size:              v.size ? String(v.size).trim() : null,
+    color:             v.color ? String(v.color).trim() : null,
+    colorHex:          v.colorHex || null,
+    sku:               v.sku ? String(v.sku).trim() : null,
+    stock:             Math.max(0, parseInt(v.stock) || 0),
+    lowStockThreshold: v.lowStockThreshold !== undefined && v.lowStockThreshold !== null && v.lowStockThreshold !== '' ? parseInt(v.lowStockThreshold) : null,
+    basePrice,
+    price:             basePrice === null ? null : finalPrice(basePrice, rate),
+  }
+}
+
+const parseTaxRate = (value) =>
+  value === undefined || value === null || value === '' ? undefined : Number(value)
 
 /** Genera un slug libre: "camiseta", "camiseta-2", "camiseta-3"… */
 const uniqueSlug = async (db, name, excludeId) => {
@@ -190,9 +200,9 @@ const resolveCategoryId = async (data) => {
  * Acepta (multipart/form-data):
  *   - images[]: archivos JPG/PNG/WEBP (se suben a Cloudinary)
  *   - imageUrls: JSON o lista separada por comas/saltos de línea con URLs https (Cloudinary las descarga y aloja)
- *   - variants: JSON [{ size, color, colorHex?, stock, sku?, lowStockThreshold?, price? }]
+ *   - variants: JSON [{ size, color, colorHex?, stock, sku?, lowStockThreshold?, basePrice? }]
  *   - sizeIds: JSON [id de Size]
- *   - name, description, price, stock, lowStockThreshold, categoryId|categorySlug, isFeatured, isActive
+ *   - name, description, basePrice (sin IVA), taxRate?, stock, lowStockThreshold, categoryId|categorySlug, isFeatured, isActive
  */
 export const createProduct = async (data, files = []) => {
   const categoryId = await resolveCategoryId(data)
@@ -201,9 +211,12 @@ export const createProduct = async (data, files = []) => {
     throw httpError(400, 'La categoría es requerida')
   }
 
+  const taxRate = parseTaxRate(data.taxRate) ?? await getCurrentRate(prisma)
+  const basePrice = Math.round(parseFloat(data.basePrice) * 100) / 100
+
   let variants, sizeIds, urlImages
   try {
-    variants = parseJsonArray(data.variants, 'variants').map(normalizeVariant)
+    variants = parseJsonArray(data.variants, 'variants').map((v) => normalizeVariant(v, taxRate))
     sizeIds = parseJsonArray(data.sizeIds, 'sizeIds')
     urlImages = parseImageUrls(data.imageUrls)
   } catch (err) {
@@ -230,7 +243,9 @@ export const createProduct = async (data, files = []) => {
           name:              data.name,
           slug,
           description:       data.description || '',
-          price:             parseFloat(data.price),
+          basePrice,
+          taxRate,
+          price:             finalPrice(basePrice, taxRate),
           stock:             Math.max(0, parseInt(data.stock) || 0),
           lowStockThreshold: data.lowStockThreshold !== undefined && data.lowStockThreshold !== '' ? parseInt(data.lowStockThreshold) : 5,
           isFeatured:        toBool(data.isFeatured),
@@ -260,10 +275,13 @@ export const updateProduct = async (id, data, files = []) => {
     throw httpError(404, 'Producto no encontrado')
   }
 
+  const taxRate = parseTaxRate(data.taxRate) ?? Number(existing.taxRate)
+  const rateChanged = taxRate !== Number(existing.taxRate)
+
   let categoryId, variants, sizeIds, urlImages
   try {
     categoryId = await resolveCategoryId(data)
-    variants = data.variants !== undefined ? parseJsonArray(data.variants, 'variants').map(normalizeVariant) : undefined
+    variants = data.variants !== undefined ? parseJsonArray(data.variants, 'variants').map((v) => normalizeVariant(v, taxRate)) : undefined
     sizeIds = data.sizeIds !== undefined ? parseJsonArray(data.sizeIds, 'sizeIds') : undefined
     urlImages = parseImageUrls(data.imageUrls)
   } catch (err) {
@@ -289,7 +307,14 @@ export const updateProduct = async (id, data, files = []) => {
         updateData.slug = await uniqueSlug(tx, data.name, id)
       }
       if (data.description !== undefined)       updateData.description = data.description
-      if (data.price !== undefined)             updateData.price = parseFloat(data.price)
+      if (data.basePrice !== undefined) {
+        const base = Math.round(parseFloat(data.basePrice) * 100) / 100
+        updateData.basePrice = base
+        updateData.price = finalPrice(base, taxRate)
+      } else if (rateChanged) {
+        updateData.price = finalPrice(Number(existing.basePrice), taxRate)
+      }
+      if (rateChanged) updateData.taxRate = taxRate
       if (data.stock !== undefined)             updateData.stock = Math.max(0, parseInt(data.stock) || 0)
       if (data.lowStockThreshold !== undefined && data.lowStockThreshold !== '') updateData.lowStockThreshold = parseInt(data.lowStockThreshold)
       if (data.isFeatured !== undefined)        updateData.isFeatured = toBool(data.isFeatured)
@@ -297,6 +322,13 @@ export const updateProduct = async (id, data, files = []) => {
       if (categoryId)                           updateData.categoryId = categoryId
 
       await tx.product.update({ where: { id }, data: updateData })
+
+      if (rateChanged && variants === undefined) {
+        const own = await tx.productVariant.findMany({ where: { productId: id, basePrice: { not: null } } })
+        for (const v of own) {
+          await tx.productVariant.update({ where: { id: v.id }, data: { price: finalPrice(Number(v.basePrice), taxRate) } })
+        }
+      }
 
       if (variants !== undefined) await syncVariants(tx, id, variants)
 
@@ -465,10 +497,10 @@ export const setMainImage = async (productId, imageId) => {
  * pedidos, dejando su stock en 0 si ya no vienen).
  */
 export const upsertVariants = async (productId, variantsInput) => {
-  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true } })
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, taxRate: true } })
   if (!product) throw httpError(404, 'Producto no encontrado')
 
-  const variants = parseJsonArray(variantsInput, 'variants').map(normalizeVariant)
+  const variants = parseJsonArray(variantsInput, 'variants').map((v) => normalizeVariant(v, Number(product.taxRate)))
   await prisma.$transaction((tx) => syncVariants(tx, productId, variants))
   return getProductById(productId)
 }
