@@ -166,6 +166,15 @@ const normalizeVariant = (v, rate) => {
   }
 }
 
+/** La tasa guardada debe ser numérica: nunca se calcula ni se escribe NaN. */
+const assertTasaGuardada = (value) => {
+  const n = Number(value)
+  if (value === null || value === undefined || !Number.isFinite(n)) {
+    throw httpError(500, 'La tasa de IVA guardada del producto no es válida; corrígela antes de continuar')
+  }
+  return n
+}
+
 const parseTaxRate = (value) =>
   value === undefined || value === null || value === '' ? undefined : Number(value)
 
@@ -211,7 +220,13 @@ export const createProduct = async (data, files = []) => {
     throw httpError(400, 'La categoría es requerida')
   }
 
-  const taxRate = parseTaxRate(data.taxRate) ?? await getCurrentRate(prisma)
+  let taxRate
+  try {
+    taxRate = assertTasaGuardada(parseTaxRate(data.taxRate) ?? await getCurrentRate(prisma))
+  } catch (err) {
+    await cleanupTempFiles(files)
+    throw err
+  }
   const basePrice = Math.round(parseFloat(data.basePrice) * 100) / 100
 
   let variants, sizeIds, urlImages
@@ -275,8 +290,15 @@ export const updateProduct = async (id, data, files = []) => {
     throw httpError(404, 'Producto no encontrado')
   }
 
-  const taxRate = parseTaxRate(data.taxRate) ?? Number(existing.taxRate)
-  const rateChanged = taxRate !== Number(existing.taxRate)
+  let tasaGuardada
+  try {
+    tasaGuardada = assertTasaGuardada(existing.taxRate)
+  } catch (err) {
+    await cleanupTempFiles(files)
+    throw err
+  }
+  const taxRate = parseTaxRate(data.taxRate) ?? tasaGuardada
+  const rateChanged = taxRate !== tasaGuardada
 
   let categoryId, variants, sizeIds, urlImages
   try {
@@ -500,7 +522,7 @@ export const upsertVariants = async (productId, variantsInput) => {
   const product = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, taxRate: true } })
   if (!product) throw httpError(404, 'Producto no encontrado')
 
-  const variants = parseJsonArray(variantsInput, 'variants').map((v) => normalizeVariant(v, Number(product.taxRate)))
+  const variants = parseJsonArray(variantsInput, 'variants').map((v) => normalizeVariant(v, assertTasaGuardada(product.taxRate)))
   await prisma.$transaction((tx) => syncVariants(tx, productId, variants))
   return getProductById(productId)
 }

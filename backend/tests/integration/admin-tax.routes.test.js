@@ -60,6 +60,28 @@ describe('PUT /admin/tax', () => {
     expect(res.body).toMatchObject({ rate: 5, changed: true })
     expect(prisma.taxSetting.upsert).toHaveBeenCalled()
   })
+  it('el PUT feliz llama al upsert con la tasa y el usuario', async () => {
+    await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate: 5 })
+    expect(prisma.taxSetting.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({ rate: 5, updatedById: 'u1' }),
+    }))
+  })
+  it("acepta rate '5' como string (llega el número 5 al servicio)", async () => {
+    const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate: '5' })
+    expect(res.status).toBe(200)
+    expect(prisma.taxSetting.upsert.mock.calls[0][0].update.rate).toBe(5)
+  })
+  it('409 si otra tasa propia de productos colisiona con la nueva', async () => {
+    prisma.$queryRaw.mockResolvedValueOnce([]).mockResolvedValueOnce([{ '?column?': 1 }]) // lock, colisión
+    const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate: 5 })
+    expect(res.status).toBe(409)
+    expect(JSON.stringify(res.body)).toContain('tasa propia')
+    expect(prisma.taxSetting.upsert).not.toHaveBeenCalled()
+  })
+  it.each([[null], [undefined]])('rechaza rate=%s (null o ausente)', async (rate) => {
+    const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send(rate === undefined ? {} : { rate })
+    expect(res.status).toBe(400)
+  })
   it.each([[45], [-1], ['abc']])('rechaza rate=%s', async (rate) => {
     const res = await request(app).put('/api/v1/admin/tax').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`).send({ rate })
     expect(res.status).toBe(400)
@@ -70,6 +92,7 @@ describe('POST /admin/tax/apply-pending', () => {
   it('ADMIN → 403', async () => {
     const res = await request(app).post('/api/v1/admin/tax/apply-pending').set('Authorization', `Bearer ${token('ADMIN')}`)
     expect(res.status).toBe(403)
+    expect(prisma.$transaction).not.toHaveBeenCalled()
   })
   it('aplica la pendiente', async () => {
     const res = await request(app).post('/api/v1/admin/tax/apply-pending').set('Authorization', `Bearer ${token('SUPER_ADMIN')}`)

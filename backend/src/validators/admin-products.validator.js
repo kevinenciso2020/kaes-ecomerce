@@ -11,6 +11,18 @@ const imageUrlsRule = () =>
       return true
     })
 
+// Precio propio de una variante (opcional): si viene, número finito entre $1 y $50.000.000.
+const assertVariantPrices = (variants) => {
+  for (const variant of variants) {
+    const bp = variant?.basePrice
+    if (bp === undefined || bp === null || bp === '') continue
+    const n = typeof bp === 'number' || typeof bp === 'string' ? Number(bp) : NaN
+    if (!Number.isFinite(n) || n <= 0 || n > 50000000) {
+      throw new Error('El precio de la variante debe ser un número entre $1 y $50.000.000')
+    }
+  }
+}
+
 export const adminListProducts = [
   query('page')
     .optional()
@@ -88,11 +100,13 @@ export const adminCreateProduct = [
   body('variants')
     .optional({ nullable: true })
     .custom((v) => {
+      let parsed = v
       if (typeof v === 'string') {
-        try { JSON.parse(v) } catch { throw new Error('variants debe ser JSON válido') }
+        try { parsed = JSON.parse(v) } catch { throw new Error('variants debe ser JSON válido') }
       } else if (!Array.isArray(v)) {
         throw new Error('variants debe ser array')
       }
+      if (Array.isArray(parsed)) assertVariantPrices(parsed)
       return true
     }),
   body('sizeIds')
@@ -131,11 +145,13 @@ export const adminUpdateProduct = [
   body('variants')
     .optional({ nullable: true })
     .custom((v) => {
+      let parsed = v
       if (typeof v === 'string') {
-        try { JSON.parse(v) } catch { throw new Error('variants debe ser JSON válido') }
+        try { parsed = JSON.parse(v) } catch { throw new Error('variants debe ser JSON válido') }
       } else if (!Array.isArray(v)) {
         throw new Error('variants debe ser array')
       }
+      if (Array.isArray(parsed)) assertVariantPrices(parsed)
       return true
     }),
   body('sizeIds')
@@ -162,6 +178,7 @@ export const adminUpsertVariants = [
           throw new Error('Cada variant.stock debe ser entero positivo')
         }
       }
+      assertVariantPrices(parsed)
       return true
     }),
 ]

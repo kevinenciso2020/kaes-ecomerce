@@ -494,3 +494,92 @@ describe('PUT /api/v1/admin/products/:id (IVA)', () => {
     expect(data).not.toHaveProperty('basePrice')
   })
 })
+
+describe('IVA en productos: casos adicionales (dinero)', () => {
+  const existing = { id: 'p1', name: 'X', slug: 'x', basePrice: 20000, taxRate: 19, price: 23800 }
+  const full = { id: 'p1', images: [], variants: [], availableSizes: [], discounts: [] }
+  const auth = () => ({ Authorization: `Bearer ${adminToken()}` })
+  const setup = (prod = existing) => {
+    prisma.product.findUnique.mockResolvedValueOnce(prod).mockResolvedValue(full)
+    prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
+    prisma.product.update.mockResolvedValue({})
+    prisma.productVariant.findMany.mockResolvedValue([])
+  }
+
+  it('cambio de tasa SIN variants recalcula las variantes con precio propio', async () => {
+    setup()
+    prisma.productVariant.findMany.mockResolvedValue([{ id: 'v1', basePrice: 30000 }])
+    prisma.productVariant.update.mockResolvedValue({})
+    const res = await request(app).put('/api/v1/admin/products/p1').set(auth()).send({ taxRate: 5 })
+    expect(res.status).toBe(200)
+    expect(prisma.productVariant.update).toHaveBeenCalledWith({ where: { id: 'v1' }, data: { price: 31500 } })
+  })
+
+  it('taxRate igual a la guardada no escribe taxRate ni recalcula', async () => {
+    setup()
+    await request(app).put('/api/v1/admin/products/p1').set(auth()).send({ taxRate: 19, stock: 3 })
+    const data = prisma.product.update.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('taxRate')
+    expect(data).not.toHaveProperty('price')
+    expect(prisma.productVariant.update).not.toHaveBeenCalled()
+  })
+
+  it('basePrice + taxRate nuevos juntos usan la nueva tasa', async () => {
+    setup()
+    await request(app).put('/api/v1/admin/products/p1').set(auth()).send({ basePrice: 10000, taxRate: 5 })
+    const data = prisma.product.update.mock.calls[0][0].data
+    expect(data).toMatchObject({ basePrice: 10000, taxRate: 5, price: 10500 })
+  })
+
+  it('PATCH /products/:id/variants usa la taxRate del producto', async () => {
+    prisma.product.findUnique.mockResolvedValueOnce({ id: 'p1', taxRate: 5 }).mockResolvedValue(full)
+    prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
+    prisma.productVariant.findMany.mockResolvedValue([])
+    prisma.productVariant.create.mockResolvedValue({})
+    const res = await request(app).patch('/api/v1/admin/products/p1/variants').set(auth())
+      .send({ variants: [{ size: 'M', color: 'Azul', stock: 2, basePrice: 10000 }] })
+    expect(res.status).toBe(200)
+    expect(prisma.productVariant.create.mock.calls[0][0].data).toMatchObject({ basePrice: 10000, price: 10500 })
+  })
+
+  it('taxRate guardada no numérica: error claro y no escribe NaN', async () => {
+    setup({ ...existing, taxRate: 'abc' })
+    const res = await request(app).put('/api/v1/admin/products/p1').set(auth()).send({ basePrice: 10000 })
+    expect(res.status).toBe(500)
+    expect(prisma.product.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('basePrice de variantes: validación', () => {
+  const auth = () => ({ Authorization: `Bearer ${adminToken()}` })
+  const variantsWith = (basePrice) => [{ size: 'M', color: 'Azul', stock: 1, basePrice }]
+
+  it.each([[-5], ['abc'], [0], [60000000]])('POST rechaza basePrice de variante %s', async (bp) => {
+    const res = await request(app).post('/api/v1/admin/products').set(auth())
+      .send({ name: 'Camiseta', basePrice: 20000, categorySlug: 'c', variants: variantsWith(bp) })
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toContain('El precio de la variante debe ser un número entre $1 y $50.000.000')
+  })
+
+  it('PUT rechaza basePrice de variante negativo (variants como JSON string)', async () => {
+    const res = await request(app).put('/api/v1/admin/products/p1').set(auth())
+      .send({ variants: JSON.stringify(variantsWith(-1)) })
+    expect(res.status).toBe(400)
+  })
+
+  it.each([[-5], ['abc']])('PATCH variants rechaza basePrice %s', async (bp) => {
+    const res = await request(app).patch('/api/v1/admin/products/p1/variants').set(auth())
+      .send({ variants: variantsWith(bp) })
+    expect(res.status).toBe(400)
+  })
+
+  it('PATCH variants acepta basePrice válido, vacío o ausente', async () => {
+    prisma.product.findUnique.mockResolvedValueOnce({ id: 'p1', taxRate: 19 }).mockResolvedValue({ id: 'p1', images: [], variants: [], availableSizes: [], discounts: [] })
+    prisma.$transaction.mockImplementation(async (cb) => cb(prisma))
+    prisma.productVariant.findMany.mockResolvedValue([])
+    prisma.productVariant.create.mockResolvedValue({})
+    const res = await request(app).patch('/api/v1/admin/products/p1/variants').set(auth())
+      .send({ variants: [{ size: 'M', stock: 1, basePrice: 15000 }, { size: 'L', stock: 1, basePrice: '' }, { size: 'S', stock: 1 }] })
+    expect(res.status).toBe(200)
+  })
+})
