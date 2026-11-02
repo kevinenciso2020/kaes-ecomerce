@@ -1,0 +1,9 @@
+# Cabeceras de los archivos estáticos (Cloudflare los sirve sin pasar por el
+# Worker). Deben coincidir con src/lib/security-headers.js.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self' https://checkout.wompi.co https://www.mercadopago.com.co

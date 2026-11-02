@@ -78,5 +78,11 @@ jobs:
       - run: npm run build
         env:
           PUBLIC_API_URL: https://api.example.com/api/v1
+      # Empaqueta el Worker sin publicarlo: falla si supera el límite de tamaño
+      # de Cloudflare (3 MB comprimido en el plan gratuito).
+      - name: Validar Worker de Cloudflare
+        run: npx wrangler deploy --dry-run
+        env:
+          WRANGLER_SEND_METRICS: 'false'
       - name: Auditoría de dependencias
         run: npm audit --audit-level=high --omit=dev

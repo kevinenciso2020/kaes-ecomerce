@@ -1,6 +1,6 @@
 import { defineConfig } from 'astro/config';
 import react from '@astrojs/react';
-import vercel from '@astrojs/vercel';
+import cloudflare from '@astrojs/cloudflare';
 
 // Origen del API (PUBLIC_API_URL, obligatorio en el build) para connect-src.
 const apiOrigin = (() => {
@@ -16,7 +16,10 @@ export default defineConfig({
   // canónicas, Open Graph y sitemap. Sin él se usa el host de cada petición.
   site: process.env.SITE_URL || undefined,
   output: 'server',
-  adapter: vercel(),
+  // Cloudflare Workers. Sin optimización de imágenes (vienen ya de Cloudinary).
+  adapter: cloudflare({ imageService: 'passthrough' }),
+  // La tienda no usa Astro.session: evita que el adaptador cree un KV de sesiones.
+  session: false,
   integrations: [react()],
   security: {
     // Content Security Policy en un <meta> por página. Astro calcula el hash
@@ -24,7 +27,8 @@ export default defineConfig({
     // así que sólo se ejecuta JavaScript propio: un XSS inyectado no corre.
     // Los estilos permiten 'unsafe-inline' porque hay atributos style y
     // estilos de React/framer-motion (el riesgo real de XSS está en scripts).
-    // frame-ancestors no se puede poner en <meta>: va como header en vercel.json.
+    // frame-ancestors no se puede poner en <meta>: va como header en
+    // src/lib/security-headers.js (páginas) y public/_headers (estáticos).
     csp: {
       directives: [
         "default-src 'self'",

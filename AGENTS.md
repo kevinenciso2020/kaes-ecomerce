@@ -50,14 +50,13 @@ npm run test:coverage # With v8 coverage
 
 ## Deployment
 
-### Frontend (Vercel)
+### Frontend (Cloudflare Workers)
 1. Push your code to GitHub
-2. Go to [vercel.com](https://vercel.com) and import the repository
-3. Select "frontend" as the directory
-4. Build command: `npm run build`
-5. Output directory: `dist`
-6. Add environment variables: `PUBLIC_API_URL=https://your-backend-url.com/api/v1` and `SSR_API_KEY` (server-only, same value as backend)
-7. Deploy
+2. Cloudflare dashboard → Workers & Pages → Create → Import a repository (Workers Builds)
+3. Root directory: `frontend`; build command: `npm run build`; deploy command: `npx wrangler deploy` (config in `frontend/wrangler.jsonc`)
+4. **Build** variables: `PUBLIC_API_URL=https://your-backend-url.com/api/v1`, `SITE_URL`, `NODE_VERSION=22` (and `PUBLIC_LEGAL_NIT` etc. — every `PUBLIC_*` is fixed at build time)
+5. **Runtime** variables: secret `SSR_API_KEY` (same value as backend) and `ADMIN_SSR_GUARD=strict` (Worker → Settings → Variables and Secrets)
+6. Every push to `main` deploys. Local check of the real runtime: `npm run build && npx wrangler dev`
 
 ### Backend (Railway/Render)
 1. Push your code to GitHub
@@ -73,12 +72,12 @@ npm run test:coverage # With v8 coverage
    - `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`
    - `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET` (optional)
    - `SSR_API_KEY`, `SENTRY_DSN` — see `backend/.env.example` for the full list
-   - `FRONTEND_URL` (your Vercel URL)
+   - `FRONTEND_URL` (your frontend URL)
    - `BACKEND_URL` (your Railway/Render URL)
 5. Migrations run automatically on boot (`npm run start:prod` → `prisma migrate deploy`)
 6. Deploy
 
 ### Important
-- After deploying backend, update `FRONTEND_URL` in backend env to your Vercel URL
-- After deploying backend, update `PUBLIC_API_URL` in Vercel to your backend URL
+- After deploying backend, update `FRONTEND_URL` in backend env to your frontend URL
+- After deploying backend, update `PUBLIC_API_URL` (build variable) in Cloudflare to your backend URL and redeploy
 - Full pre-launch runbook (Spanish): `docs/LANZAMIENTO.md`

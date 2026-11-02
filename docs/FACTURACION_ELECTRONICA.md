@@ -95,7 +95,7 @@ y no los guardes en el repositorio.
 | `EINVOICE_PAYMENT_MEANS_CODE` | `ZZZ` (otro) por defecto |
 | `EINVOICE_ALERT_EMAIL` | Quién recibe los avisos de rechazo (opcional) |
 
-En el frontend (Vercel) configura `PUBLIC_LEGAL_NIT` con el NIT y su DV para las páginas legales.
+En el frontend (Cloudflare, variable de **build**) configura `PUBLIC_LEGAL_NIT` con el NIT y su DV para las páginas legales.
 
 **En habilitación** usa los datos de prueba que muestra el portal. La resolución de pruebas usa el
 prefijo `SETP`, el rango `990000000–995000000` y la clave técnica que aparece en el set.
