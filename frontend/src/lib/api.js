@@ -5,8 +5,8 @@ if (!BASE_URL && typeof window !== 'undefined') {
   console.error('[API] PUBLIC_API_URL no está configurada')
 }
 
-// En el servidor (SSR en Vercel) todas las peticiones salen de pocas IPs:
-// el header x-ssr-key permite que el backend no las cuente en el rate limit
+// En el servidor (SSR en el Worker de Cloudflare) las peticiones salen de IPs
+// compartidas: el header x-ssr-key permite que el backend no las cuente en el rate limit
 // por IP. SSR_API_KEY es un secreto de servidor (NO lleva prefijo PUBLIC_).
 const ssrHeaders = () => {
   if (!import.meta.env.SSR) return {}

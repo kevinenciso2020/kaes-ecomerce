@@ -1,0 +1,19 @@
+// Configuración del Worker de Cloudflare que sirve el frontend (Astro SSR).
+// `main` y el binding `ASSETS` los completa @astrojs/cloudflare en el build.
+// Variables: PUBLIC_API_URL y SITE_URL son de BUILD (Workers Builds →
+// Settings → Build → Variables); SSR_API_KEY (secreto) y ADMIN_SSR_GUARD son
+// de RUNTIME (Settings → Variables and Secrets). Ver docs/LANZAMIENTO.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kaes-frontend",
+  "compatibility_date": "2026-10-01",
+  // nodejs_compat expone `process.env` con las variables y secretos del Worker
+  // (lo usan src/lib/api.js y src/middleware.js).
+  "compatibility_flags": ["nodejs_compat"],
+  // Ejecuta el Worker cerca del API (Railway) en vez de cerca del visitante:
+  // cada página hace varias llamadas al API, así que reduce la latencia total.
+  "placement": { "mode": "smart" },
+  "observability": { "enabled": true },
+  // Las variables de runtime se configuran en el panel; no borrarlas al desplegar.
+  "keep_vars": true
+}

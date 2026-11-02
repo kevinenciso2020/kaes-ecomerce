@@ -16,7 +16,7 @@ const { title, description = 'Tienda de ropa online', image: imageProp, type = '
 
 // URL canónica sin query string (filtros, utm…). Con SITE_URL configurado
 // (astro.config) apunta siempre al dominio principal aunque se visite el
-// sitio por *.vercel.app.
+// sitio por *.workers.dev.
 const siteUrl      = resolveSiteUrl(Astro.site, Astro.url.origin)
 const canonicalUrl = absoluteUrl(siteUrl, Astro.url.pathname)
 // Imagen por defecto (logo de Kaes) cuando la página no define una propia
