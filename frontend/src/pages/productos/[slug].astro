@@ -21,7 +21,7 @@ if (!product || error) {
   return Astro.redirect('/productos')
 }
 
-// Catálogo cacheable en el CDN de Vercel (60 s, sirve versión vieja mientras revalida).
+// Catálogo cacheable en el borde de Cloudflare (60 s, sirve versión vieja mientras revalida).
 Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300')
 
 const mainImage   = product.images?.find((i) => i.isMain) || product.images?.[0]
@@ -448,6 +448,7 @@ const productJson = JSON.stringify({
   .product-category-link:hover { color: var(--color-black); }
 
   .badge-featured {
+    position:      static;
     font-size:     0.65rem;
     font-weight:   600;
     padding:       2px 8px;
