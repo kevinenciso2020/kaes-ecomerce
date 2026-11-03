@@ -3,16 +3,21 @@ import { Preference, Payment } from 'mercadopago'
 
 import { getMpClient, isMercadoPagoConfigured, verifyMpSignature } from '../config/mercadopago.js'
 import * as wompi from '../config/wompi.js'
+import * as addi from '../config/addi.js'
+import { isTransferConfigured } from '../config/bank-transfer.js'
 import { prisma } from '../config/prisma.js'
 import { captureError } from '../config/sentry.js'
 import { isAuth } from '../middleware/auth.middleware.js'
 import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail.middleware.js'
 import { paymentInitLimiter } from '../middleware/rateLimit.middleware.js'
+import { proofUpload, cleanupTempFiles } from '../middleware/upload.middleware.js'
 import {
   processPaymentUpdate,
   mapMercadoPagoStatus,
   mapWompiStatus,
+  mapAddiStatus,
 } from '../services/payment.service.js'
+import * as BankTransfer from '../services/bank-transfer.service.js'
 
 const router = express.Router()
 
@@ -266,6 +271,143 @@ router.post('/webhook', async (req, res) => {
 })
 
 // ─────────────────────────────────────────
+// POST /api/v1/payments/addi/checkout
+// Crea la solicitud de crédito en Addi y devuelve la URL a la que se redirige.
+// ─────────────────────────────────────────
+router.post('/addi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+  try {
+    if (!addi.isAddiConfigured()) throw httpError(503, 'Pagos con Addi no disponibles en este momento')
+
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+
+    const limits = await addi.getAmountLimits(order.total)
+    if (limits && (Number(order.total) < limits.min || Number(order.total) > limits.max)) {
+      throw httpError(
+        409,
+        `Addi financia compras entre $${Math.round(limits.min).toLocaleString('es-CO')} y $${Math.round(limits.max).toLocaleString('es-CO')}. Elige otro medio de pago.`,
+        'ADDI_AMOUNT_OUT_OF_RANGE',
+      )
+    }
+
+    const checkoutUrl = await addi.createApplication({
+      order,
+      callbackUrl: `${backendUrl()}/api/v1/payments/addi/callback`,
+      redirectionUrl: `${frontendUrl()}/checkout/resultado?orderId=${order.id}&provider=addi`,
+      logoUrl: process.env.ADDI_LOGO_URL || undefined,
+    })
+
+    await prisma.order.update({ where: { id: order.id }, data: { paymentProvider: 'ADDI' } })
+
+    req.log?.info({ orderId: order.id }, 'payment.addi.application_created')
+    return res.json({ checkoutUrl })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────
+// POST /api/v1/payments/addi/callback
+// Addi informa el resultado del crédito. Protegido con Basic auth
+// (ADDI_CALLBACK_USER / ADDI_CALLBACK_PASSWORD). El monto aprobado se compara
+// con el total de la orden dentro de processPaymentUpdate.
+// ─────────────────────────────────────────
+router.post('/addi/callback', async (req, res) => {
+  const check = addi.verifyCallbackAuth(req.headers.authorization)
+  if (!check.valid) {
+    req.log?.warn({ provider: 'addi', reason: check.reason }, 'payment.webhook.signature_invalid')
+    return res.status(401).json({ error: 'No autorizado' })
+  }
+
+  const body = req.body || {}
+  const orderId = typeof body.orderId === 'string' ? body.orderId : null
+  const applicationId = body.applicationId != null ? String(body.applicationId) : null
+  if (!orderId || !applicationId) {
+    req.log?.warn({ provider: 'addi', orderId, applicationId }, 'payment.webhook.unknown_reference')
+    return res.status(400).json({ error: 'orderId y applicationId son requeridos' })
+  }
+
+  try {
+    const status = mapAddiStatus(body.status)
+    const approvedAmount = Number(body.approvedAmount)
+    const result = await processPaymentUpdate({
+      provider: 'ADDI',
+      orderId,
+      providerPaymentId: applicationId,
+      status,
+      amount: Number.isFinite(approvedAmount) && approvedAmount > 0 ? approvedAmount : undefined,
+      currency: body.currency || 'COP',
+      payload: body,
+      source: 'webhook',
+    })
+    req.log?.info({ provider: 'addi', orderId, applicationId, addiStatus: body.status, outcome: result.outcome }, 'payment.webhook.processed')
+    // Addi espera 200 con el mismo cuerpo que envió.
+    return res.status(200).json(body)
+  } catch (err) {
+    req.log?.error({ err, provider: 'addi', orderId, applicationId }, 'payment.webhook.processing_failed')
+    captureError(err, { provider: 'addi', orderId, applicationId })
+    return res.status(500).json({ error: 'Error procesando el callback' })
+  }
+})
+
+// ─────────────────────────────────────────
+// Transferencia manual (Nequi / Bancolombia / Bre-B)
+// ─────────────────────────────────────────
+const loadOwnOrder = async (orderId, user) => {
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { payment: true } })
+  if (!order || (order.userId !== user.id && !isAdminRole(user.role))) throw httpError(404, 'Orden no encontrada')
+  return order
+}
+
+// POST /api/v1/payments/transfer/start — elige transferencia y devuelve las cuentas.
+router.post('/transfer/start', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+  try {
+    if (!isTransferConfigured()) throw httpError(503, 'Pagos por transferencia no disponibles en este momento')
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const info = await BankTransfer.startTransfer(order)
+    req.log?.info({ orderId: order.id }, 'payment.transfer.started')
+    return res.json(info)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// GET /api/v1/payments/transfer/:orderId — datos y estado (para la página de transferencia).
+router.get('/transfer/:orderId', isAuth, async (req, res, next) => {
+  try {
+    const order = await loadOwnOrder(req.params.orderId, req.user)
+    const info = BankTransfer.getTransferInfo(order)
+    return res.json({
+      ...info,
+      accounts: isTransferConfigured() ? info.accounts : [],
+      orderStatus: order.status,
+      needsReview: order.needsReview,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// POST /api/v1/payments/transfer/:orderId/proof — sube el comprobante (campo "proof").
+router.post(
+  '/transfer/:orderId/proof',
+  isAuth,
+  requireVerifiedEmail,
+  paymentInitLimiter,
+  proofUpload.single('proof'),
+  async (req, res, next) => {
+    try {
+      if (!isTransferConfigured()) throw httpError(503, 'Pagos por transferencia no disponibles en este momento')
+      const order = await loadPayableOrder(req.params.orderId, req.user)
+      const info = await BankTransfer.uploadProof(order, req.file)
+      return res.status(201).json(info)
+    } catch (err) {
+      await cleanupTempFiles(req.file ? [req.file] : [])
+      next(err)
+    }
+  },
+)
+
+// ─────────────────────────────────────────
 // POST /api/v1/payments/verify/:orderId
 // Respaldo del webhook: la página de resultado pide verificar el pago
 // directamente con el proveedor (fuente de verdad) y lo procesa igual que un
@@ -279,7 +421,10 @@ router.post('/verify/:orderId', isAuth, paymentInitLimiter, async (req, res, nex
       throw httpError(404, 'Orden no encontrada')
     }
 
-    const provider = req.body?.provider || (order.paymentProvider === 'MERCADOPAGO' ? 'mercadopago' : 'wompi')
+    // Addi (callback) y transferencia (aprobación del admin) no tienen API de
+    // consulta: para ellos solo se devuelve el estado actual de la orden.
+    const PROVIDER_KEYS = { MERCADOPAGO: 'mercadopago', WOMPI: 'wompi', ADDI: 'addi', BANK_TRANSFER: 'transfer' }
+    const provider = req.body?.provider || PROVIDER_KEYS[order.paymentProvider] || 'wompi'
     const updates = []
 
     // Consultar al proveedor es "best effort": si su API falla, se registra y
@@ -374,6 +519,8 @@ router.get('/methods', (req, res) => {
   res.json({
     wompi: wompi.isWompiConfigured(),
     mercadopago: isMercadoPagoConfigured() && process.env.MP_ENABLED !== 'false',
+    addi: addi.isAddiConfigured(),
+    transfer: isTransferConfigured(),
   })
 })
 

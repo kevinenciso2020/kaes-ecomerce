@@ -24,9 +24,16 @@ const ALLOWED_TRANSITIONS = {
 }
 
 const TRANSITION_HINTS = {
-  CONFIRMED: 'Confirmar manualmente (p. ej. pago por transferencia): descuenta el stock.',
+  CONFIRMED: 'Confirmar manualmente: descuenta el stock. Para transferencias usa mejor "Aprobar transferencia" (registra el pago).',
   CANCELLED: 'Si la orden estaba pagada, el stock se devuelve. El reembolso del dinero se hace en el panel de Wompi/MercadoPago.',
   REFUNDED: 'Marca la orden como reembolsada y devuelve el stock. Haz el reembolso en el panel de la pasarela.',
+}
+
+const PROVIDER_LABELS = {
+  WOMPI: 'Wompi',
+  MERCADOPAGO: 'MercadoPago',
+  ADDI: 'Addi',
+  BANK_TRANSFER: 'Transferencia',
 }
 
 const PAYMENT_LABELS = {
@@ -36,7 +43,58 @@ const PAYMENT_LABELS = {
   REFUNDED:  { label: 'Reembolsado', cls: 'refunded' },
 }
 
-export default function OrderDetailModal({ order, onClose, onStatusChange, onResolveReview, showToast }) {
+function TransferReview({ order, onReviewTransfer, showToast }) {
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState('')
+  const pending = order.payment?.status === 'PENDING' && !order.stockDeducted
+
+  const act = async (approve) => {
+    if (approve && !confirm(`¿Confirmas que recibiste $${Number(order.total).toLocaleString('es-CO')} en tu cuenta? Se descontará el stock y se confirmará el pedido.`)) return
+    if (!approve && !note.trim() && !confirm('¿Rechazar sin indicar el motivo al cliente?')) return
+    setBusy(true)
+    try {
+      await onReviewTransfer(order.id, approve, note.trim() || undefined)
+      setNote('')
+    } catch (err) {
+      showToast?.({ type: 'error', message: err.message || 'No se pudo registrar la revisión' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="detail-section transfer-review">
+      <h3>Comprobante de transferencia</h3>
+      {order.paymentProofUrl ? (
+        <a href={order.paymentProofUrl} target="_blank" rel="noopener noreferrer" className="proof-link">
+          <img src={order.paymentProofUrl} alt="Comprobante de transferencia" className="proof-img" />
+        </a>
+      ) : (
+        <p className="muted">El cliente aún no ha subido el comprobante.</p>
+      )}
+      {order.paymentProofAt && <p className="muted">Subido: {new Date(order.paymentProofAt).toLocaleString('es-CO')}</p>}
+      {order.paymentProofUrl && pending && onReviewTransfer && (
+        <>
+          <p className="muted">Verifica en tu app del banco o Nequi que llegaron <strong>${Number(order.total).toLocaleString('es-CO')}</strong> con la referencia KAES-{order.id.slice(-8).toUpperCase()} antes de aprobar.</p>
+          <div className="status-control">
+            <input
+              type="text"
+              placeholder="Motivo del rechazo (se le envía al cliente)"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+              disabled={busy}
+            />
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => act(true)}>Aprobar transferencia</button>
+            <button type="button" className="btn btn-danger" disabled={busy} onClick={() => act(false)}>Rechazar</button>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+export default function OrderDetailModal({ order, onClose, onStatusChange, onResolveReview, onReviewTransfer, showToast }) {
   const allowed = ALLOWED_TRANSITIONS[order.status] || []
   const [newStatus, setNewStatus] = useState(allowed[0] || order.status)
   const [note, setNote]           = useState('')
@@ -110,7 +168,7 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, onRes
                 </p>
                 {order.payment && (
                   <p className="detail-sub">
-                    {order.payment.provider} · ${Number(order.payment.amount).toLocaleString('es-CO')} {order.payment.currency}
+                    {PROVIDER_LABELS[order.payment.provider] || order.payment.provider} · ${Number(order.payment.amount).toLocaleString('es-CO')} {order.payment.currency}
                   </p>
                 )}
               </div>
@@ -131,6 +189,10 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, onRes
               </div>
             )}
           </section>
+
+          {order.paymentProvider === 'BANK_TRANSFER' && (
+            <TransferReview order={order} onReviewTransfer={onReviewTransfer} showToast={showToast} />
+          )}
 
           <EinvoicePanel order={order} showToast={showToast} />
 
@@ -277,6 +339,11 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, onRes
         .btn { padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.875rem; cursor: pointer; border: 1px solid transparent; }
         .btn-primary { background: var(--color-black, #000); color: var(--color-white, #fff); }
         .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-danger { background: #dc2626; color: #fff; }
+        .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+        .transfer-review { padding: 1rem; border: 1px solid #93c5fd; background: #eff6ff; border-radius: 8px; }
+        .proof-link { align-self: flex-start; }
+        .proof-img { max-width: 260px; max-height: 360px; border-radius: 6px; border: 1px solid #ddd; display: block; }
         .status-badge.pending    { background: #fef3c7; color: #92400e; }
         .status-badge.confirmed  { background: #dbeafe; color: #1e40af; }
         .status-badge.processing { background: #e0e7ff; color: #3730a3; }

@@ -39,6 +39,18 @@ export const mapMercadoPagoStatus = (status) => {
   }
 }
 
+// Addi informa el resultado de la solicitud de crédito en el callback.
+export const mapAddiStatus = (status) => {
+  switch (String(status || '').toUpperCase()) {
+    case 'APPROVED':       return PAY.APPROVED
+    case 'REJECTED':
+    case 'DECLINED':
+    case 'ABANDONED':      return PAY.DECLINED
+    case 'INTERNAL_ERROR': return PAY.ERROR
+    default:               return PAY.PENDING
+  }
+}
+
 const PAYMENT_ROW_STATUS = {
   [PAY.APPROVED]: 'COMPLETED',
   [PAY.PENDING]:  'PENDING',
@@ -109,14 +121,14 @@ const flagForReview = async (tx, order, note) => {
  * Devuelve { outcome, duplicate, orderId, orderStatus }.
  */
 export const processPaymentUpdate = async ({
-  provider,            // 'WOMPI' | 'MERCADOPAGO'
+  provider,            // 'WOMPI' | 'MERCADOPAGO' | 'ADDI' | 'BANK_TRANSFER'
   orderId,
   providerPaymentId,
   status,              // PAY.*
   amount,              // monto pagado en COP
   currency = 'COP',
   payload,
-  source = 'webhook',  // 'webhook' | 'verify'
+  source = 'webhook',  // 'webhook' | 'verify' | 'transfer_proof' | 'admin'
 }) => {
   const eventKey = `${provider}:${providerPaymentId}:${status}`
   const ctx = { provider, orderId, providerPaymentId, status, amount, source }
@@ -255,7 +267,12 @@ export const expireStaleOrders = async ({ now = new Date() } = {}) => {
       stockDeducted: false,
       needsReview: false,
       createdAt: { lt: cutoff },
-      OR: [{ payment: { is: null } }, { payment: { status: { in: ['FAILED', 'PENDING'] } } }],
+      AND: [
+        { OR: [{ payment: { is: null } }, { payment: { status: { in: ['FAILED', 'PENDING'] } } }] },
+        // Transferencia con comprobante rechazado: el cliente tiene el mismo
+        // plazo, contado desde el rechazo, para subir uno nuevo.
+        { OR: [{ transferReviewedAt: null }, { transferReviewedAt: { lt: cutoff } }] },
+      ],
     },
     select: { id: true, payment: { select: { status: true } } },
     take: 200,

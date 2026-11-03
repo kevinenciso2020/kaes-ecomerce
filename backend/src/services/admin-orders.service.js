@@ -1,5 +1,6 @@
 import { prisma } from '../config/prisma.js'
 import { tryDeductStockForItems, restoreStockForItems } from './stock.service.js'
+import { proofUrl } from './bank-transfer.service.js'
 
 const ORDER_INCLUDE = {
   user: {
@@ -93,7 +94,8 @@ export const getOrderById = async (id) => {
     err.status = 404
     throw err
   }
-  return order
+  // Comprobante de transferencia: URL firmada (el archivo es privado en Cloudinary).
+  return { ...order, paymentProofUrl: proofUrl(order.paymentProofPublicId) }
 }
 
 // Transiciones permitidas desde el admin.

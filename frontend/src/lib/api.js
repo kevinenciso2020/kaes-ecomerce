@@ -200,6 +200,7 @@ export const api = {
     orderDetail:    (id)          => request(`/admin/orders/${id}`),
     updateOrder:    (id, status, note) => request(`/admin/orders/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, note }) }),
     resolveReview:  (id, note)    => request(`/admin/orders/${id}/resolve-review`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+    reviewTransfer: (id, approve, note) => request(`/admin/orders/${id}/transfer/review`, { method: 'POST', body: JSON.stringify({ approve, note }) }),
     einvoice:       (orderId)     => request(`/admin/orders/${orderId}/einvoice`),
     retryEinvoice:  (docId)       => request(`/admin/einvoice/${docId}/retry`, { method: 'POST' }),
     downloadEinvoiceXml: (docId)  => downloadFile(`/admin/einvoice/${docId}/xml`, `${docId}.xml`),
@@ -246,6 +247,18 @@ export const api = {
     verify: (orderId, data = {}) => request(`/payments/verify/${orderId}`, { method: 'POST', body: JSON.stringify(data) }),
     wompi: {
       createCheckout: (orderId) => request('/payments/wompi/checkout', { method: 'POST', body: JSON.stringify({ orderId }) }),
+    },
+    addi: {
+      createCheckout: (orderId) => request('/payments/addi/checkout', { method: 'POST', body: JSON.stringify({ orderId }) }),
+    },
+    transfer: {
+      start:       (orderId)       => request('/payments/transfer/start', { method: 'POST', body: JSON.stringify({ orderId }) }),
+      info:        (orderId)       => request(`/payments/transfer/${encodeURIComponent(orderId)}`),
+      uploadProof: (orderId, file) => {
+        const form = new FormData()
+        form.append('proof', file)
+        return request(`/payments/transfer/${encodeURIComponent(orderId)}/proof`, { method: 'POST', body: form, headers: {} })
+      },
     },
   },
   coupons: {

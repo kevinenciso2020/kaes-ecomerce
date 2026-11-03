@@ -492,3 +492,56 @@ export const sendTaxChangeAlert = async ({ currentRate, detectedRate, source }) 
     return false
   }
 }
+
+/** Aviso al administrador: un cliente subió un comprobante de transferencia. */
+export const sendTransferProofAlert = async ({ orderId, total, reference }) => {
+  const to = process.env.PAYMENTS_ALERT_EMAIL || FROM_EMAIL
+  if (!to) return false
+  try {
+    await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to,
+      subject: `Comprobante de transferencia por revisar: ${reference}`,
+      html: `
+        <p>El cliente del pedido <strong>${escapeHtml(reference)}</strong> subió un comprobante de transferencia
+        por <strong>${formatPrice(Number(total))}</strong>.</p>
+        <p>Verifica en tu banco o Nequi que el dinero llegó completo y luego entra a
+        <strong>Admin → Órdenes</strong> para aprobarlo o rechazarlo. Hasta que lo apruebes no se descuenta stock.</p>
+        <p style="color:#999;font-size:12px">ID interno: ${escapeHtml(orderId)}</p>`,
+    })
+    log.info({ to, orderId }, 'email.transfer_proof_alert_sent')
+    return true
+  } catch (error) {
+    log.error({ err: error, orderId }, 'email.transfer_proof_alert_failed')
+    return false
+  }
+}
+
+/** Aviso al cliente: su comprobante de transferencia fue rechazado. */
+export const sendTransferRejected = async ({ orderId, note }) => {
+  try {
+    const order = await prisma.order.findUnique({
+      where: { id: orderId },
+      include: { user: { select: { name: true, email: true } } },
+    })
+    if (!order) return false
+    const orderNumber = order.id.slice(-8).toUpperCase()
+    const link = `${(process.env.FRONTEND_URL || '').replace(/\/$/, '')}/checkout/transferencia?orderId=${encodeURIComponent(order.id)}`
+    await emailTransporter.sendMail({
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: order.user.email,
+      subject: `No pudimos confirmar tu transferencia del pedido #${orderNumber} - ${FROM_NAME}`,
+      html: `
+        <p>Hola <strong>${escapeHtml(order.user.name)}</strong>,</p>
+        <p>Revisamos el comprobante de tu pedido #${orderNumber} y no pudimos confirmar el pago.</p>
+        ${note ? `<p>Motivo: ${escapeHtml(note)}</p>` : ''}
+        <p>Si ya transferiste, sube de nuevo un comprobante claro aquí: <a href="${escapeHtml(link)}">${escapeHtml(link)}</a>.
+        Si tienes dudas, responde este correo.</p>`,
+    })
+    log.info({ orderId, to: order.user.email }, 'email.transfer_rejected_sent')
+    return true
+  } catch (error) {
+    log.error({ err: error, orderId }, 'email.transfer_rejected_failed')
+    return false
+  }
+}

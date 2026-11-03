@@ -38,6 +38,8 @@ Opcional: `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`, `COOKIE_DOM
 
 ## 3. Pasarelas de pago (sandbox primero)
 
+> Cómo crear cada cuenta y dónde va cada llave: **[docs/PAGOS.md](PAGOS.md)**.
+
 ### Wompi (recomendado para lanzar)
 - [ ] Panel Wompi → Desarrolladores → **URL de eventos**: `https://<api>/api/v1/payments/wompi/webhook`
 - [ ] Copia las 4 llaves de **prueba** (`pub_test`, `prv_test`, `test_integrity`, `test_events`) a Railway.
@@ -52,6 +54,17 @@ Opcional: `MP_ACCESS_TOKEN`, `MP_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`, `COOKIE_DOM
 ### MercadoPago (opcional)
 - [ ] Tus integraciones → Webhooks → evento **Pagos**, URL `https://<api>/api/v1/payments/webhook`; copia la clave secreta a `MP_WEBHOOK_SECRET`.
 - [ ] Mismo checklist con usuarios de prueba. Si no lo vas a usar al lanzar, deja `MP_ACCESS_TOKEN` vacío.
+
+### Transferencia manual (Nequi / Bancolombia / Bre-B)
+- [ ] Llena las variables `BANK_TRANSFER_*` en Railway y pon `BANK_TRANSFER_ENABLED=true`.
+- [ ] Compra de prueba → elige "Transferencia" → sube un pantallazo → llega el correo "comprobante por revisar".
+- [ ] Admin → Órdenes → la orden → **Rechazar** con motivo → el cliente recibe el correo y puede subir otro.
+- [ ] **Aprobar** → la orden pasa a "Confirmado", baja el stock y llega el email de confirmación.
+
+### Addi (opcional)
+- [ ] Con las credenciales de **sandbox** de Addi: compra de prueba → solicitud aprobada → la orden se confirma sola.
+- [ ] Solicitud rechazada/abandonada → la orden sigue pendiente y se puede pagar con otro medio.
+- [ ] Cambia a `ADDI_ENV=production` con las credenciales productivas.
 
 ## 4. Dominio propio (muy recomendado)
 

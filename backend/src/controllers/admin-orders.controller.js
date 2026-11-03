@@ -1,6 +1,7 @@
 import * as AdminOrders from '../services/admin-orders.service.js'
 import { sendOrderCancelled } from '../services/email.service.js'
 import * as Einvoice from '../services/einvoice/einvoice.service.js'
+import * as BankTransfer from '../services/bank-transfer.service.js'
 
 export const listOrders = async (req, res, next) => {
   try {
@@ -47,6 +48,18 @@ export const resolveReview = async (req, res, next) => {
       note: typeof req.body?.note === 'string' ? req.body.note.slice(0, 500) : undefined,
     })
     res.json(order)
+  } catch (err) { next(err) }
+}
+
+export const reviewTransfer = async (req, res, next) => {
+  try {
+    const result = await BankTransfer.reviewTransfer(req.params.id, {
+      approve: req.body.approve === true,
+      note: req.body.note || undefined,
+      changedById: req.user?.id,
+    })
+    const order = await AdminOrders.getOrderById(req.params.id)
+    res.json({ outcome: result.outcome, order })
   } catch (err) { next(err) }
 }
 

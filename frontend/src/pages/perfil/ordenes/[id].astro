@@ -31,6 +31,8 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
           <div class="pay-methods" id="pay-methods">
             <button type="button" class="btn btn-primary btn-full" data-method="wompi" id="pay-wompi">Pagar con Wompi</button>
             <button type="button" class="btn btn-outline btn-full" data-method="mercadopago" id="pay-mp">Pagar con MercadoPago</button>
+            <button type="button" class="btn btn-outline btn-full" data-method="addi" id="pay-addi" hidden>Pagar a cuotas con Addi</button>
+            <button type="button" class="btn btn-outline btn-full" data-method="transfer" id="pay-transfer" hidden>Pagar por transferencia (Nequi, Bancolombia, Bre-B)</button>
           </div>
           <p class="pay-error" id="pay-error" role="alert" hidden></p>
         </div>
@@ -105,12 +107,22 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
     }
     if (!payable) return
 
+    // Transferencia con comprobante ya enviado: esperar la revisión.
+    if (order.paymentProvider === 'BANK_TRANSFER' && order.payment?.status === 'PENDING') {
+      banner.innerHTML = 'Recibimos tu comprobante de transferencia y lo estamos revisando. ' +
+        `<a href="/checkout/transferencia?orderId=${encodeURIComponent(order.id)}">Ver estado o cambiar comprobante</a>`
+      banner.hidden = false
+      return
+    }
+
     document.getElementById('pay-card').hidden = false
     try {
       const methods = await api.payments.methods()
       document.getElementById('pay-wompi').hidden = !methods.wompi
       document.getElementById('pay-mp').hidden = !methods.mercadopago
-    } catch { /* dejar ambos */ }
+      document.getElementById('pay-addi').hidden = !methods.addi
+      document.getElementById('pay-transfer').hidden = !methods.transfer
+    } catch { /* dejar Wompi y MercadoPago */ }
 
     document.querySelectorAll('#pay-methods [data-method]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -120,9 +132,17 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
         const original = btn.textContent
         btn.textContent = 'Conectando…'
         try {
-          const res = btn.dataset.method === 'mercadopago'
+          const method = btn.dataset.method
+          if (method === 'transfer') {
+            await api.payments.transfer.start(order.id)
+            window.location.href = `/checkout/transferencia?orderId=${encodeURIComponent(order.id)}`
+            return
+          }
+          const res = method === 'mercadopago'
             ? await api.payments.createPreference(order.id)
-            : await api.payments.wompi.createCheckout(order.id)
+            : method === 'addi'
+              ? await api.payments.addi.createCheckout(order.id)
+              : await api.payments.wompi.createCheckout(order.id)
           window.location.href = res.checkoutUrl
         } catch (err) {
           errEl.textContent = err.message || 'No pudimos iniciar el pago'

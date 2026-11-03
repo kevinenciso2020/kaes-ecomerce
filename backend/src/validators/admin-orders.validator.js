@@ -41,6 +41,18 @@ export const adminUpdateOrderStatus = [
     .isLength({ max: 1000 }).withMessage('La nota no puede superar los 1000 caracteres'),
 ]
 
+export const adminReviewTransfer = [
+  ...adminOrderId,
+  body('approve')
+    .exists().withMessage('approve es requerido')
+    .isBoolean({ strict: true }).withMessage('approve debe ser true o false'),
+  body('note')
+    .optional({ nullable: true })
+    .isString().withMessage('La nota debe ser texto')
+    .trim()
+    .isLength({ max: 500 }).withMessage('La nota no puede superar los 500 caracteres'),
+]
+
 export const adminEinvoiceDocId = [
   param('docId')
     .isString().notEmpty().withMessage('ID de documento requerido')
