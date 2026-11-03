@@ -162,7 +162,7 @@ de Wompi y los webhooks siguen valiendo.
   `www.kaes-simplyeternal.co`. Cloudflare crea los registros y el certificado solo.
 - [ ] Verifica:
   - `curl -sI https://kaes-simplyeternal.co` → `server: cloudflare`, `x-frame-options: DENY`, `strict-transport-security`.
-  - `curl -sI https://kaes-simplyeternal.co/productos` dos veces → `x-kaes-cache: MISS` y luego `HIT`.
+  - `curl -s -D - -o /dev/null https://kaes-simplyeternal.co/productos` dos veces → `x-kaes-cache: MISS` y luego `HIT` (no uses `curl -I`: envía HEAD y la caché sólo guarda GET).
   - `curl -sI https://www.kaes-simplyeternal.co/productos` → `301` a `https://kaes-simplyeternal.co/productos`.
   - `curl -sI https://kaes-simplyeternal.co/admin` → `302` al login con `cache-control: no-store`.
 - [ ] Flujo completo en iPhone/Safari y escritorio: registro/login, recargar, carrito, cupón, checkout → Wompi sandbox
