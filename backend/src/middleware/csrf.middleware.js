@@ -9,7 +9,7 @@
 //   • GET, HEAD y OPTIONS siguen libres (los cookies `httpOnly` no son
 //     suficientes para exfiltrar, y los webhooks externos llaman por GET).
 //   • Los webhooks de payments quedan exceptuados porque llegan desde los
-//     servidores de Stripe / MercadoPago / Wompi, no desde un navegador.
+//     servidores de MercadoPago / Wompi / Addi, no desde un navegador.
 //   • Si la request no trae `Origin` ni `Referer` (curl, server-to-server),
 //     se rechaza salvo que venga de un webhook.
 
@@ -18,6 +18,7 @@ const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const WEBHOOK_PATHS = [
   '/api/v1/payments/webhook',
   '/api/v1/payments/wompi/webhook',
+  '/api/v1/payments/addi/callback',
 ]
 
 export const isWebhookPath = (path) => WEBHOOK_PATHS.some((p) => path === p || path.startsWith(`${p}/`) || path.startsWith(`${p}?`))

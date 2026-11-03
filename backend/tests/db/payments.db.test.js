@@ -7,6 +7,8 @@ vi.mock('../../src/services/email.service.js', () => ({
   sendVerificationEmail: vi.fn().mockResolvedValue(true),
   sendPasswordResetEmail: vi.fn().mockResolvedValue(true),
   sendContactNotification: vi.fn().mockResolvedValue(true),
+  sendTransferProofAlert: vi.fn().mockResolvedValue(true),
+  sendTransferRejected: vi.fn().mockResolvedValue(true),
 }))
 
 const { prisma } = await import('../../src/config/prisma.js')
@@ -14,6 +16,7 @@ const { createOrder, quoteOrder } = await import('../../src/services/order.servi
 const { processPaymentUpdate, expireStaleOrders, PAY } = await import('../../src/services/payment.service.js')
 const { updateOrderStatus } = await import('../../src/services/admin-orders.service.js')
 const { sendOrderConfirmation } = await import('../../src/services/email.service.js')
+const { reviewTransfer } = await import('../../src/services/bank-transfer.service.js')
 
 const TABLES = [
   'payment_events', 'payments', 'order_status_logs', 'order_items', 'orders', 'cart_items',
@@ -314,5 +317,99 @@ describe('Cálculo del pedido (servidor)', () => {
     const product = await makeProduct({ stock: 3 })
     await expect(createOrder(user.id, { items: [{ productId: product.id, quantity: 1 }], address }))
       .rejects.toMatchObject({ status: 400, code: 'TERMS_REQUIRED' })
+  })
+})
+
+describe('Transferencia manual', () => {
+  const HOURS = 60 * 60 * 1000
+
+  // Simula lo que hace uploadProof sin Cloudinary: guarda el comprobante y deja el pago PENDING.
+  const withProof = async (o, publicId = 'payment-proofs/p1') => {
+    await prisma.order.update({
+      where: { id: o.id },
+      data: { paymentProvider: 'BANK_TRANSFER', paymentProofPublicId: publicId, paymentProofAt: new Date() },
+    })
+    await processPaymentUpdate({
+      provider: 'BANK_TRANSFER', orderId: o.id, providerPaymentId: `proof:${publicId}`,
+      status: PAY.PENDING, amount: Number(o.total), source: 'transfer_proof',
+    })
+  }
+
+  it('aprobar confirma la orden y descuenta stock una sola vez (doble clic del admin)', async () => {
+    const admin = await makeUser({ role: 'ADMIN' })
+    const user = await makeUser()
+    const product = await makeProduct({ stock: 3 })
+    const created = await order(user, [{ productId: product.id, quantity: 2 }])
+    await withProof(created)
+
+    const [a, b] = await Promise.all([
+      reviewTransfer(created.id, { approve: true, changedById: admin.id }),
+      reviewTransfer(created.id, { approve: true, changedById: admin.id }),
+    ])
+    expect([a.outcome, b.outcome].sort()).toEqual(['CONFIRMED', 'DUPLICATE'])
+
+    const fresh = await prisma.order.findUnique({ where: { id: created.id }, include: { payment: true, statusLogs: true } })
+    expect(fresh.status).toBe('CONFIRMED')
+    expect(fresh.paymentProvider).toBe('BANK_TRANSFER')
+    expect(fresh.payment.status).toBe('COMPLETED')
+    expect(await stockOf(product.id)).toBe(1)
+    expect(fresh.statusLogs.find((l) => l.toStatus === 'CONFIRMED').changedById).toBe(admin.id)
+    expect(sendOrderConfirmation).toHaveBeenCalledTimes(1)
+  })
+
+  it('rechazar deja la orden PENDING sin tocar stock y permite subir otro comprobante', async () => {
+    const user = await makeUser()
+    const product = await makeProduct({ stock: 3 })
+    const created = await order(user, [{ productId: product.id, quantity: 1 }])
+    await withProof(created, 'payment-proofs/borroso')
+
+    await reviewTransfer(created.id, { approve: false, note: 'Imagen ilegible' })
+    let fresh = await prisma.order.findUnique({ where: { id: created.id }, include: { payment: true } })
+    expect(fresh.status).toBe('PENDING')
+    expect(fresh.payment.status).toBe('FAILED')
+    expect(fresh.transferReviewedAt).not.toBeNull()
+    expect(await stockOf(product.id)).toBe(3)
+
+    await withProof(created, 'payment-proofs/nitido')
+    const r = await reviewTransfer(created.id, { approve: true })
+    expect(r.outcome).toBe('CONFIRMED')
+    fresh = await prisma.order.findUnique({ where: { id: created.id } })
+    expect(fresh.status).toBe('CONFIRMED')
+    expect(await stockOf(product.id)).toBe(2)
+  })
+
+  it('con comprobante subido la orden no expira a las 2 h (espera la revisión)', async () => {
+    const user = await makeUser()
+    const product = await makeProduct({ stock: 3 })
+    const created = await order(user, [{ productId: product.id, quantity: 1 }])
+    await withProof(created)
+    await prisma.order.update({ where: { id: created.id }, data: { createdAt: new Date(Date.now() - 5 * HOURS) } })
+
+    expect(await expireStaleOrders()).toBe(0)
+  })
+
+  it('tras un rechazo el cliente tiene el plazo normal contado desde el rechazo', async () => {
+    const user = await makeUser()
+    const product = await makeProduct({ stock: 3 })
+    const created = await order(user, [{ productId: product.id, quantity: 1 }])
+    await withProof(created)
+    await reviewTransfer(created.id, { approve: false })
+    await prisma.order.update({ where: { id: created.id }, data: { createdAt: new Date(Date.now() - 5 * HOURS) } })
+
+    expect(await expireStaleOrders()).toBe(0) // rechazo reciente
+
+    await prisma.order.update({ where: { id: created.id }, data: { transferReviewedAt: new Date(Date.now() - 3 * HOURS) } })
+    expect(await expireStaleOrders()).toBe(1)
+  })
+
+  it('sin comprobante expira igual que cualquier pedido', async () => {
+    const user = await makeUser()
+    const product = await makeProduct({ stock: 3 })
+    const created = await order(user, [{ productId: product.id, quantity: 1 }])
+    await prisma.order.update({
+      where: { id: created.id },
+      data: { paymentProvider: 'BANK_TRANSFER', createdAt: new Date(Date.now() - 5 * HOURS) },
+    })
+    expect(await expireStaleOrders()).toBe(1)
   })
 })

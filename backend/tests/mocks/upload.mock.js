@@ -9,6 +9,9 @@ export const makeUploadMock = () => ({
     fields: (_fields) => (req, _res, next) => next(),
     any: () => (req, _res, next) => next(),
   },
+  proofUpload: {
+    single: (_field) => (req, _res, next) => next(),
+  },
   uploadConstants: {},
 })
 

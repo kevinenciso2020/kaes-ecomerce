@@ -99,6 +99,26 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
                 </div>
               </div>
             </label>
+            <label class="payment-option" id="pm-addi" hidden>
+              <input type="radio" name="payment" value="addi" />
+              <div class="payment-card">
+                <span class="payment-icon"><Icon name="tag" size={22} /></span>
+                <div>
+                  <p class="payment-name">Addi</p>
+                  <p class="payment-desc">Compra ahora y paga a cuotas, sin tarjeta</p>
+                </div>
+              </div>
+            </label>
+            <label class="payment-option" id="pm-transfer" hidden>
+              <input type="radio" name="payment" value="transfer" />
+              <div class="payment-card">
+                <span class="payment-icon"><Icon name="bank" size={22} /></span>
+                <div>
+                  <p class="payment-name">Transferencia</p>
+                  <p class="payment-desc">Nequi, Bancolombia o Bre-B. Subes el comprobante y lo confirmamos</p>
+                </div>
+              </div>
+            </label>
           </div>
         </fieldset>
 
@@ -329,9 +349,11 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
       const methods = await api.payments.methods()
       $('pm-wompi').hidden = !methods.wompi
       $('pm-mercadopago').hidden = !methods.mercadopago
+      $('pm-addi').hidden = !methods.addi
+      $('pm-transfer').hidden = !methods.transfer
       const first = document.querySelector(`.payment-option:not([hidden]) input[name="payment"]`)
       if (first) first.checked = true
-      $('payment-unavailable').hidden = methods.wompi || methods.mercadopago
+      $('payment-unavailable').hidden = Boolean(methods.wompi || methods.mercadopago || methods.addi || methods.transfer)
     } catch {
       // Si falla la consulta dejamos ambos visibles; el backend valida igual.
     }
@@ -359,9 +381,15 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
 
   // ── Confirmar pedido y pagar ─────────────────────────────────
   const startPayment = async (orderId, method) => {
+    if (method === 'transfer') {
+      await api.payments.transfer.start(orderId)
+      return `/checkout/transferencia?orderId=${encodeURIComponent(orderId)}`
+    }
     const res = method === 'mercadopago'
       ? await api.payments.createPreference(orderId)
-      : await api.payments.wompi.createCheckout(orderId)
+      : method === 'addi'
+        ? await api.payments.addi.createCheckout(orderId)
+        : await api.payments.wompi.createCheckout(orderId)
     if (!res?.checkoutUrl) throw new Error('No se recibió el enlace de pago')
     return res.checkoutUrl
   }

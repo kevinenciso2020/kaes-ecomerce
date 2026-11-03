@@ -110,6 +110,19 @@ export default function OrderList() {
     await loadOrders()
   }
 
+  const handleReviewTransfer = async (orderId, approve, note) => {
+    const { outcome, order } = await api.admin.reviewTransfer(orderId, approve, note)
+    setActiveOrder(order)
+    const messages = {
+      CONFIRMED: 'Transferencia aprobada: pedido confirmado',
+      DECLINED: 'Comprobante rechazado: se avisó al cliente',
+      DUPLICATE: 'Esta revisión ya se había registrado',
+      OUT_OF_STOCK: 'Pago aprobado pero sin stock: la orden quedó en revisión',
+    }
+    showToast({ type: outcome === 'OUT_OF_STOCK' ? 'error' : 'success', message: messages[outcome] || `Resultado: ${outcome}` })
+    await loadOrders()
+  }
+
   if (accessDenied) {
     return (
       <div className="no-access">
@@ -261,6 +274,7 @@ export default function OrderList() {
           onClose={() => { setShowDetail(false); setActiveOrder(null) }}
           onStatusChange={handleStatusChange}
           onResolveReview={handleResolveReview}
+          onReviewTransfer={handleReviewTransfer}
           showToast={showToast}
         />
       )}

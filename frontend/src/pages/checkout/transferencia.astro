@@ -1,0 +1,219 @@
+---
+import ShopLayout from '../../layouts/ShopLayout.astro'
+---
+
+<ShopLayout title="Pagar por transferencia">
+  <div class="transfer-page container">
+    <div class="transfer-card" id="transfer-card">
+      <p id="transfer-loading">Cargando datos de pago…</p>
+
+      <div id="transfer-content" hidden>
+        <h1 class="transfer-title">Paga por transferencia</h1>
+        <div class="transfer-status" id="transfer-status" hidden></div>
+
+        <div id="transfer-pay">
+          <div class="amount-box">
+            <p class="amount-label">Valor exacto a transferir</p>
+            <p class="amount-value" id="transfer-total"></p>
+            <p class="amount-ref">Escribe esta referencia en la descripción: <strong id="transfer-ref"></strong>
+              <button type="button" class="copy-btn" data-copy-target="transfer-ref">Copiar</button></p>
+          </div>
+
+          <h2 class="section-title">1. Transfiere a cualquiera de estas cuentas</h2>
+          <ul class="accounts" id="transfer-accounts"></ul>
+          <p class="holder" id="transfer-holder"></p>
+
+          <h2 class="section-title">2. Sube el comprobante</h2>
+          <p class="hint">Toma un pantallazo de la transferencia exitosa (JPG, PNG o WEBP, máx. 5 MB). Lo revisamos y confirmamos tu pedido; te avisamos por correo.</p>
+          <form id="proof-form" class="proof-form">
+            <input type="file" id="proof-file" accept="image/jpeg,image/png,image/webp" required />
+            <button type="submit" class="btn btn-primary btn-full" id="proof-submit">Enviar comprobante</button>
+          </form>
+          <p class="transfer-error" id="transfer-error" role="alert" hidden></p>
+          <p class="hint deadline" id="transfer-deadline"></p>
+        </div>
+
+        <div class="transfer-actions">
+          <a class="btn btn-outline" id="transfer-order-link" href="/perfil/ordenes">Ver mi pedido</a>
+        </div>
+      </div>
+
+      <div id="transfer-error-page" hidden>
+        <p id="transfer-error-message">No pudimos cargar los datos de pago.</p>
+        <a href="/perfil/ordenes" class="btn btn-primary">Ir a mis pedidos</a>
+      </div>
+    </div>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api, ApiError, bootstrapAuth } from '../../lib/api.js'
+  import { resetLocalCart } from '../../stores/cart.store.js'
+  import { escapeHtml } from '../../lib/sanitize.js'
+
+  const $ = (id) => document.getElementById(id)
+  const orderId = new URLSearchParams(window.location.search).get('orderId')
+  const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
+
+  const showStatus = (text, tone) => {
+    const el = $('transfer-status')
+    el.textContent = text
+    el.dataset.tone = tone
+    el.hidden = false
+  }
+
+  const render = (info) => {
+    $('transfer-loading').hidden = true
+    $('transfer-content').hidden = false
+    $('transfer-order-link').href = `/perfil/ordenes/${encodeURIComponent(info.orderId)}`
+    $('transfer-total').textContent = money(info.total)
+    $('transfer-ref').textContent = info.reference
+
+    $('transfer-accounts').innerHTML = (info.accounts || []).map((a, i) => `
+      <li class="account">
+        <span class="account-label">${escapeHtml(a.label)}</span>
+        <span class="account-number" id="acc-${i}">${escapeHtml(a.number)}</span>
+        <button type="button" class="copy-btn" data-copy-target="acc-${i}">Copiar</button>
+      </li>`).join('')
+    const holder = info.holder || {}
+    $('transfer-holder').textContent = holder.name
+      ? `Titular: ${holder.name}${holder.document ? ` · ${holder.document}` : ''}`
+      : ''
+
+    const confirmed = ['CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED'].includes(info.orderStatus)
+    if (confirmed) {
+      resetLocalCart()
+      $('transfer-pay').hidden = true
+      return showStatus('¡Pago confirmado! Tu pedido está en proceso. Te enviamos el detalle por correo.', 'ok')
+    }
+    if (info.orderStatus === 'CANCELLED') {
+      $('transfer-pay').hidden = true
+      return showStatus('Este pedido fue cancelado porque no recibimos el pago a tiempo. Si ya transferiste, escríbenos y lo revisamos.', 'error')
+    }
+    if (info.needsReview) {
+      $('transfer-pay').hidden = true
+      return showStatus('Recibimos tu pago y estamos revisando tu pedido. Te contactaremos pronto.', 'info')
+    }
+    if (info.paymentStatus === 'PENDING' && info.proofUploadedAt) {
+      showStatus('Recibimos tu comprobante y lo estamos revisando. Si te equivocaste de imagen, puedes subir otra.', 'info')
+      $('proof-submit').textContent = 'Reemplazar comprobante'
+    } else if (info.paymentStatus === 'FAILED' && info.reviewedAt) {
+      showStatus('No pudimos confirmar el comprobante anterior. Revisa el valor y la cuenta, y sube un comprobante nuevo.', 'error')
+    }
+    if (!info.accounts?.length) {
+      $('transfer-pay').hidden = true
+      showStatus('El pago por transferencia no está disponible en este momento. Paga tu pedido con otro medio desde "Ver mi pedido".', 'error')
+      return
+    }
+    $('transfer-deadline').textContent = info.proofUploadedAt
+      ? ''
+      : 'Si no recibimos el comprobante en las próximas horas, el pedido se cancela automáticamente.'
+  }
+
+  const load = async () => {
+    try {
+      render(await api.payments.transfer.info(orderId))
+    } catch (err) {
+      $('transfer-loading').hidden = true
+      $('transfer-error-page').hidden = false
+      if (err instanceof ApiError && err.status === 404) $('transfer-error-message').textContent = 'No encontramos este pedido.'
+    }
+  }
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-copy-target]')
+    if (!btn) return
+    const text = $(btn.dataset.copyTarget)?.textContent || ''
+    try {
+      await navigator.clipboard.writeText(text)
+      btn.textContent = 'Copiado'
+      setTimeout(() => { btn.textContent = 'Copiar' }, 1500)
+    } catch { /* el usuario puede copiar a mano */ }
+  })
+
+  $('proof-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const file = $('proof-file').files?.[0]
+    const errEl = $('transfer-error')
+    errEl.hidden = true
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) {
+      errEl.textContent = 'La imagen supera 5 MB. Envía un pantallazo más liviano.'
+      errEl.hidden = false
+      return
+    }
+    const btn = $('proof-submit')
+    btn.disabled = true
+    btn.textContent = 'Enviando…'
+    try {
+      await api.payments.transfer.uploadProof(orderId, file)
+      $('proof-file').value = ''
+      await load()
+    } catch (err) {
+      errEl.textContent = err.message || 'No pudimos enviar el comprobante. Intenta de nuevo.'
+      errEl.hidden = false
+      btn.textContent = 'Enviar comprobante'
+    } finally {
+      btn.disabled = false
+    }
+  })
+
+  ;(async () => {
+    if (!orderId) {
+      window.location.href = '/perfil/ordenes'
+      return
+    }
+    const user = await bootstrapAuth()
+    if (!user) {
+      window.location.href = `/auth/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
+      return
+    }
+    load()
+  })()
+</script>
+
+<style>
+  .transfer-page {
+    padding-top: calc(var(--header-height) + 2rem);
+    padding-bottom: 4rem;
+    display: flex;
+    justify-content: center;
+  }
+  .transfer-card {
+    background: var(--color-white);
+    border: 1.5px solid var(--color-gray-200);
+    border-radius: var(--radius-lg);
+    padding: 2rem 1.5rem;
+    max-width: 560px;
+    width: 100%;
+  }
+  .transfer-title { font-family: var(--font-serif); font-size: 1.6rem; font-weight: 600; margin-bottom: 1rem; }
+  .section-title { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 0.6rem; }
+  .amount-box { background: var(--color-gray-50, #f9fafb); border-radius: var(--radius-md); padding: 1rem; text-align: center; }
+  .amount-label { font-size: 0.85rem; color: var(--color-gray-600); }
+  .amount-value { font-size: 2rem; font-weight: 700; margin: 0.25rem 0; }
+  .amount-ref { font-size: 0.85rem; color: var(--color-gray-600); }
+  .accounts { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .account {
+    display: grid; grid-template-columns: 1fr auto; gap: 0.15rem 0.75rem; align-items: center;
+    border: 1px solid var(--color-gray-200); border-radius: var(--radius-md); padding: 0.75rem 1rem;
+  }
+  .account-label { font-size: 0.8rem; color: var(--color-gray-600); grid-column: 1; }
+  .account-number { font-weight: 600; font-size: 1.05rem; grid-column: 1; word-break: break-all; }
+  .account .copy-btn { grid-column: 2; grid-row: 1 / span 2; }
+  .copy-btn {
+    background: none; border: 1px solid var(--color-gray-300); border-radius: var(--radius-sm, 6px);
+    padding: 0.3rem 0.65rem; font-size: 0.8rem; cursor: pointer;
+  }
+  .holder { font-size: 0.85rem; color: var(--color-gray-600); margin-top: 0.5rem; }
+  .hint { font-size: 0.85rem; color: var(--color-gray-600); margin-bottom: 0.75rem; line-height: 1.5; }
+  .deadline { margin-top: 0.75rem; }
+  .proof-form { display: flex; flex-direction: column; gap: 0.75rem; }
+  .transfer-error { color: #b91c1c; font-size: 0.875rem; margin-top: 0.5rem; }
+  .transfer-status { border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; line-height: 1.5; }
+  .transfer-status[data-tone='ok']    { background: #f0fdf4; color: #166534; border: 1px solid #22c55e; }
+  .transfer-status[data-tone='info']  { background: #eff6ff; color: #1e40af; border: 1px solid #3b82f6; }
+  .transfer-status[data-tone='error'] { background: #fef2f2; color: #991b1b; border: 1px solid #ef4444; }
+  .transfer-actions { margin-top: 1.5rem; display: flex; justify-content: center; }
+  [hidden] { display: none !important; }
+</style>

@@ -18,6 +18,9 @@ const mocks = vi.hoisted(() => ({
   paymentGet: vi.fn(),
   paymentSearch: vi.fn(),
   getTransaction: vi.fn(),
+  addiCreateApplication: vi.fn(),
+  addiGetAmountLimits: vi.fn(),
+  uploadProof: vi.fn(),
 }))
 
 vi.mock('../../src/config/prisma.js', () => ({ prisma: mocks.prisma }))
@@ -41,6 +44,16 @@ vi.mock('mercadopago', () => ({
 vi.mock('../../src/config/wompi.js', async (importOriginal) => {
   const actual = await importOriginal()
   return { ...actual, getTransaction: mocks.getTransaction, default: { ...actual.default, getTransaction: mocks.getTransaction } }
+})
+
+vi.mock('../../src/config/addi.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, createApplication: mocks.addiCreateApplication, getAmountLimits: mocks.addiGetAmountLimits }
+})
+
+vi.mock('../../src/services/bank-transfer.service.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, uploadProof: mocks.uploadProof }
 })
 
 import request from 'supertest'
@@ -351,5 +364,194 @@ describe('GET /api/v1/payments/status/:orderId', () => {
       .set('Authorization', `Bearer ${tokenFor({ id: 'sa', role: 'SUPER_ADMIN' })}`)
     expect(res.status).toBe(200)
     expect(res.body).not.toHaveProperty('userId')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Addi
+// ─────────────────────────────────────────────────────────────
+const setAddiEnv = () => {
+  process.env.ADDI_CLIENT_ID = 'cid'
+  process.env.ADDI_CLIENT_SECRET = 'csecret'
+  process.env.ADDI_ALLY_SLUG = 'kaes'
+  process.env.ADDI_CALLBACK_USER = 'addi'
+  process.env.ADDI_CALLBACK_PASSWORD = 'clave-larga'
+}
+const clearAddiEnv = () => {
+  for (const k of ['ADDI_CLIENT_ID', 'ADDI_CLIENT_SECRET', 'ADDI_ALLY_SLUG', 'ADDI_CALLBACK_USER', 'ADDI_CALLBACK_PASSWORD']) delete process.env[k]
+}
+const basicAuth = (u, p) => `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`
+
+describe('POST /api/v1/payments/addi/checkout', () => {
+  beforeEach(() => {
+    setAddiEnv()
+    mocks.addiGetAmountLimits.mockResolvedValue({ min: 50000, max: 3000000 })
+    mocks.addiCreateApplication.mockResolvedValue('https://addi.test/flujo')
+  })
+
+  it('crea la solicitud con callback en /api/v1 y marca la orden como ADDI', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    const res = await request(app)
+      .post('/api/v1/payments/addi/checkout')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ orderId: 'ord1' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.checkoutUrl).toBe('https://addi.test/flujo')
+    const args = mocks.addiCreateApplication.mock.calls[0][0]
+    expect(args.callbackUrl).toBe('https://api.kaes.test/api/v1/payments/addi/callback')
+    expect(args.redirectionUrl).toBe('http://localhost:4321/checkout/resultado?orderId=ord1&provider=addi')
+    expect(mocks.prisma.order.update).toHaveBeenCalledWith({ where: { id: 'ord1' }, data: { paymentProvider: 'ADDI' } })
+  })
+
+  it('409 si el total está fuera del rango que financia Addi', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ total: '20000' }))
+    const res = await request(app)
+      .post('/api/v1/payments/addi/checkout')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ orderId: 'ord1' })
+    expect(res.status).toBe(409)
+    expect(res.body.code || res.body.error).toBeTruthy()
+    expect(mocks.addiCreateApplication).not.toHaveBeenCalled()
+  })
+
+  it('503 si Addi no está configurado', async () => {
+    clearAddiEnv()
+    const res = await request(app)
+      .post('/api/v1/payments/addi/checkout')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ orderId: 'ord1' })
+    expect(res.status).toBe(503)
+  })
+})
+
+describe('POST /api/v1/payments/addi/callback', () => {
+  beforeEach(setAddiEnv)
+
+  const payload = { orderId: 'ord1', applicationId: 'app-9', approvedAmount: 64900, currency: 'COP', status: 'APPROVED' }
+
+  it('procesa el resultado (sin Origin: exento de CSRF) y responde con el mismo cuerpo', async () => {
+    const res = await request(app)
+      .post('/api/v1/payments/addi/callback')
+      .set('Authorization', basicAuth('addi', 'clave-larga'))
+      .send(payload)
+
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual(payload)
+    expect(mocks.processPaymentUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'ADDI', orderId: 'ord1', providerPaymentId: 'app-9', status: 'APPROVED', amount: 64900, source: 'webhook',
+    }))
+  })
+
+  it('401 con credenciales inválidas', async () => {
+    const res = await request(app)
+      .post('/api/v1/payments/addi/callback')
+      .set('Authorization', basicAuth('addi', 'mala'))
+      .send(payload)
+    expect(res.status).toBe(401)
+    expect(mocks.processPaymentUpdate).not.toHaveBeenCalled()
+  })
+
+  it('400 si falta orderId o applicationId', async () => {
+    const res = await request(app)
+      .post('/api/v1/payments/addi/callback')
+      .set('Authorization', basicAuth('addi', 'clave-larga'))
+      .send({ status: 'APPROVED' })
+    expect(res.status).toBe(400)
+  })
+
+  it('500 si el procesamiento falla (Addi reintenta; es idempotente)', async () => {
+    mocks.processPaymentUpdate.mockRejectedValueOnce(new Error('db'))
+    const res = await request(app)
+      .post('/api/v1/payments/addi/callback')
+      .set('Authorization', basicAuth('addi', 'clave-larga'))
+      .send(payload)
+    expect(res.status).toBe(500)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Transferencia manual
+// ─────────────────────────────────────────────────────────────
+const setTransferEnv = () => {
+  process.env.BANK_TRANSFER_ENABLED = 'true'
+  process.env.BANK_TRANSFER_HOLDER_NAME = 'KAES SAS'
+  process.env.BANK_TRANSFER_NEQUI = '3001112233'
+  process.env.BANK_TRANSFER_BREB_KEY = '@kaes'
+}
+const clearTransferEnv = () => {
+  for (const k of ['BANK_TRANSFER_ENABLED', 'BANK_TRANSFER_HOLDER_NAME', 'BANK_TRANSFER_NEQUI', 'BANK_TRANSFER_BREB_KEY']) delete process.env[k]
+}
+
+describe('Transferencia manual', () => {
+  beforeEach(setTransferEnv)
+
+  it('POST /transfer/start devuelve cuentas, total y referencia', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    const res = await request(app)
+      .post('/api/v1/payments/transfer/start')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ orderId: 'ord1' })
+
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({
+      orderId: 'ord1', total: 64900, reference: 'KAES-ORD1',
+      holder: { name: 'KAES SAS' },
+    })
+    expect(res.body.accounts.map((a) => a.type)).toEqual(['NEQUI', 'BREB'])
+    expect(mocks.prisma.order.update).toHaveBeenCalledWith({ where: { id: 'ord1' }, data: { paymentProvider: 'BANK_TRANSFER' } })
+  })
+
+  it('503 si la transferencia está apagada', async () => {
+    clearTransferEnv()
+    const res = await request(app)
+      .post('/api/v1/payments/transfer/start')
+      .set('Authorization', `Bearer ${customerToken()}`)
+      .send({ orderId: 'ord1' })
+    expect(res.status).toBe(503)
+  })
+
+  it('POST /transfer/:id/proof sube el comprobante de una orden pagable', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.uploadProof.mockResolvedValueOnce({ orderId: 'ord1', paymentStatus: 'PENDING' })
+    const res = await request(app)
+      .post('/api/v1/payments/transfer/ord1/proof')
+      .set('Authorization', `Bearer ${customerToken()}`)
+    expect(res.status).toBe(201)
+    expect(mocks.uploadProof).toHaveBeenCalledTimes(1)
+  })
+
+  it('no deja subir comprobante a una orden ajena', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    const res = await request(app)
+      .post('/api/v1/payments/transfer/ord1/proof')
+      .set('Authorization', `Bearer ${otherToken()}`)
+    expect(res.status).toBe(404)
+    expect(mocks.uploadProof).not.toHaveBeenCalled()
+  })
+
+  it('GET /transfer/:id muestra el estado al dueño', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({
+      paymentProvider: 'BANK_TRANSFER', paymentProofAt: new Date('2026-11-03T10:00:00Z'),
+      payment: { provider: 'BANK_TRANSFER', status: 'PENDING' }, needsReview: false,
+    }))
+    const res = await request(app)
+      .get('/api/v1/payments/transfer/ord1')
+      .set('Authorization', `Bearer ${customerToken()}`)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ orderStatus: 'PENDING', paymentStatus: 'PENDING', reference: 'KAES-ORD1' })
+  })
+})
+
+describe('GET /api/v1/payments/methods', () => {
+  it('informa qué medios están activos', async () => {
+    setAddiEnv()
+    setTransferEnv()
+    const res = await request(app).get('/api/v1/payments/methods')
+    expect(res.body).toMatchObject({ wompi: true, addi: true, transfer: true })
+    clearAddiEnv()
+    clearTransferEnv()
+    const off = await request(app).get('/api/v1/payments/methods')
+    expect(off.body).toMatchObject({ addi: false, transfer: false })
   })
 })

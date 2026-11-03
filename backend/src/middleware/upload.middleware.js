@@ -42,6 +42,13 @@ export const productUpload = multer({
   },
 })
 
+// Comprobante de transferencia: una sola imagen.
+export const proofUpload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: MAX_FILE_SIZE, files: 1, fields: 5, fieldNameSize: 100, fieldSize: 1024 },
+})
+
 export const verifyMagicNumbers = async (files) => {
   if (!files?.length) return files
   for (const file of files) {
