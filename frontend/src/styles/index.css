@@ -202,27 +202,50 @@
   overflow: hidden;
 }
 
-.carousel-actions {
+/* Controles centrados bajo el carrusel: anterior · pausa · siguiente */
+.carousel-controls {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
 }
 
-.carousel-toggle {
-  width: 32px;
-  height: 32px;
+.carousel-btn {
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1.5px solid var(--color-gray-200);
   border-radius: var(--radius-full);
+  background: var(--color-white);
   color: var(--color-black);
   transition: all var(--transition);
 }
-.carousel-toggle:hover {
+.carousel-btn:hover {
   border-color: var(--color-black);
   background: var(--color-black);
   color: var(--color-white);
+}
+.carousel-btn:active { transform: scale(0.94); }
+
+.carousel-see-all {
+  width: fit-content;
+  margin: var(--space-5) auto 0;
+}
+
+/* Botón central (pausa/reanudar): negro, en contraste con las flechas */
+.carousel-btn-main {
+  width: 52px;
+  height: 52px;
+  border-color: var(--color-black);
+  background: var(--color-black);
+  color: var(--color-white);
+}
+.carousel-btn-main:hover {
+  background: var(--color-gray-800);
+  border-color: var(--color-gray-800);
 }
 
 .carousel-viewport {
@@ -231,12 +254,14 @@
   padding: var(--space-2) 0 var(--space-4);
   opacity: 0;
   transition: opacity 600ms ease;
+  touch-action: pan-y;
   /* difumina los bordes para que las tarjetas entren y salgan suavemente */
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
           mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
 .carousel-viewport.is-ready { opacity: 1; }
 
+/* El desplazamiento lo mueve ProductCarousel.tsx (requestAnimationFrame) */
 .carousel-track {
   display: flex;
   gap: var(--space-4);
@@ -244,19 +269,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  animation: carousel-scroll var(--carousel-duration, 40s) linear infinite;
-}
-.carousel-viewport:hover .carousel-track,
-.carousel-viewport:focus-within .carousel-track,
-.carousel-viewport.is-paused .carousel-track {
-  animation-play-state: paused;
-}
-
-/* La pista tiene dos copias idénticas: al llegar a la mitad vuelve a 0 sin
-   salto. El medio gap compensa el espacio entre la última tarjeta y la copia. */
-@keyframes carousel-scroll {
-  from { transform: translateX(0); }
-  to   { transform: translateX(calc(-50% - var(--space-4) / 2)); }
+  will-change: transform;
 }
 
 .carousel-item {
@@ -566,10 +579,7 @@
   .skeleton-image,
   .skeleton-line { animation: none; }
 
-  /* Sin movimiento automático: lista desplazable a mano, sin copias */
-  .carousel-track { animation: none; padding: 0 var(--container-padding); }
-  .carousel-viewport { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-mask-image: none; mask-image: none; }
-  .carousel-item { scroll-snap-align: start; }
-  .carousel-clone,
-  .carousel-toggle { display: none; }
+  /* Sin desplazamiento automático: solo se mueve con las flechas o deslizando */
+  .carousel-pause { display: none; }
+  .carousel-btn:active { transform: none; }
 }
