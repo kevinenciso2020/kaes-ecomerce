@@ -2,20 +2,56 @@
 import ShopLayout from '../layouts/ShopLayout.astro'
 import HeroSection from '../components/sections/HeroSection.tsx'
 import CategoriesSection from '../components/sections/CategoriesSection.tsx'
+import ProductCarousel from '../components/sections/ProductCarousel.tsx'
 import FeaturedProducts from '../components/sections/FeaturedProducts.tsx'
 import CtaBanner from '../components/sections/CtaBanner.tsx'
 import '../styles/index.css'
 import { api } from '../lib/api.js'
+import { isAvailable } from '../lib/carousel.js'
 
 let featuredProducts = []
 let hasError = false
 
-try {
-  const data = await api.products.list({ featured: true, limit: 8 })
-  featuredProducts = Array.isArray(data.products) ? data.products : []
-} catch (e) {
-  console.error('Error loading products:', e)
+// Carrusel: todo el catálogo activo (la API pagina de a 48), solo lo que tiene
+// stock. Si falla, el carrusel no se muestra y el resto de la página sigue igual.
+const MAX_PAGINAS_CARRUSEL = 5
+const loadCarouselProducts = async () => {
+  const all = []
+  for (let page = 1; page <= MAX_PAGINAS_CARRUSEL; page++) {
+    const data = await api.products.list({ limit: 48, page })
+    all.push(...(Array.isArray(data.products) ? data.products : []))
+    if (page >= (data.pagination?.totalPages ?? 1)) break
+  }
+  // Solo los campos que pinta la tarjeta: las props de la isla viajan en el HTML.
+  return all.filter(isAvailable).map((p) => ({
+    slug:       p.slug,
+    name:       p.name,
+    price:      p.price,
+    finalPrice: p.finalPrice,
+    stock:      p.stock,
+    category:   p.category ? { name: p.category.name, slug: p.category.slug } : null,
+    images:     p.images?.[0]?.url ? [{ url: p.images[0].url }] : [],
+    variants:   (p.variants || []).map((v) => ({ size: v.size, color: v.color, stock: v.stock })),
+  }))
+}
+
+const [featuredResult, carouselResult] = await Promise.allSettled([
+  api.products.list({ featured: true, limit: 8 }),
+  loadCarouselProducts(),
+])
+
+if (featuredResult.status === 'fulfilled') {
+  featuredProducts = Array.isArray(featuredResult.value.products) ? featuredResult.value.products : []
+} else {
+  console.error('Error loading products:', featuredResult.reason)
   hasError = true
+}
+
+let carouselProducts = []
+if (carouselResult.status === 'fulfilled') {
+  carouselProducts = carouselResult.value
+} else {
+  console.error('Error loading carousel products:', carouselResult.reason)
 }
 
 // Catálogo cacheable en el borde (src/lib/page-cache.js): reduce carga al API
@@ -25,6 +61,7 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
 
 <ShopLayout title="Inicio" description="Prendas atemporales para quienes se atreven a definir su propio estilo.">
   <HeroSection client:load />
+  <ProductCarousel client:visible products={carouselProducts} />
   <CategoriesSection client:visible />
   <FeaturedProducts client:visible products={featuredProducts} loading={hasError && featuredProducts.length === 0} />
   <CtaBanner client:visible />
