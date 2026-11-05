@@ -196,6 +196,118 @@
   color: var(--color-gray-100);
 }
 
+/* ── Carrusel de productos disponibles (debajo del hero) ── */
+.carousel-section {
+  padding: var(--space-12) 0;
+  overflow: hidden;
+}
+
+/* Controles centrados bajo el carrusel: anterior · pausa · siguiente */
+.carousel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.carousel-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--color-gray-200);
+  border-radius: var(--radius-full);
+  background: var(--color-white);
+  color: var(--color-black);
+  transition: all var(--transition);
+}
+.carousel-btn:hover {
+  border-color: var(--color-black);
+  background: var(--color-black);
+  color: var(--color-white);
+}
+.carousel-btn:active { transform: scale(0.94); }
+
+.carousel-see-all {
+  width: fit-content;
+  margin: var(--space-5) auto 0;
+}
+
+/* Botón central (pausa/reanudar): negro, en contraste con las flechas */
+.carousel-btn-main {
+  width: 52px;
+  height: 52px;
+  border-color: var(--color-black);
+  background: var(--color-black);
+  color: var(--color-white);
+}
+.carousel-btn-main:hover {
+  background: var(--color-gray-800);
+  border-color: var(--color-gray-800);
+}
+
+.carousel-viewport {
+  overflow: hidden;
+  /* aire para la sombra y el desplazamiento del hover de las tarjetas */
+  padding: var(--space-2) 0 var(--space-4);
+  opacity: 0;
+  transition: opacity 600ms ease;
+  touch-action: pan-y;
+  /* difumina los bordes para que las tarjetas entren y salgan suavemente */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.carousel-viewport.is-ready { opacity: 1; }
+
+/* El desplazamiento lo mueve ProductCarousel.tsx (requestAnimationFrame) */
+.carousel-track {
+  display: flex;
+  gap: var(--space-4);
+  width: max-content;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  will-change: transform;
+}
+
+.carousel-item {
+  flex: 0 0 auto;
+  width: min(62vw, 240px);
+}
+
+.carousel-card { height: 100%; }
+.carousel-card .product-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.carousel-offer { background: #b91c1c; }
+
+.carousel-old-price {
+  opacity: 0.5;
+  margin-right: var(--space-2);
+  font-weight: 400;
+}
+
+.carousel-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--space-2) 0 0;
+  font-size: 0.7rem;
+  color: var(--color-gray-500);
+  letter-spacing: 0.02em;
+}
+.carousel-meta span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .featured-section {
   padding: var(--space-12) 0;
 }
@@ -435,6 +547,7 @@
   .hero-eyebrow { font-size: 0.75rem; }
 
   .categories-section,
+  .carousel-section,
   .featured-section,
   .cta-banner { padding: var(--space-16) 0; }
   .cta-banner,
@@ -454,6 +567,7 @@
   }
   .product-name { font-size: 0.9rem; -webkit-line-clamp: unset; overflow: visible; display: block; }
   .section-title { font-size: 1.8rem; }
+  .carousel-item { width: 260px; }
 }
 
 @media (min-width: 1024px) {
@@ -464,4 +578,8 @@
 @media (prefers-reduced-motion: reduce) {
   .skeleton-image,
   .skeleton-line { animation: none; }
+
+  /* Sin desplazamiento automático: solo se mueve con las flechas o deslizando */
+  .carousel-pause { display: none; }
+  .carousel-btn:active { transform: none; }
 }
