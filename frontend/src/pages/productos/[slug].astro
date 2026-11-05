@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js'
 import { ivaBreakdown, formatCOP } from '../../lib/tax.js'
 import { SITE_CONFIG } from '../../lib/site-config.js'
 import { absoluteUrl, productJsonLd, resolveSiteUrl } from '../../lib/seo.js'
+import { sortSizes } from '../../lib/carousel.js'
 import { ANCHOS_PRODUCTO, ANCHO_MINIATURA, cloudinarySrcset, cloudinaryUrl } from '../../lib/images.js'
 
 const { slug } = Astro.params
@@ -28,7 +29,9 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
 const mainImage   = product.images?.find((i) => i.isMain) || product.images?.[0]
 const variants    = product.variants || []
 const hasVariants = variants.length > 0
-const sizes       = [...new Set(variants.map((v) => v.size).filter(Boolean))]
+const sizes       = sortSizes(variants.map((v) => v.size).filter(Boolean))
+// Talla disponible = alguna variante (de cualquier color) con stock
+const sizeInStock = (size) => variants.some((v) => v.size === size && v.stock > 0)
 const colorList   = [...new Map(variants.filter((v) => v.color).map((v) => [v.color, v.colorHex])).entries()]
 const totalStock  = hasVariants ? variants.reduce((s, v) => s + v.stock, 0) : product.stock
 const soldOut     = totalStock <= 0
@@ -145,10 +148,13 @@ const productJson = JSON.stringify({
               {sizes.map((size) => (
                 <button
                   type="button"
-                  class="size-btn"
+                  class:list={['size-btn', { unavailable: !sizeInStock(size) }]}
                   data-size={size}
                   role="radio"
                   aria-checked="false"
+                  disabled={!sizeInStock(size)}
+                  aria-disabled={sizeInStock(size) ? undefined : 'true'}
+                  title={sizeInStock(size) ? undefined : 'Agotada'}
                 >
                   {size}
                 </button>
@@ -253,6 +259,7 @@ const productJson = JSON.stringify({
   const sizeDisplay = document.getElementById('selected-size')
   sizeButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.disabled) return
       sizeButtons.forEach((b) => {
         b.classList.remove('active')
         b.setAttribute('aria-checked', 'false')
@@ -268,6 +275,7 @@ const productJson = JSON.stringify({
   const colorDisplay = document.getElementById('selected-color')
   colorButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
+      if (btn.disabled) return
       colorButtons.forEach((b) => {
         b.classList.remove('active')
         b.setAttribute('aria-checked', 'false')
@@ -308,6 +316,17 @@ const productJson = JSON.stringify({
 
   // Precio y disponibilidad según la variante elegida
   const priceEl = document.getElementById('price-value')
+  // Agotada = tachada y no seleccionable
+  const setAvailable = (btn, ok) => {
+    btn.classList.toggle('unavailable', !ok)
+    btn.disabled = !ok
+    if (ok) { btn.removeAttribute('aria-disabled'); btn.removeAttribute('title') }
+    else { btn.setAttribute('aria-disabled', 'true'); btn.title = 'Agotada' }
+  }
+  const clearChoice = (buttons, display) => {
+    buttons.forEach((b) => { b.classList.remove('active'); b.setAttribute('aria-checked', 'false') })
+    if (display) display.textContent = '—'
+  }
   const refreshSelection = () => {
     const variant = findVariant()
     const unit = variant?.price != null
@@ -319,13 +338,23 @@ const productJson = JSON.stringify({
     document.getElementById('bd-iva').textContent = formatCOP(bd.iva)
     document.getElementById('bd-total').textContent = formatCOP(bd.total)
     // Tachar tallas/colores agotados según la otra opción elegida
+    // (y deseleccionar la opción elegida si con la nueva combinación ya no hay stock)
+    const variants = product.variants || []
     sizeButtons.forEach((b) => {
-      const v = (product.variants || []).find((x) => x.size === b.dataset.size && (!hasColors || !selectedColor || x.color === selectedColor))
-      b.classList.toggle('unavailable', product.hasVariants && (!v || v.stock <= 0))
+      const ok = variants.some((x) => x.size === b.dataset.size && x.stock > 0 && (!hasColors || !selectedColor || x.color === selectedColor))
+      setAvailable(b, !product.hasVariants || ok)
+      if (!ok && product.hasVariants && b.dataset.size === selectedSize) {
+        selectedSize = null
+        clearChoice(sizeButtons, sizeDisplay)
+      }
     })
     colorButtons.forEach((b) => {
-      const v = (product.variants || []).find((x) => x.color === b.dataset.color && (!hasSizes || !selectedSize || x.size === selectedSize))
-      b.classList.toggle('unavailable', product.hasVariants && (!v || v.stock <= 0))
+      const ok = variants.some((x) => x.color === b.dataset.color && x.stock > 0 && (!hasSizes || !selectedSize || x.size === selectedSize))
+      setAvailable(b, !product.hasVariants || ok)
+      if (!ok && product.hasVariants && b.dataset.color === selectedColor) {
+        selectedColor = null
+        clearChoice(colorButtons, colorDisplay)
+      }
     })
   }
   sizeButtons.forEach((b) => b.addEventListener('click', refreshSelection))
@@ -382,7 +411,7 @@ const productJson = JSON.stringify({
   .tax-breakdown .bd-total { margin-top: 0.25rem; padding-top: 0.35rem; border-top: 1px solid var(--color-gray-200, #e5e5e5); font-weight: 600; color: var(--color-black); }
   .sold-out-badge { display: inline-block; background: #fee2e2; color: #991b1b; font-weight: 600; font-size: 0.8rem; padding: 0.25rem 0.75rem; border-radius: 999px; margin-bottom: 0.75rem; }
   .color-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.15); margin-right: 6px; vertical-align: middle; }
-  .size-btn.unavailable, .color-btn.unavailable { opacity: 0.4; text-decoration: line-through; }
+  .size-btn.unavailable, .color-btn.unavailable { opacity: 0.4; text-decoration: line-through; cursor: not-allowed; }
   #add-to-cart-btn:disabled, #buy-now-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .product-page {
     padding-top:    calc(var(--header-height) + 1.5rem);

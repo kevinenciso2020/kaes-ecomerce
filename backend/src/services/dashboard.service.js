@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 
@@ -64,46 +65,56 @@ export const getOverview = async () => {
 }
 
 /**
- * Serie temporal de ventas. Usa DATE_TRUNC para agrupar por día en PostgreSQL.
+ * Serie temporal de ventas, agrupada por día (o mes en '12m') en hora de Colombia.
  * Devuelve siempre TODOS los buckets del rango (rellena con 0 los días sin ventas).
  */
+const TZ = 'America/Bogota'
+
+// 'YYYY-MM-DD' de un instante, en hora de Colombia
+const bogotaDateKey = (date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
+
 export const getSalesSeries = async ({ range = '30d' } = {}) => {
   const start = computeRangeStart(range)
   const bucket = range === '12m' ? 'month' : 'day'
 
-  // Group by día/mes usando $queryRaw (Prisma no soporta DATE_TRUNC nativo).
+  // La unidad va como literal SQL (lista blanca) y no como parámetro: si se pasa
+  // como parámetro, Postgres ve DATE_TRUNC($1…) y DATE_TRUNC($3…) como expresiones
+  // distintas y el GROUP BY falla. Se agrupa por posición (GROUP BY 1).
+  const unit = Prisma.raw(bucket === 'month' ? "'month'" : "'day'")
   const rows = await prisma.$queryRaw`
     SELECT
-      DATE_TRUNC(${bucket}, "createdAt") AS bucket,
-      COUNT(*)::int                       AS "orderCount",
-      COALESCE(SUM("total"), 0)::float    AS revenue
+      TO_CHAR(DATE_TRUNC(${unit}, ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${TZ}), 'YYYY-MM-DD') AS bucket,
+      COUNT(*)::int                    AS "orderCount",
+      COALESCE(SUM("total"), 0)::float AS revenue
     FROM "orders"
     WHERE "createdAt" >= ${start}
       AND "status" IN ('CONFIRMED', 'PROCESSING', 'SHIPPED', 'DELIVERED')
-    GROUP BY DATE_TRUNC(${bucket}, "createdAt")
-    ORDER BY bucket ASC
+    GROUP BY 1
+    ORDER BY 1 ASC
   `
 
-  // Rellenar buckets vacíos
+  // Rellenar buckets vacíos recorriendo fechas de calendario (en UTC puro para
+  // que el cambio de día no dependa de la zona horaria del servidor).
+  const map = new Map(rows.map((r) => [r.bucket, r]))
+  const toKey = (d) => d.toISOString().slice(0, 10)
+  const startKey = bogotaDateKey(start)
+  const endKey = bogotaDateKey(new Date())
+  const cursor = new Date(`${bucket === 'month' ? startKey.slice(0, 7) + '-01' : startKey}T00:00:00.000Z`)
+  const end = new Date(`${bucket === 'month' ? endKey.slice(0, 7) + '-01' : endKey}T00:00:00.000Z`)
+
   const series = []
-  const map = new Map(rows.map((r) => [new Date(r.bucket).getTime(), r]))
-  const now = new Date()
-  const cursor = new Date(start)
-
-  while (cursor <= now) {
-    const key = bucket === 'month'
-      ? new Date(cursor.getFullYear(), cursor.getMonth(), 1).getTime()
-      : new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()).getTime()
-
+  while (cursor <= end) {
+    const key = toKey(cursor)
     const found = map.get(key)
     series.push({
-      date:    new Date(key).toISOString(),
+      // Mediodía UTC = mañana en Colombia: el navegador muestra el día correcto
+      date:    `${key}T12:00:00.000Z`,
       revenue: found ? Number(found.revenue) : 0,
-      orders:  found ? Number(found.ordercount) : 0,
+      orders:  found ? Number(found.orderCount) : 0,
     })
-
-    if (bucket === 'month') cursor.setMonth(cursor.getMonth() + 1)
-    else cursor.setDate(cursor.getDate() + 1)
+    if (bucket === 'month') cursor.setUTCMonth(cursor.getUTCMonth() + 1)
+    else cursor.setUTCDate(cursor.getUTCDate() + 1)
   }
 
   return { range, bucket, series }
