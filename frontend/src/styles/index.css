@@ -137,8 +137,11 @@
 
 .categories-section {
   padding: var(--space-12) 0;
-  background: var(--color-gray-50);
+  background: var(--color-black);
 }
+
+/* Colores invertidos: el outline global es negro y no se vería sobre el fondo */
+.categories-section :focus-visible { outline-color: var(--color-white); }
 
 .categories-grid {
   display: grid;
@@ -152,19 +155,19 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-5) var(--space-3);
-  background: var(--color-white);
-  border: 1.5px solid var(--color-gray-200);
+  background: var(--color-black);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--radius-lg);
   transition: all var(--transition);
   text-align: center;
   cursor: pointer;
   text-decoration: none;
-  color: var(--color-gray-800);
+  color: var(--color-white);
 }
 
 .category-card:hover,
 .category-card:focus-visible {
-  border-color: var(--color-black);
+  border-color: var(--color-white);
   transform: translateY(-2px);
   box-shadow: var(--shadow-sm);
 }
@@ -175,21 +178,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-black);
-  background: var(--color-gray-50);
+  color: var(--color-white);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 50%;
   transition: all var(--transition);
 }
 
-.category-card:hover .category-icon {
-  background: var(--color-black);
-  color: var(--color-white);
+.category-card:hover .category-icon,
+.category-card:focus-visible .category-icon {
+  background: var(--color-white);
+  color: var(--color-black);
 }
 
 .category-name {
   font-size: 0.85rem;
   font-weight: 500;
-  color: var(--color-gray-800);
+  color: var(--color-gray-100);
 }
 
 .featured-section {
