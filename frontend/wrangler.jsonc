@@ -18,5 +18,6 @@
   // Exige sesión válida en /admin ya en el servidor (front y API comparten dominio).
   "vars": { "ADMIN_SSR_GUARD": "strict" },
   // Conserva lo configurado en el panel (el secreto SSR_API_KEY) al desplegar.
-  "keep_vars": true
+  "keep_vars": true,
+  "previews": {}
 }
