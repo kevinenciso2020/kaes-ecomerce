@@ -78,6 +78,7 @@ export default function ProductCarousel({ products = [] }) {
   const reduced = useReducedMotion();
 
   const trackRef = useRef(null);
+  const viewportRef = useRef(null);
   const offsetRef = useRef(0);       // px desplazados (crece hacia la izquierda)
   const loopRef = useRef(0);         // ancho de una vuelta completa
   const stepRef = useRef(0);         // ancho de una tarjeta + separación
@@ -113,12 +114,16 @@ export default function ProductCarousel({ products = [] }) {
   }, [order]);
 
   // Bucle de animación: avanza solo salvo pausa, hover/foco o movimiento
-  // reducido; los saltos de las flechas tienen prioridad.
+  // reducido; los saltos de las flechas tienen prioridad. Solo corre mientras
+  // el carrusel está en pantalla y la pestaña visible: fuera de ella no hay
+  // ningún frame en marcha (la posición se conserva y sigue desde ahí).
   useEffect(() => {
     const track = trackRef.current;
-    if (!track) return;
+    const viewport = viewportRef.current;
+    if (!track || !viewport) return;
     let raf = 0;
     let last = performance.now();
+    let enPantalla = false;
 
     const frame = (now) => {
       const dt = Math.min(now - last, 50); // pestaña oculta: no "saltar" al volver
@@ -139,8 +144,34 @@ export default function ProductCarousel({ products = [] }) {
       raf = requestAnimationFrame(frame);
     };
 
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    const arrancar = () => {
+      if (raf || !enPantalla || document.hidden) return;
+      last = performance.now(); // sin salto al reanudar
+      raf = requestAnimationFrame(frame);
+    };
+    const detener = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
+    const io = new IntersectionObserver(
+      ([entrada]) => {
+        enPantalla = entrada.isIntersecting;
+        if (enPantalla) arrancar();
+        else detener();
+      },
+      { rootMargin: "100px" },
+    );
+    io.observe(viewport);
+
+    const onVisibilidad = () => (document.hidden ? detener() : arrancar());
+    document.addEventListener("visibilitychange", onVisibilidad);
+
+    return () => {
+      detener();
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilidad);
+    };
   }, [reduced, order]);
 
   const mover = (dir) => {
@@ -167,6 +198,7 @@ export default function ProductCarousel({ products = [] }) {
   return (
     <section className="section carousel-section" aria-label="Productos disponibles" aria-roledescription="carrusel">
       <div
+        ref={viewportRef}
         className={`carousel-viewport${ready ? " is-ready" : ""}`}
         onMouseEnter={() => { hoverRef.current = true; }}
         onMouseLeave={() => { hoverRef.current = false; }}
