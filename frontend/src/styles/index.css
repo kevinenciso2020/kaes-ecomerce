@@ -383,15 +383,6 @@
   position: relative;
 }
 
-.cta-eyebrow {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  color: var(--color-white);
-  margin: 0;
-}
-
 .cta-title {
   font-family: var(--font-serif);
   font-size: clamp(1.75rem, 5vw, 2.75rem);

@@ -15,7 +15,6 @@ export default function CtaBanner() {
           viewport={{ once: true, margin: "-60px" }}
           transition={{ type: "spring", stiffness: 100, damping: 20 }}
         >
-          <p className="cta-eyebrow">Primera compra</p>
           <h2 className="cta-title">Tu estilo te espera</h2>
           <p className="cta-text">
             Usa el cupón <strong>TRINITY</strong> y obtén el 10% en tu primera compra.
@@ -24,7 +23,7 @@ export default function CtaBanner() {
             onClick={() => (window.location.href = "/auth/register")}
             className="btn cta-btn"
           >
-            Crear cuenta gratis
+            Crear cuenta
           </MagneticButton>
         </motion.div>
       </div>
