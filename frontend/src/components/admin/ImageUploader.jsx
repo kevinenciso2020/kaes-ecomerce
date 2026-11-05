@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../../lib/api.js'
+import { cloudinaryUrl } from '../../lib/images.js'
 
 /**
  * Gestión de imágenes de un producto:
@@ -120,7 +121,7 @@ export default function ImageUploader({ productId, images = NO_IMAGES, onChange,
       <div className="img-grid">
         {existing.map((img) => (
           <figure key={img.id} className={`img-thumb ${img.isMain ? 'is-main' : ''}`}>
-            <img src={img.url} alt="" loading="lazy" />
+            <img src={cloudinaryUrl(img.url, { width: 320 })} alt="" loading="lazy" />
             {img.isMain && <span className="img-badge main">Principal</span>}
             <div className="img-actions">
               <button type="button" onClick={() => makeMain(img)} disabled={busy || img.isMain} title="Marcar como principal" aria-label="Marcar como principal">★</button>

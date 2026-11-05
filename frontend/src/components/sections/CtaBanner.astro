@@ -1,0 +1,21 @@
+---
+// Banner del cupón de primera compra. HTML estático; entrada con
+// src/scripts/reveal.js y botón magnético con src/scripts/magnetic.js.
+---
+
+<section class="cta-banner" aria-label="Promoción">
+  <div class="container">
+    <div class="cta-inner" data-reveal style="--reveal-y: 30px">
+      <h2 class="cta-title">Tu estilo te espera</h2>
+      <p class="cta-text">
+        Usa el cupón <strong>TRINITY</strong> y obtén el 10% en tu primera compra.
+      </p>
+      <a href="/auth/register" class="btn cta-btn" data-magnetic>Crear cuenta</a>
+    </div>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/reveal.js'
+  import '../../scripts/magnetic.js'
+</script>

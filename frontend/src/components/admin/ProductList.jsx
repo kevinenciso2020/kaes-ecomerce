@@ -3,6 +3,7 @@ import { isAdminRole } from '../../lib/roles.js'
 import { api, bootstrapAuth } from '../../lib/api.js'
 import ProductFormModal from './ProductFormModal.jsx'
 import CatalogManager from './CatalogManager.jsx'
+import { cloudinaryUrl, ANCHO_MINIATURA } from '../../lib/images.js'
 
 /**
  * Panel de productos: listado con filtros, crear/editar, archivar, reactivar,
@@ -245,7 +246,7 @@ export default function ProductList() {
                     <tr key={p.id} className={p.isActive ? '' : 'archived'}>
                       <td data-label="Producto">
                         <div className="pl-product">
-                          <img src={img} alt="" loading="lazy" />
+                          <img src={cloudinaryUrl(img, { width: ANCHO_MINIATURA })} alt="" loading="lazy" />
                           <div>
                             <button className="pl-name" onClick={() => openEdit(p)}>{p.name}</button>
                             <div className="pl-meta">

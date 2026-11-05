@@ -15,6 +15,7 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
 <script>
   import { api, bootstrapAuth } from '../../../lib/api.js'
   import { escapeHtml } from '../../../lib/sanitize.js'
+  import { cloudinaryUrl, ANCHO_MINIATURA } from '../../../lib/images.js'
   import { ORDER_STATUS } from '../../../lib/order-status.js'
 
   const listEl = document.getElementById('orders-list')
@@ -40,7 +41,7 @@ import ShopLayout from '../../../layouts/ShopLayout.astro'
         const needsPay = o.status === 'PENDING' && !o.needsReview
         return `
           <a class="order-row" href="/perfil/ordenes/${encodeURIComponent(o.id)}">
-            <div class="thumb">${img ? `<img src="${escapeHtml(img)}" alt="" loading="lazy" />` : ''}</div>
+            <div class="thumb">${img ? `<img src="${escapeHtml(cloudinaryUrl(img, { width: ANCHO_MINIATURA }))}" alt="" loading="lazy" />` : ''}</div>
             <div class="info">
               <p class="oid">Pedido #${escapeHtml(o.id.slice(-8).toUpperCase())}</p>
               <p class="meta">${new Date(o.createdAt).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })} · ${count} producto(s)</p>

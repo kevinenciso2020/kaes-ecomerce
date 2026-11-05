@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../../lib/api.js'
+import { cloudinaryUrl, ANCHO_MINIATURA } from '../../lib/images.js'
 
 export default function LowStockPanel() {
   const [items, setItems]     = useState([])
@@ -34,7 +35,7 @@ export default function LowStockPanel() {
               <li key={p.id} className="lowstock-item">
                 <div className="lowstock-product">
                   {p.images?.[0]?.url && (
-                    <img src={p.images[0].url} alt="" className="lowstock-thumb" />
+                    <img src={cloudinaryUrl(p.images[0].url, { width: ANCHO_MINIATURA })} alt="" className="lowstock-thumb" loading="lazy" />
                   )}
                   <div>
                     <p className="lowstock-name">{p.name}</p>

@@ -1,0 +1,98 @@
+---
+// Productos destacados de la home. HTML estático; la entrada la hace
+// src/scripts/reveal.js (antes RevealSection de framer-motion).
+import { ANCHOS_TARJETA, cloudinarySrcset, cloudinaryUrl } from '../../lib/images.js'
+import { priceInfo } from '../../lib/carousel.js'
+
+interface Props {
+  products?: any[]
+  loading?: boolean
+}
+
+const { products = [], loading = false } = Astro.props
+const formatCOP = (n: number) => `$${Number(n).toLocaleString('es-CO')}`
+---
+
+<section class="section featured-section" aria-label="Productos destacados">
+  <div class="container">
+    <div class="section-header" data-reveal>
+      <h2 class="section-title">Destacados</h2>
+      <a href="/productos" class="see-all">
+        Ver todos
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M5 12h14M12 5l7 7-7 7" />
+        </svg>
+      </a>
+    </div>
+
+    <div class="products-grid">
+      {loading && Array.from({ length: 4 }).map(() => (
+        <div class="product-card skeleton" aria-hidden="true">
+          <div class="product-image skeleton-image"></div>
+          <div class="product-info">
+            <div class="skeleton-line skeleton-line-sm"></div>
+            <div class="skeleton-line skeleton-line-md"></div>
+            <div class="skeleton-line skeleton-line-lg"></div>
+          </div>
+        </div>
+      ))}
+
+      {!loading && products.length === 0 && (
+        <div class="empty-state">
+          <p>Pronto tendremos nuevos productos</p>
+        </div>
+      )}
+
+      {!loading && products.map((product, i) => {
+        const img = product.images?.[0]?.url
+        const { price, final, hasOffer, offerPct } = priceInfo(product)
+        return (
+          <div data-reveal style={`--reveal-i: ${i % 4}`}>
+            <a
+              href={`/productos/${product.slug}`}
+              class="product-card"
+              aria-label={`Ver producto ${product.name}`}
+            >
+              <div class="product-image">
+                {img ? (
+                  <img
+                    src={cloudinaryUrl(img, { width: 480 })}
+                    srcset={cloudinarySrcset(img, ANCHOS_TARJETA)}
+                    sizes="(min-width: 768px) 300px, 50vw"
+                    alt={product.name}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                ) : (
+                  <div class="product-placeholder">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+                      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                      <line x1="7" y1="7" x2="7.01" y2="7" />
+                    </svg>
+                  </div>
+                )}
+                <div class="product-overlay"></div>
+                {product.isFeatured && <span class="badge-featured">Destacado</span>}
+              </div>
+              <div class="product-info">
+                <p class="product-category">{product.category?.name}</p>
+                <h3 class="product-name">{product.name}</h3>
+                <p class="product-price">
+                  {hasOffer && (
+                    <s style="opacity: 0.5; margin-right: 0.5rem; font-weight: 400">{formatCOP(price)}</s>
+                  )}
+                  {formatCOP(final)}
+                  {hasOffer && <span style="margin-left: 0.5rem; color: #b91c1c; font-size: 0.8em">-{offerPct}%</span>}
+                </p>
+              </div>
+            </a>
+          </div>
+        )
+      })}
+    </div>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/reveal.js'
+</script>

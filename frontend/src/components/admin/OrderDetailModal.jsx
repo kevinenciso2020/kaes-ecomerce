@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import OrderStatusTimeline from './OrderStatusTimeline.jsx'
 import EinvoicePanel from './EinvoicePanel.jsx'
+import { cloudinaryUrl, ANCHO_MINIATURA } from '../../lib/images.js'
 
 const STATUS_LABELS = {
   PENDING:    { label: 'Pendiente',   cls: 'pending'    },
@@ -215,7 +216,7 @@ export default function OrderDetailModal({ order, onClose, onStatusChange, onRes
                     <tr key={item.id}>
                       <td>
                         <div className="item-cell">
-                          {img && <img src={img} alt="" className="item-thumb" />}
+                          {img && <img src={cloudinaryUrl(img, { width: ANCHO_MINIATURA })} alt="" className="item-thumb" loading="lazy" />}
                           <span>{item.product?.name || 'Producto'}</span>
                         </div>
                       </td>

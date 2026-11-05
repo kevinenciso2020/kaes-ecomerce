@@ -5,6 +5,7 @@ import { api } from '../../lib/api.js'
 import { ivaBreakdown, formatCOP } from '../../lib/tax.js'
 import { SITE_CONFIG } from '../../lib/site-config.js'
 import { absoluteUrl, productJsonLd, resolveSiteUrl } from '../../lib/seo.js'
+import { ANCHOS_PRODUCTO, ANCHO_MINIATURA, cloudinarySrcset, cloudinaryUrl } from '../../lib/images.js'
 
 const { slug } = Astro.params
 
@@ -78,7 +79,9 @@ const productJson = JSON.stringify({
         <div class="main-image">
           <img
             id="main-img"
-            src={mainImage?.url}
+            src={cloudinaryUrl(mainImage?.url, { width: 800 })}
+            srcset={cloudinarySrcset(mainImage?.url, ANCHOS_PRODUCTO)}
+            sizes="(min-width: 768px) 50vw, 100vw"
             alt={product.name}
             fetchpriority="high"
           />
@@ -90,11 +93,17 @@ const productJson = JSON.stringify({
                 type="button"
                 role="tab"
                 class={`thumbnail ${i === 0 ? 'active' : ''}`}
-                data-src={img.url}
+                data-src={cloudinaryUrl(img.url, { width: 800 })}
+                data-srcset={cloudinarySrcset(img.url, ANCHOS_PRODUCTO)}
                 aria-label={`Imagen ${i + 1} de ${product.images.length}`}
                 aria-selected={i === 0 ? 'true' : 'false'}
               >
-                <img src={img.url} alt="" />
+                <img
+                  src={cloudinaryUrl(img.url, { width: ANCHO_MINIATURA })}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
               </button>
             ))}
           </div>
@@ -227,6 +236,9 @@ const productJson = JSON.stringify({
     btn.addEventListener('click', () => {
       const src = btn.dataset.src
       if (!src || !mainImg) return
+      // srcset tiene prioridad sobre src: hay que cambiar los dos
+      if (btn.dataset.srcset) mainImg.srcset = btn.dataset.srcset
+      else mainImg.removeAttribute('srcset')
       mainImg.src = src
       thumbnails.forEach((b) => {
         b.classList.remove('active')
