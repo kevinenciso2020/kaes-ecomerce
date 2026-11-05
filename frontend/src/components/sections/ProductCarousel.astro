@@ -1,0 +1,107 @@
+---
+// Carrusel de productos disponibles (debajo del hero). El servidor pinta cada
+// producto una vez, en el orden de la API; src/scripts/carousel.js lo baraja en
+// el navegador, crea las copias para el bucle y lo anima solo mientras está en
+// pantalla. Sin JavaScript queda como una fila desplazable a mano.
+import { availableColors, availableSizes, priceInfo } from '../../lib/carousel.js'
+import { ANCHOS_TARJETA, cloudinarySrcset, cloudinaryUrl } from '../../lib/images.js'
+
+interface Props {
+  products?: any[]
+}
+
+const { products = [] } = Astro.props
+const formatCOP = (n: number) => `$${Number(n).toLocaleString('es-CO')}`
+---
+
+{products.length > 0 && (
+  <section class="section carousel-section" aria-label="Productos disponibles" aria-roledescription="carrusel" data-carousel>
+    <div class="carousel-viewport">
+      <ul class="carousel-track">
+        {products.map((product) => {
+          const img = product.images?.[0]?.url
+          const { price, final, hasOffer, offerPct } = priceInfo(product)
+          const tallas = availableSizes(product)
+          const colores = availableColors(product)
+          return (
+            <li class="carousel-item" data-category={product.category?.slug ?? ''}>
+              <a
+                href={`/productos/${product.slug}`}
+                class="product-card carousel-card"
+                aria-label={`Ver producto ${product.name}`}
+                draggable="false"
+              >
+                <div class="product-image">
+                  {img ? (
+                    <img
+                      src={cloudinaryUrl(img, { width: 480 })}
+                      srcset={cloudinarySrcset(img, ANCHOS_TARJETA)}
+                      sizes="(min-width: 768px) 260px, 62vw"
+                      alt={product.name}
+                      loading="lazy"
+                      decoding="async"
+                      draggable="false"
+                    />
+                  ) : (
+                    <div class="product-placeholder">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true">
+                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+                        <line x1="7" y1="7" x2="7.01" y2="7" />
+                      </svg>
+                    </div>
+                  )}
+                  <div class="product-overlay"></div>
+                  {hasOffer && <span class="badge-featured carousel-offer">-{offerPct}%</span>}
+                </div>
+                <div class="product-info">
+                  <p class="product-category">{product.category?.name}</p>
+                  <h3 class="product-name">{product.name}</h3>
+                  <p class="product-price">
+                    {hasOffer && <s class="carousel-old-price">{formatCOP(price)}</s>}
+                    {formatCOP(final)}
+                  </p>
+                  {(tallas.length > 0 || colores.length > 0) && (
+                    <p class="carousel-meta">
+                      {tallas.length > 0 && <span>Tallas {tallas.join(' · ')}</span>}
+                      {colores.length > 0 && <span>{colores.join(' · ')}</span>}
+                    </p>
+                  )}
+                </div>
+              </a>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+
+    <!-- Los controles solo se muestran cuando el script está activo -->
+    <div class="carousel-controls" hidden>
+      <button type="button" class="carousel-btn" data-carousel-prev aria-label="Producto anterior">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+      </button>
+      <button type="button" class="carousel-btn carousel-btn-main carousel-pause" data-carousel-pause aria-pressed="false" aria-label="Pausar carrusel">
+        <svg class="icon-pause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" /></svg>
+        <svg class="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+      </button>
+      <button type="button" class="carousel-btn" data-carousel-next aria-label="Producto siguiente">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14M12 5l7 7-7 7" />
+        </svg>
+      </button>
+    </div>
+
+    <a href="/productos" class="see-all carousel-see-all">
+      Ver todos
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <path d="M5 12h14M12 5l7 7-7 7" />
+      </svg>
+    </a>
+  </section>
+)}
+
+<script>
+  import { initCarousels } from '../../scripts/carousel.js'
+  initCarousels()
+</script>

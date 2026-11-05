@@ -1,0 +1,59 @@
+---
+// Hero de la home. Antes era una isla de React + framer-motion cargada con
+// client:load; ahora es HTML estático con animaciones CSS (index.css):
+// entrada escalonada (.hero-anim, --i) y trazo del símbolo en bucle (.hero-path).
+---
+
+<section class="hero-section">
+  <div class="hero-bg-pattern" aria-hidden="true"></div>
+
+  <div class="hero-inner container">
+    <div class="hero-left">
+      <div class="hero-symbol-wrapper">
+        <svg
+          class="hero-symbol"
+          viewBox="0 0 950 850"
+          xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="xMidYMid meet"
+          aria-hidden="true"
+        >
+          <path
+            class="hero-path"
+            d="M 433 0 A 440 440 90 0 0 866 750 A 440 440 90 0 0 0 750 A 440 440 90 0 0 433 0 Z"
+            transform="translate(40 40)"
+            fill="none"
+            stroke="var(--color-black)"
+            stroke-width="35"
+            stroke-linecap="round"
+            pathLength="1"
+          />
+        </svg>
+      </div>
+    </div>
+
+    <div class="hero-right">
+      <h1 class="hero-title hero-anim" style="--i: 1">
+        <span class="hero-title-kaes">kaes</span>
+      </h1>
+
+      <p class="hero-eyebrow hero-anim" style="--i: 2">simply eternal</p>
+
+      <p class="hero-subtitle hero-anim" style="--i: 3">
+        Cada prenda nace desde lo esencial y evoluciona contigo.
+      </p>
+
+      <div class="hero-actions hero-anim" style="--i: 4">
+        <a href="/productos" class="btn btn-primary hero-btn-primary" data-magnetic>
+          Explorar colección
+        </a>
+        <a href="/auth/register" class="btn btn-outline hero-btn-outline">
+          Crear cuenta
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import '../../scripts/magnetic.js'
+</script>

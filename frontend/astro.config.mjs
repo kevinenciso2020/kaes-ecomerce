@@ -26,7 +26,7 @@ export default defineConfig({
     // de cada script que emite (incluida la hidratación de las islas React),
     // así que sólo se ejecuta JavaScript propio: un XSS inyectado no corre.
     // Los estilos permiten 'unsafe-inline' porque hay atributos style y
-    // estilos de React/framer-motion (el riesgo real de XSS está en scripts).
+    // estilos de React (el riesgo real de XSS está en scripts).
     // frame-ancestors no se puede poner en <meta>: va como header en
     // src/lib/security-headers.js (páginas) y public/_headers (estáticos).
     csp: {

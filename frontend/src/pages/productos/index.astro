@@ -2,6 +2,7 @@
 import ShopLayout from '../../layouts/ShopLayout.astro'
 import Icon from '../../components/ui/Icon.astro'
 import { api } from '../../lib/api.js'
+import { ANCHOS_TARJETA, cloudinarySrcset, cloudinaryUrl } from '../../lib/images.js'
 
 let products = []
 let categories = []
@@ -193,7 +194,14 @@ Astro.response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-re
               <a href={productUrl} class="product-card" aria-label={`Ver producto ${product.name}`}>
                 <div class="product-image">
                   {imageUrl
-                    ? <img src={imageUrl} alt={product.name} loading="lazy" decoding="async" />
+                    ? <img
+                        src={cloudinaryUrl(imageUrl, { width: 480 })}
+                        srcset={cloudinarySrcset(imageUrl, ANCHOS_TARJETA)}
+                        sizes="(min-width: 1024px) 300px, 50vw"
+                        alt={product.name}
+                        loading="lazy"
+                        decoding="async"
+                      />
                     : <div class="product-image-placeholder">
                         <Icon name="box" size={32} />
                       </div>

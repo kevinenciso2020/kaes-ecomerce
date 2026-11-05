@@ -203,6 +203,11 @@
 }
 
 /* Controles centrados bajo el carrusel: anterior · pausa · siguiente */
+.carousel-controls[hidden] { display: none; }
+.carousel-pause .icon-play,
+.carousel-pause[aria-pressed="true"] .icon-pause { display: none; }
+.carousel-pause[aria-pressed="true"] .icon-play { display: inline; }
+
 .carousel-controls {
   display: flex;
   align-items: center;
@@ -252,16 +257,23 @@
   overflow: hidden;
   /* aire para la sombra y el desplazamiento del hover de las tarjetas */
   padding: var(--space-2) 0 var(--space-4);
-  opacity: 0;
-  transition: opacity 600ms ease;
+  /* Sin JavaScript: fila desplazable a mano */
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+}
+.carousel-viewport .carousel-item { scroll-snap-align: start; }
+
+/* Con src/scripts/carousel.js activo: bucle animado */
+.is-enhanced .carousel-viewport {
+  overflow: hidden;
+  scroll-snap-type: none;
   touch-action: pan-y;
   /* difumina los bordes para que las tarjetas entren y salgan suavemente */
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
           mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
-.carousel-viewport.is-ready { opacity: 1; }
 
-/* El desplazamiento lo mueve ProductCarousel.tsx (requestAnimationFrame) */
+/* El desplazamiento lo mueve src/scripts/carousel.js (requestAnimationFrame) */
 .carousel-track {
   display: flex;
   gap: var(--space-4);
@@ -269,8 +281,8 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  will-change: transform;
 }
+.is-enhanced .carousel-track { will-change: transform; }
 
 .carousel-item {
   flex: 0 0 auto;
@@ -582,4 +594,53 @@
   /* Sin desplazamiento automático: solo se mueve con las flechas o deslizando */
   .carousel-pause { display: none; }
   .carousel-btn:active { transform: none; }
+}
+
+/* ── Animaciones de la home sin JavaScript de React ── */
+
+/* Entrada escalonada del hero al cargar (antes framer-motion) */
+@keyframes fade-slide-up {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: none; }
+}
+.hero-anim {
+  animation: fade-slide-up 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 120ms);
+}
+
+/* Trazo del símbolo: se dibuja desde el inicio y vuelve a empezar (pathLength=1) */
+@keyframes hero-draw {
+  from { stroke-dashoffset: -1; }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes hero-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.hero-path {
+  stroke-dasharray: 1 1;
+  animation: hero-fade-in 500ms ease both, hero-draw 4s linear infinite;
+}
+
+/* Revelado al hacer scroll: src/scripts/reveal.js solo marca lo que está fuera
+   de pantalla, así que sin JavaScript nada queda oculto */
+.reveal-pending {
+  opacity: 0;
+  transform: translateY(var(--reveal-y, 40px));
+}
+.reveal-pending.is-revealed {
+  opacity: 1;
+  transform: none;
+  transition: opacity 600ms ease, transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: calc(var(--reveal-i, 0) * 80ms);
+}
+
+/* Botones magnéticos (src/scripts/magnetic.js): vuelven con un leve rebote */
+[data-magnetic] {
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), background var(--transition), color var(--transition), box-shadow var(--transition), border-color var(--transition);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-anim { animation: none; }
+  .hero-path { animation: none; stroke-dasharray: none; }
 }

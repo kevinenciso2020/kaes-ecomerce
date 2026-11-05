@@ -194,6 +194,7 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
   import { applyCoupon, removeCoupon, getCouponCode } from '../stores/coupon.store.js'
   import { api, ApiError, bootstrapAuth } from '../lib/api.js'
   import { escapeHtml } from '../lib/sanitize.js'
+  import { cloudinaryUrl, ANCHO_MINIATURA } from '../lib/images.js'
   import { computeNitDv, buildBuyer } from '../lib/nit.js'
 
   const $ = (id) => document.getElementById(id)
@@ -256,7 +257,7 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
       <div class="order-item">
         <div class="order-item-image">
           ${item.image
-            ? `<img src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" />`
+            ? `<img src="${escapeHtml(cloudinaryUrl(item.image, { width: ANCHO_MINIATURA }))}" alt="${escapeHtml(item.name)}" loading="lazy" />`
             : '<div class="order-item-placeholder"></div>'}
           <span class="order-item-qty">${item.quantity}</span>
         </div>
