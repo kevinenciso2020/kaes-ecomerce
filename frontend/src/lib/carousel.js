@@ -19,13 +19,13 @@ const rankTalla = (talla) => {
   return i === -1 ? ORDEN_TALLAS.length : i
 }
 
-// Tallas con stock, sin repetir y en orden natural (S, M, L…; numéricas al final).
-export const availableSizes = (product) => {
-  const tallas = new Set(
-    variantsOf(product).filter((v) => v.size && Number(v.stock) > 0).map((v) => v.size),
-  )
-  return [...tallas].sort((a, b) => rankTalla(a) - rankTalla(b) || String(a).localeCompare(String(b), 'es', { numeric: true }))
-}
+// Tallas sin repetir y en orden natural (S, M, L…; numéricas al final, de menor a mayor).
+export const sortSizes = (list) =>
+  [...new Set(list)].sort((a, b) => rankTalla(a) - rankTalla(b) || String(a).localeCompare(String(b), 'es', { numeric: true }))
+
+// Tallas con stock, sin repetir y en orden natural.
+export const availableSizes = (product) =>
+  sortSizes(variantsOf(product).filter((v) => v.size && Number(v.stock) > 0).map((v) => v.size))
 
 // Colores con stock, sin repetir, en el orden en que llegan.
 export const availableColors = (product) => [

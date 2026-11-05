@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  totalStock, isAvailable, availableSizes, availableColors,
+  totalStock, isAvailable, availableSizes, sortSizes, availableColors,
   priceInfo, shuffle, shuffleMixed, repeatToFill,
 } from '../src/lib/carousel.js'
 
@@ -78,5 +78,17 @@ describe('carousel: repeatToFill', () => {
     expect(repeatToFill([1, 2, 3, 4, 5], 12)).toHaveLength(15)
     expect(repeatToFill(Array.from({ length: 20 }, (_, i) => i), 12)).toHaveLength(20)
     expect(repeatToFill([], 12)).toEqual([])
+  })
+})
+
+describe('sortSizes', () => {
+  it('ordena tallas de letra de menor a mayor', () => {
+    expect(sortSizes(['XL', 'S', 'M', 'XS', 'L'])).toEqual(['XS', 'S', 'M', 'L', 'XL'])
+  })
+  it('ordena numéricas como números y sin repetir', () => {
+    expect(sortSizes(['40', '8', '10', '8', '36'])).toEqual(['8', '10', '36', '40'])
+  })
+  it('deja las numéricas después de las de letra', () => {
+    expect(sortSizes(['32', 'M', 'S', '28'])).toEqual(['S', 'M', '28', '32'])
   })
 })

@@ -85,11 +85,12 @@ describe('GET /api/v1/admin/dashboard/sales', () => {
   })
 
   it('returns filled series for 7d range', async () => {
+    const key = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(d)
     const today = new Date()
     const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
     prisma.$queryRaw.mockResolvedValueOnce([
-      { bucket: yesterday, ordercount: 5, revenue: 250000 },
-      { bucket: today,     ordercount: 3, revenue: 150000 },
+      { bucket: key(yesterday), orderCount: 5, revenue: 250000 },
+      { bucket: key(today),     orderCount: 3, revenue: 150000 },
     ])
 
     const res = await request(app)
@@ -102,6 +103,10 @@ describe('GET /api/v1/admin/dashboard/sales', () => {
     expect(res.body.series.length).toBe(8) // 7d + today
     // Asegurar que rellena con 0 los días sin ventas
     expect(res.body.series.every((d) => typeof d.revenue === 'number')).toBe(true)
+    const last = res.body.series.at(-1)
+    expect(last.date.slice(0, 10)).toBe(key(today))
+    expect(last).toMatchObject({ revenue: 150000, orders: 3 })
+    expect(res.body.series.at(-2)).toMatchObject({ revenue: 250000, orders: 5 })
   })
 
   it('returns monthly buckets for 12m range', async () => {
