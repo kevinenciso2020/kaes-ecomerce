@@ -1,7 +1,7 @@
 // Reemplaza al administrador de la tienda.
 //
-//   NEW_ADMIN_EMAIL=nuevo@correo.com NEW_ADMIN_PASSWORD='…' npm run admin:replace              → simulación
-//   NEW_ADMIN_EMAIL=nuevo@correo.com NEW_ADMIN_PASSWORD='…' npm run admin:replace -- --confirm → aplica
+//   NEW_ADMIN_EMAIL=nuevo@correo.com NEW_ADMIN_PASSWORD='…' pnpm run admin:replace              → simulación
+//   NEW_ADMIN_EMAIL=nuevo@correo.com NEW_ADMIN_PASSWORD='…' pnpm run admin:replace --confirm → aplica
 //
 // Qué hace:
 //  • Crea (o actualiza) al nuevo usuario como SUPER_ADMIN con el email verificado.
@@ -33,7 +33,7 @@ const main = async () => {
   }
 
   if (!confirm) {
-    console.log('\nModo simulación. Agrega -- --confirm para aplicar.')
+    console.log('\nModo simulación. Agrega --confirm para aplicar.')
     return
   }
 

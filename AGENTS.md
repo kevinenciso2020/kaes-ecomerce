@@ -2,6 +2,8 @@
 
 ## Project Structure
 
+Package manager: **pnpm** (version pinned in each `package.json` → `packageManager`; run `corepack enable` once). Each package has its own `pnpm-lock.yaml`; there is no workspace.
+
 - `backend/` - Express.js API with Prisma ORM
 - `frontend/` - Astro + React frontend
 
@@ -10,28 +12,28 @@
 ### Backend
 ```bash
 cd backend
-npm run dev          # Start dev server with nodemon
-npm start           # Production start
-npm run db:migrate   # Run Prisma migrations
-npm run db:push     # Push schema to DB
-npm run db:studio   # Open Prisma Studio
-npm run db:seed    # Seed (colores/tallas/categorías; admin sólo con SEED_ADMIN_EMAIL/PASSWORD)
-npm run cleanup:test-data  # Simula la limpieza de datos de prueba (añade -- --confirm para aplicar)
-npm test            # Run Vitest suite (unit + integration, Prisma mockeado)
-npm run test:db     # Tests contra PostgreSQL real (TEST_DATABASE_URL, base desechable)
-npm run test:watch  # Watch mode
-npm run test:coverage # With v8 coverage
+pnpm run dev          # Start dev server with nodemon
+pnpm start           # Production start
+pnpm run db:migrate   # Run Prisma migrations
+pnpm run db:push     # Push schema to DB
+pnpm run db:studio   # Open Prisma Studio
+pnpm run db:seed    # Seed (colores/tallas/categorías; admin sólo con SEED_ADMIN_EMAIL/PASSWORD)
+pnpm run cleanup:test-data  # Simula la limpieza de datos de prueba (añade --confirm para aplicar)
+pnpm test            # Run Vitest suite (unit + integration, Prisma mockeado)
+pnpm run test:db     # Tests contra PostgreSQL real (TEST_DATABASE_URL, base desechable)
+pnpm run test:watch  # Watch mode
+pnpm run test:coverage # With v8 coverage
 ```
 
 ### Frontend
 ```bash
 cd frontend
-npm run dev         # Dev server at localhost:4321
-npm run build      # Build for production
-npm run preview    # Preview build
-npm test           # Run Vitest suite
-npm run test:watch # Watch mode
-npm run test:coverage # With v8 coverage
+pnpm run dev         # Dev server at localhost:4321
+pnpm run build      # Build for production
+pnpm run preview    # Preview build
+pnpm test           # Run Vitest suite
+pnpm run test:watch # Watch mode
+pnpm run test:coverage # With v8 coverage
 ```
 
 ## Important Quirks
@@ -53,15 +55,15 @@ npm run test:coverage # With v8 coverage
 ### Frontend (Cloudflare Workers)
 1. Push your code to GitHub
 2. Cloudflare dashboard → Workers & Pages → Create → Import a repository (Workers Builds)
-3. Root directory: `frontend`; build command: `npm run build`; deploy command: `npx wrangler deploy` (config in `frontend/wrangler.jsonc`)
+3. Root directory: `frontend`; build command: `pnpm run build`; deploy command: `pnpm exec wrangler deploy` (config in `frontend/wrangler.jsonc`)
 4. **Build** variables: `PUBLIC_API_URL=https://your-backend-url.com/api/v1`, `SITE_URL`, `NODE_VERSION=22` (and `PUBLIC_LEGAL_NIT` etc. — every `PUBLIC_*` is fixed at build time)
 5. **Runtime** variables: secret `SSR_API_KEY` (same value as backend) and `ADMIN_SSR_GUARD=strict` (Worker → Settings → Variables and Secrets)
-6. Every push to `main` deploys. Local check of the real runtime: `npm run build && npx wrangler dev`
+6. Every push to `main` deploys. Local check of the real runtime: `pnpm run build && pnpm exec wrangler dev`
 
 ### Backend (Railway/Render)
 1. Push your code to GitHub
 2. Create a new project on Railway or Render
-3. Connect your GitHub repository, select the "backend" folder
+3. Connect your GitHub repository, select the "backend" folder (Railway builds `backend/Dockerfile`, which installs pnpm via corepack; start command `pnpm run start:prod`)
 4. Add all environment variables from `backend/.env`:
    - `PORT` (Railway will set this automatically)
    - `NODE_ENV=production`
@@ -74,7 +76,7 @@ npm run test:coverage # With v8 coverage
    - `SSR_API_KEY`, `SENTRY_DSN` — see `backend/.env.example` for the full list
    - `FRONTEND_URL` (your frontend URL)
    - `BACKEND_URL` (your Railway/Render URL)
-5. Migrations run automatically on boot (`npm run start:prod` → `prisma migrate deploy`)
+5. Migrations run automatically on boot (`pnpm run start:prod` → `prisma migrate deploy`)
 6. Deploy
 
 ### Important

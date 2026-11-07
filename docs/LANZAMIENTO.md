@@ -8,14 +8,14 @@ vender. Marca cada casilla. Orden recomendado: de arriba hacia abajo.
 - [ ] Simulación de limpieza contra producción (desde tu máquina, con `DATABASE_URL` de producción **sólo en esa terminal**):
   ```bash
   cd backend
-  DATABASE_URL="postgresql://…neon…" DIRECT_URL="postgresql://…neon…" npm run cleanup:test-data
+  DATABASE_URL="postgresql://…neon…" DIRECT_URL="postgresql://…neon…" pnpm run cleanup:test-data
   ```
   Revisa la lista (productos de prueba, admins existentes).
-- [ ] Aplicar: repite el comando con `-- --confirm`.
+- [ ] Aplicar: repite el comando con `--confirm`.
 - [ ] Si `admin@ecommerce.com` existía: **rota** `JWT_SECRET` y `JWT_REFRESH_SECRET` en Railway (todas las sesiones se cierran).
-- [ ] Crea tu admin real y retira a los anteriores (simulación; agrega `-- --confirm` para aplicar):
+- [ ] Crea tu admin real y retira a los anteriores (simulación; agrega `--confirm` para aplicar):
   ```bash
-  NEW_ADMIN_EMAIL=tu@correo.com NEW_ADMIN_PASSWORD='una-clave-larga-2026' npm run admin:replace
+  NEW_ADMIN_EMAIL=tu@correo.com NEW_ADMIN_PASSWORD='una-clave-larga-2026' pnpm run admin:replace
   ```
 - [ ] Crea un **branch de Neon** para desarrollo y cambia tu `backend/.env` local a ese branch (hoy apunta a producción).
 
@@ -137,7 +137,7 @@ Ya está desplegada pero **apagada** (`EINVOICE_ENABLED=false`). Para activarla:
 1. Haz los trámites: RUT con responsabilidad 52, certificado de firma digital, registro como
    "software propio" en el portal de habilitación y resolución de numeración.
 2. Configura las variables `EINVOICE_*` en Railway y `PUBLIC_LEGAL_NIT` (variable de build) en Cloudflare, y vuelve a desplegar el frontend.
-3. Corre `npm run einvoice:check`, envía el set con `npm run einvoice:habilitacion` y luego cambia a
+3. Corre `pnpm run einvoice:check`, envía el set con `pnpm run einvoice:habilitacion` y luego cambia a
    producción.
 
 La guía completa está en `docs/FACTURACION_ELECTRONICA.md`.
@@ -155,7 +155,7 @@ de Wompi y los webhooks siguen valiendo.
 - [ ] Cloudflare → **Workers & Pages → Create → Import a repository** → elige el repo de GitHub.
   - Project name: `kaes-frontend` (debe coincidir con `name` en `frontend/wrangler.jsonc`).
   - Production branch: `main`. **Root directory: `frontend`**.
-  - Build command: `npm run build`. Deploy command: `npx wrangler deploy`.
+  - Build command: `pnpm run build`. Deploy command: `pnpm exec wrangler deploy`.
   - El primer build (sobre el `main` actual, todavía con Vercel) **fallará**: es normal, se corrige con el merge del paso B.
 - [ ] Settings → Build → **Variables de build**: `PUBLIC_API_URL=https://api.kaes-simplyeternal.co/api/v1`,
   `SITE_URL=https://kaes-simplyeternal.co`, `NODE_VERSION=22` (+ `PUBLIC_LEGAL_NIT` y los demás `PUBLIC_*` que tengas en Vercel).

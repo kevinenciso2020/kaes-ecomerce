@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Clothing e-commerce store (Colombia) — monorepo with two independent npm packages, no root `package.json`:
+Clothing e-commerce store (Colombia) — monorepo with two independent **pnpm** packages (each with its own `pnpm-lock.yaml` and `packageManager` pin; no workspace, no root `package.json`):
 
-- `backend/` — Express 4 API + Prisma 5 (PostgreSQL/Neon), plain JavaScript ESM (`"type": "module"`), deployed to Railway via the root `Dockerfile`.
+- `backend/` — Express 4 API + Prisma 5 (PostgreSQL/Neon), plain JavaScript ESM (`"type": "module"`), deployed to Railway (root directory `backend`, built with `backend/Dockerfile`; start command `pnpm run start:prod`). The root `Dockerfile` is an equivalent build from the repo root.
 - `frontend/` — Astro 7 (`output: 'server'`, `@astrojs/cloudflare` adapter → Cloudflare Workers) with React islands and nanostores.
 
 Code comments, log context, API error messages and UI copy are in **Spanish**; keep new ones in Spanish. `AGENTS.md` has deployment steps and `docs/LANZAMIENTO.md` is the pre-launch runbook.
@@ -15,23 +15,23 @@ Run each from its package directory (`cd backend` / `cd frontend`).
 
 ```bash
 # backend
-npm run dev                  # nodemon src/server.js
-npm test                     # Vitest unit + integration (Prisma mocked, no DB needed)
-npx vitest run tests/unit/stock.service.test.js     # single file
-npx vitest run -t "nombre del test"                 # single test by name
-TEST_DATABASE_URL=postgresql://... npm run test:db  # real-Postgres tests (tests/db/**); DB is wiped before each test
-npm run db:migrate           # prisma migrate dev (create a migration after editing schema.prisma)
-npm run db:seed              # colors/sizes/categories; admin only if SEED_ADMIN_EMAIL/PASSWORD are set
-npm run cleanup:test-data    # dry run; add `-- --confirm` to apply
+pnpm run dev                  # nodemon src/server.js
+pnpm test                     # Vitest unit + integration (Prisma mocked, no DB needed)
+pnpm exec vitest run tests/unit/stock.service.test.js  # single file
+pnpm exec vitest run -t "nombre del test"              # single test by name
+TEST_DATABASE_URL=postgresql://... pnpm run test:db  # real-Postgres tests (tests/db/**); DB is wiped before each test
+pnpm run db:migrate           # prisma migrate dev (create a migration after editing schema.prisma)
+pnpm run db:seed              # colors/sizes/categories; admin only if SEED_ADMIN_EMAIL/PASSWORD are set
+pnpm run cleanup:test-data    # dry run; add `--confirm` to apply
 
 # frontend
-npm run dev                  # localhost:4321
-npm test                     # Vitest + jsdom
-npm run build                # needs PUBLIC_API_URL set
-npx wrangler dev             # after build: run the Worker locally in workerd
+pnpm run dev                  # localhost:4321
+pnpm test                     # Vitest + jsdom
+pnpm run build                # needs PUBLIC_API_URL set
+pnpm exec wrangler dev        # after build: run the Worker locally in workerd
 ```
 
-There is no lint, formatter or typecheck step. CI (`.github/workflows/ci.yml`) runs: `prisma validate`, `npm test`, `npm run test:db` against Postgres 16, a **migration drift check** (`prisma migrate diff ... --exit-code` — every `schema.prisma` change needs a matching migration), frontend build + `wrangler deploy --dry-run` (Worker size check), and `npm audit --audit-level=high --omit=dev`.
+There is no lint, formatter or typecheck step. CI (`.github/workflows/ci.yml`) runs: `prisma validate`, `pnpm test`, `pnpm run test:db` against Postgres 16, a **migration drift check** (`prisma migrate diff ... --exit-code` — every `schema.prisma` change needs a matching migration), frontend build + `wrangler deploy --dry-run` (Worker size check), and `pnpm audit --audit-level high --prod`. pnpm 10 only runs install scripts for packages listed in `pnpm.onlyBuiltDependencies` (Prisma in backend; esbuild/workerd in frontend) — add new ones there if a dependency needs its postinstall.
 
 ## Backend architecture
 

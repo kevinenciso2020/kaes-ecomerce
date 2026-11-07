@@ -57,7 +57,7 @@ fallidos.
    facturación electrónica (formulario 1876). Obtienes el número de resolución, el prefijo, el rango
    desde/hasta y las fechas. Luego, en el portal de factura electrónica, **asocia el prefijo al
    software**. La **clave técnica** aparece en el portal y también la obtiene
-   `npm run einvoice:check -- --remote`.
+   `pnpm run einvoice:check --remote`.
 
 ## Paso a paso técnico
 
@@ -65,7 +65,7 @@ fallidos.
 
 ```bash
 cd backend
-EINVOICE_P12_PASSWORD='la-clave-del-p12' npm run einvoice:cert -- /ruta/certificado.p12
+EINVOICE_P12_PASSWORD='la-clave-del-p12' pnpm run einvoice:cert /ruta/certificado.p12
 ```
 
 Imprime `EINVOICE_CERT_PEM_BASE64` y `EINVOICE_KEY_PEM_BASE64`. Son **secretos**: pégalos en Railway
@@ -103,8 +103,8 @@ prefijo `SETP`, el rango `990000000–995000000` y la clave técnica que aparece
 ### 3. Verificar
 
 ```bash
-npm run einvoice:check            # variables, certificado y resolución
-npm run einvoice:check -- --remote  # además consulta los rangos en la DIAN
+pnpm run einvoice:check            # variables, certificado y resolución
+pnpm run einvoice:check --remote  # además consulta los rangos en la DIAN
 ```
 
 ### 4. Enviar el set de pruebas (habilitación)
@@ -113,7 +113,7 @@ En el portal, abre el detalle de tu set de pruebas y mira cuántos documentos pi
 Luego, con `EINVOICE_ENV=2`:
 
 ```bash
-npm run einvoice:habilitacion -- --facturas 8 --creditos 1 --debitos 1
+pnpm run einvoice:habilitacion --facturas 8 --creditos 1 --debitos 1
 ```
 
 El script genera documentos ficticios (consumidor final, cédula, NIT, tarifas 19 % y 0 %, envío),
@@ -124,7 +124,7 @@ rechazado, el script imprime las reglas que fallaron.
 ### 5. Encender en producción
 
 1. Cambia a `EINVOICE_ENV=1` y pon la resolución **real** (prefijo, rango, clave técnica).
-2. Corre `npm run einvoice:check -- --remote` y verifica que aparezca ✅ en tu rango.
+2. Corre `pnpm run einvoice:check --remote` y verifica que aparezca ✅ en tu rango.
 3. Pon `EINVOICE_ENABLED=true` y redespliega.
 4. Haz una compra real pequeña y revisa en *Admin → Órdenes* que diga **Validada DIAN**. Revisa
    también el correo del cliente y la factura en <https://catalogo-vpfe.dian.gov.co>.
@@ -134,14 +134,14 @@ apagada no se facturan automáticamente.
 
 ## Pruebas
 
-- `npm test` incluye:
+- `pnpm test` incluye:
   - el CUFE contra el ejemplo oficial del anexo;
   - el desglose de montos;
   - la validación de factura, nota crédito, nota débito y AttachedDocument contra los **XSD oficiales
     de la DIAN** (`tests/fixtures/dian-xsd`);
   - la firma XAdES y WS-Security verificadas con `xml-crypto`;
   - el cliente SOAP con respuestas simuladas.
-- `npm run test:db` cubre contra Postgres:
+- `pnpm run test:db` cubre contra Postgres:
   - numeración concurrente sin huecos e idempotencia;
   - rechazo y reintento, errores de red y duplicados;
   - rango agotado, nota crédito y el flujo de habilitación.

@@ -28,38 +28,42 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
+      # Instala la versión de pnpm fijada en backend/package.json ("packageManager").
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: backend/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: backend/package-lock.json
-      - run: npm ci
+          cache: pnpm
+          cache-dependency-path: backend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
       - name: Validar schema de Prisma (variables ficticias)
-        run: npx prisma validate
+        run: pnpm exec prisma validate
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/db
           DIRECT_URL: postgresql://user:pass@localhost:5432/db
       - name: Generar cliente de Prisma (variables ficticias)
-        run: npx prisma generate
+        run: pnpm exec prisma generate
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/db
           DIRECT_URL: postgresql://user:pass@localhost:5432/db
       - name: Tests unitarios e integración (mocks)
-        run: npm test
+        run: pnpm test
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/db
           DIRECT_URL: postgresql://user:pass@localhost:5432/db
       - name: Tests contra PostgreSQL real (pagos, stock, concurrencia)
-        run: npm run test:db
+        run: pnpm run test:db
         env:
           TEST_DATABASE_URL: postgresql://kaes:kaes@localhost:5432/kaes_test
       - name: Migraciones sin drift respecto al schema
         env:
           DATABASE_URL: postgresql://kaes:kaes@localhost:5432/kaes_test
           DIRECT_URL: postgresql://kaes:kaes@localhost:5432/kaes_test
-        run: npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+        run: pnpm exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
       - name: Auditoría de dependencias
-        run: npm audit --audit-level=high --omit=dev
+        run: pnpm audit --audit-level high --prod
 
   frontend:
     runs-on: ubuntu-latest
@@ -68,21 +72,25 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+      # Instala la versión de pnpm fijada en frontend/package.json ("packageManager").
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+      - run: pnpm run build
         env:
           PUBLIC_API_URL: https://api.example.com/api/v1
       # Empaqueta el Worker sin publicarlo: falla si supera el límite de tamaño
       # de Cloudflare (3 MB comprimido en el plan gratuito).
       - name: Validar Worker de Cloudflare
-        run: npx wrangler deploy --dry-run
+        run: pnpm exec wrangler deploy --dry-run
         env:
           WRANGLER_SEND_METRICS: 'false'
       - name: Auditoría de dependencias
-        run: npm audit --audit-level=high --omit=dev
+        run: pnpm audit --audit-level high --prod

@@ -1,17 +1,18 @@
 // Convierte el certificado de firma digital (.p12 / .pfx) al formato que usa el
 // backend (PEM en base64) e imprime las variables para Railway.
 //
-//   EINVOICE_P12_PASSWORD='clave' npm run einvoice:cert -- ruta/certificado.p12
+//   EINVOICE_P12_PASSWORD='clave' pnpm run einvoice:cert ruta/certificado.p12
 //
 // Requiere openssl instalado. La llave privada NUNCA se escribe en disco: se
 // imprime en base64 para pegarla como variable secreta en Railway.
 import { execFileSync } from 'node:child_process'
 import { X509Certificate, createPrivateKey } from 'node:crypto'
 
-const file = process.argv[2]
+// pnpm deja pasar el separador `--` tal cual: se ignora si viene.
+const file = process.argv.slice(2).find((a) => a !== '--')
 const password = process.env.EINVOICE_P12_PASSWORD
 if (!file || password == null) {
-  console.error('Uso: EINVOICE_P12_PASSWORD=\'clave\' npm run einvoice:cert -- ruta/certificado.p12')
+  console.error('Uso: EINVOICE_P12_PASSWORD=\'clave\' pnpm run einvoice:cert ruta/certificado.p12')
   process.exit(1)
 }
 

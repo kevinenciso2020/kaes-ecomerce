@@ -1,10 +1,10 @@
 // Limpieza de datos de prueba antes del lanzamiento.
 //
-//   npm run cleanup:test-data              → modo simulación (sólo muestra)
-//   npm run cleanup:test-data -- --confirm → aplica los cambios
+//   pnpm run cleanup:test-data              → modo simulación (sólo muestra)
+//   pnpm run cleanup:test-data --confirm → aplica los cambios
 //
 // Qué hace:
-//  • (Para cambiar de administrador usa `npm run admin:replace`.)
+//  • (Para cambiar de administrador usa `pnpm run admin:replace`.)
 //  • Elimina el admin por defecto del seed antiguo (admin@ecommerce.com / admin123)
 //    y cierra sus sesiones.
 //  • Productos cuyo nombre o descripción contiene palabras de prueba:
@@ -87,7 +87,7 @@ const main = async () => {
   for (const a of admins) console.log(`  ${a.role.padEnd(11)} ${a.email}${a.isActive ? '' : ' [inactivo]'}`)
 
   if (!confirm) {
-    console.log('\nModo simulación. Para aplicar: npm run cleanup:test-data -- --confirm')
+    console.log('\nModo simulación. Para aplicar: pnpm run cleanup:test-data --confirm')
     return
   }
 

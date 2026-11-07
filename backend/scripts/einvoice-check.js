@@ -1,7 +1,7 @@
 // Diagnóstico de la configuración de facturación electrónica.
 //
-//   npm run einvoice:check              → valida variables y certificado
-//   npm run einvoice:check -- --remote  → además consulta a la DIAN los rangos
+//   pnpm run einvoice:check              → valida variables y certificado
+//   pnpm run einvoice:check --remote  → además consulta a la DIAN los rangos
 //                                         de numeración del software (GetNumberingRange)
 import 'dotenv/config'
 import { getConfig, describeConfig, isEnabled } from '../src/services/einvoice/config.js'

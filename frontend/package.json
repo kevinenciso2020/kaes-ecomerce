@@ -33,8 +33,15 @@
     "vitest": "^4.1.11",
     "wrangler": "^4.156.2"
   },
-  "overrides": {
-    "path-to-regexp": "^6.3.0",
-    "zod": "^4.6.7"
+  "packageManager": "pnpm@10.34.9",
+  "pnpm": {
+    "overrides": {
+      "path-to-regexp": "^6.3.0",
+      "zod": "^4.6.7"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
   }
 }

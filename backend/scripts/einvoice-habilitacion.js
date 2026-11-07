@@ -1,6 +1,6 @@
 // Envía el set de pruebas de habilitación a la DIAN (software propio).
 //
-//   npm run einvoice:habilitacion -- --facturas 8 --creditos 1 --debitos 1
+//   pnpm run einvoice:habilitacion --facturas 8 --creditos 1 --debitos 1
 //
 // Usa EINVOICE_ENV=2 (habilitación) y EINVOICE_TEST_SET_ID. Pon las cantidades que
 // muestra el portal de habilitación en el detalle de tu set de pruebas. Los
