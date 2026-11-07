@@ -9,6 +9,7 @@ name: Backup diario de la base de datos
 #
 # Restaurar:
 #   gpg --decrypt kaes-AAAA-MM-DD.dump.gpg > kaes.dump
+#   pg_restore --list kaes.dump        # (cliente PostgreSQL 17+) revisar contenido
 #   pg_restore --no-owner --clean --if-exists -d "$DATABASE_URL_DESTINO" kaes.dump
 
 on:
@@ -19,6 +20,8 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
+    env:
+      PG_MAJOR: '17'
     steps:
       - name: Verificar secrets
         env:
@@ -28,18 +31,33 @@ jobs:
           if [ -z "$URL" ] || [ -z "$PASS" ]; then
             echo "::error::Configura BACKUP_DATABASE_URL y BACKUP_PASSPHRASE"; exit 1
           fi
-      - name: Instalar cliente PostgreSQL 16
+      - name: Instalar cliente PostgreSQL 17
+        # Neon corre Postgres 17 y pg_dump se niega a respaldar un servidor
+        # más nuevo que él. Si Neon sube de versión, sube PG_MAJOR aquí.
         run: |
+          if ! apt-cache show "postgresql-client-$PG_MAJOR" >/dev/null 2>&1; then
+            sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          fi
           sudo apt-get update -y
-          sudo apt-get install -y postgresql-client-16 || sudo apt-get install -y postgresql-client
+          sudo apt-get install -y "postgresql-client-$PG_MAJOR"
+          "/usr/lib/postgresql/$PG_MAJOR/bin/pg_dump" --version
       - name: pg_dump cifrado
         env:
           BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
           BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
+          set -euo pipefail
+          BIN="/usr/lib/postgresql/$PG_MAJOR/bin"
           FILE="kaes-$(date -u +%F).dump"
-          pg_dump --format=custom --no-owner --no-privileges "$BACKUP_DATABASE_URL" \
-            | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" -o "$FILE.gpg"
+          "$BIN/pg_dump" --format=custom --no-owner --no-privileges -f "$FILE" "$BACKUP_DATABASE_URL"
+          # Falla si el dump está vacío o corrupto (antes se subía un .gpg vacío como "éxito").
+          TABLES=$("$BIN/pg_restore" --list "$FILE" | grep -c 'TABLE DATA' || true)
+          if [ "$TABLES" -lt 5 ]; then
+            echo "::error::El dump sólo tiene $TABLES tablas con datos"; exit 1
+          fi
+          echo "Tablas con datos: $TABLES"
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase "$BACKUP_PASSPHRASE" -o "$FILE.gpg" "$FILE"
+          rm -f "$FILE"
           ls -lh "$FILE.gpg"
           echo "FILE=$FILE.gpg" >> "$GITHUB_ENV"
       - uses: actions/upload-artifact@v4
@@ -47,3 +65,4 @@ jobs:
           name: ${{ env.FILE }}
           path: ${{ env.FILE }}
           retention-days: 14
+          if-no-files-found: error
