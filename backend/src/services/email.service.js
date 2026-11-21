@@ -1,3 +1,4 @@
+import { withGuestCustomer, guestOrderLink } from './guest.service.js'
 import { emailTransporter } from '../config/email.js'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
@@ -19,14 +20,14 @@ const formatPrice = (price) => {
 
 export const sendOrderConfirmation = async (orderId) => {
   try {
-    const order = await prisma.order.findUnique({
+    const order = withGuestCustomer(await prisma.order.findUnique({
       where: { id: orderId },
       include: {
         user: { select: { name: true, email: true } },
         items: { include: { product: true } },
         payment: true,
       },
-    })
+    }))
 
     if (!order) {
       log.error({ orderId }, 'email.order_not_found')
@@ -76,6 +77,7 @@ export const sendOrderConfirmation = async (orderId) => {
       <h2 style="color: #333; margin-top: 0;">¡Tu pedido está confirmado! 🎉</h2>
       <p style="color: #666;">Hola <strong>${escapeHtml(order.user.name)}</strong>,</p>
       <p style="color: #666;">Gracias por tu compra. Tu pedido ha sido confirmado y está siendo procesado.</p>
+      ${order.userId ? '' : `<p style="color: #666;">Compraste como invitado. Sigue tu pedido (estado, comprobante y factura) aquí: <a href="${escapeHtml(guestOrderLink(order.id))}">ver mi pedido</a>.</p>`}
       
       <div style="background: #f9f9f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
         <p style="margin: 0;"><strong>Número de pedido:</strong> #${orderNumber}</p>
@@ -148,10 +150,10 @@ export const sendOrderConfirmation = async (orderId) => {
 
 export const sendOrderCancelled = async (orderId) => {
   try {
-    const order = await prisma.order.findUnique({
+    const order = withGuestCustomer(await prisma.order.findUnique({
       where: { id: orderId },
       include: { user: { select: { name: true, email: true } } },
-    })
+    }))
 
     if (!order) {
       return false
@@ -520,10 +522,10 @@ export const sendTransferProofAlert = async ({ orderId, total, reference }) => {
 /** Aviso al cliente: su comprobante de transferencia fue rechazado. */
 export const sendTransferRejected = async ({ orderId, note }) => {
   try {
-    const order = await prisma.order.findUnique({
+    const order = withGuestCustomer(await prisma.order.findUnique({
       where: { id: orderId },
       include: { user: { select: { name: true, email: true } } },
-    })
+    }))
     if (!order) return false
     const orderNumber = order.id.slice(-8).toUpperCase()
     const link = `${(process.env.FRONTEND_URL || '').replace(/\/$/, '')}/checkout/transferencia?orderId=${encodeURIComponent(order.id)}`

@@ -12,8 +12,8 @@ vi.mock('../../src/services/email.service.js', () => ({
 }))
 
 const { prisma } = await import('../../src/config/prisma.js')
-const { createOrder, quoteOrder } = await import('../../src/services/order.service.js')
-const { processPaymentUpdate, expireStaleOrders, PAY } = await import('../../src/services/payment.service.js')
+const { createOrder, createGuestOrder, quoteOrder } = await import('../../src/services/order.service.js')
+const { processPaymentUpdate, expireStaleOrders, purgeAbandonedOrders, PAY } = await import('../../src/services/payment.service.js')
 const { updateOrderStatus } = await import('../../src/services/admin-orders.service.js')
 const { sendOrderConfirmation } = await import('../../src/services/email.service.js')
 const { reviewTransfer } = await import('../../src/services/bank-transfer.service.js')
@@ -411,5 +411,98 @@ describe('Transferencia manual', () => {
       data: { paymentProvider: 'BANK_TRANSFER', createdAt: new Date(Date.now() - 5 * HOURS) },
     })
     expect(await expireStaleOrders()).toBe(1)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Compra como invitado y limpieza de pedidos abandonados
+// ─────────────────────────────────────────────────────────────
+describe('Compra como invitado', () => {
+  const guestOrder = (items, extra = {}) =>
+    createGuestOrder({
+      items, address, acceptTerms: true,
+      contact: { email: 'Invitado@Correo.com', name: 'Ana Pérez', phone: '3001234567' }, ...extra,
+    })
+
+  it('crea la orden SIN usuario ni dirección y el pago aprobado confirma y descuenta stock', async () => {
+    const product = await makeProduct({ stock: 5 })
+    const { order: created, guestToken } = await guestOrder([{ productId: product.id, quantity: 2 }])
+
+    expect(guestToken).toEqual(expect.any(String))
+    expect(await prisma.user.count()).toBe(0)
+    expect(await prisma.address.count()).toBe(0)
+    const row = await prisma.order.findUnique({ where: { id: created.id } })
+    expect(row).toMatchObject({ userId: null, guestEmail: 'invitado@correo.com', status: 'PENDING' })
+    expect(row.guestShipping).toMatchObject({ street: 'Calle 1 # 2-3', municipio: 'Medellín' })
+
+    const r = await approve(created, 'tx-guest-1')
+    expect(r.outcome).toBe('CONFIRMED')
+    expect((await prisma.order.findUnique({ where: { id: created.id } })).status).toBe('CONFIRMED')
+    expect(await stockOf(product.id)).toBe(3)
+    expect(sendOrderConfirmation).toHaveBeenCalledTimes(1)
+  })
+
+  it('un pago repetido (webhook duplicado) no descuenta dos veces', async () => {
+    const product = await makeProduct({ stock: 5 })
+    const { order: created } = await guestOrder([{ productId: product.id, quantity: 1 }])
+    await approve(created, 'tx-guest-2')
+    await approve(created, 'tx-guest-2')
+    expect(await stockOf(product.id)).toBe(4)
+  })
+})
+
+describe('Limpieza de pedidos abandonados (30 días)', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const abandonedGuest = async (product, ageDays) => {
+    const { order: o } = await createGuestOrder({
+      items: [{ productId: product.id, quantity: 1 }], address, acceptTerms: true,
+      contact: { email: 'a@b.co', name: 'Ana', phone: '3001234567' },
+    })
+    await prisma.order.update({ where: { id: o.id }, data: { createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000) } })
+    await expireStaleOrders() // cancelada por el sistema: "Expirada sin pago"
+    await prisma.order.update({ where: { id: o.id }, data: { updatedAt: new Date(Date.now() - ageDays * DAY) } })
+    return o
+  }
+
+  it('borra el pedido abandonado de hace 31 días con sus ítems, historial y pago sin cobro', async () => {
+    const product = await makeProduct({ stock: 5 })
+    const old = await abandonedGuest(product, 31)
+    await prisma.payment.create({ data: { orderId: old.id, provider: 'WOMPI', status: 'FAILED', amount: old.total } })
+
+    expect(await purgeAbandonedOrders()).toBe(1)
+    expect(await prisma.order.count()).toBe(0)
+    expect(await prisma.orderItem.count()).toBe(0)
+    expect(await prisma.orderStatusLog.count()).toBe(0)
+    expect(await prisma.payment.count()).toBe(0)
+  })
+
+  it('conserva lo reciente, lo pagado, lo revisado y lo cancelado por un admin', async () => {
+    const product = await makeProduct({ stock: 20 })
+    const recent = await abandonedGuest(product, 10)               // < 30 días
+    const paid = await abandonedGuest(product, 40)                 // pago aprobado tardío → CONFIRMED
+    await approve(paid, 'tx-late-paid')
+    await prisma.order.update({ where: { id: paid.id }, data: { updatedAt: new Date(Date.now() - 40 * DAY) } })
+    const proof = await abandonedGuest(product, 40)                // subió comprobante
+    await prisma.order.update({ where: { id: proof.id }, data: { paymentProofPublicId: 'proof-1' } })
+    const user = await makeUser()
+    const byAdmin = await order(user, [{ productId: product.id, quantity: 1 }])
+    await updateOrderStatus(byAdmin.id, 'CANCELLED', { changedById: user.id }) // sin nota "Expirada sin pago"
+    await prisma.order.update({ where: { id: byAdmin.id }, data: { updatedAt: new Date(Date.now() - 40 * DAY) } })
+
+    expect(await purgeAbandonedOrders()).toBe(0)
+    expect(await prisma.order.count()).toBe(4)
+    expect(recent && paid && proof && byAdmin).toBeTruthy()
+  })
+
+  it('ABANDONED_ORDER_RETENTION_DAYS=0 desactiva la limpieza', async () => {
+    const product = await makeProduct({ stock: 5 })
+    await abandonedGuest(product, 90)
+    process.env.ABANDONED_ORDER_RETENTION_DAYS = '0'
+    try {
+      expect(await purgeAbandonedOrders()).toBe(0)
+    } finally {
+      delete process.env.ABANDONED_ORDER_RETENTION_DAYS
+    }
+    expect(await purgeAbandonedOrders()).toBe(1)
   })
 })

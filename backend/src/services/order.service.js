@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { buildQuote } from './pricing.service.js'
 import { computeNitDv } from './einvoice/nit.js'
+import { signGuestToken, withGuestCustomer } from './guest.service.js'
 
 export const PRIVACY_POLICY_VERSION = process.env.PRIVACY_POLICY_VERSION || '2026-09-21'
 
@@ -24,6 +25,20 @@ export const buyerSnapshot = (buyer) => {
     buyerPersonType: buyer.personType || (isNit ? '1' : '2'),
   }
 }
+
+const orderItemsCreate = (quote) =>
+  quote.items.map((i) => ({
+    productId: i.productId,
+    variantId: i.variantId,
+    quantity: i.quantity,
+    price: i.unitPrice,
+    size: i.size,
+    color: i.color,
+    taxRate: i.taxRate,
+    variantSnapshot: i.variantId
+      ? { sku: i.sku, colorHex: i.colorHex, basePrice: i.basePrice }
+      : undefined,
+  }))
 
 export const createOrder = async (userId, { items, couponCode, shippingAddressId, notes, address, acceptTerms, buyer }) => {
   if (acceptTerms !== true && acceptTerms !== 'true') {
@@ -89,20 +104,7 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
         notes: notes || null,
         termsAcceptedAt: now,
         ...buyerSnapshot(buyer),
-        items: {
-          create: quote.items.map((i) => ({
-            productId: i.productId,
-            variantId: i.variantId,
-            quantity: i.quantity,
-            price: i.unitPrice,
-            size: i.size,
-            color: i.color,
-            taxRate: i.taxRate,
-            variantSnapshot: i.variantId
-              ? { sku: i.sku, colorHex: i.colorHex, basePrice: i.basePrice }
-              : undefined,
-          })),
-        },
+        items: { create: orderItemsCreate(quote) },
         statusLogs: {
           create: { toStatus: 'PENDING', changedById: userId, note: 'Orden creada' },
         },
@@ -110,6 +112,64 @@ export const createOrder = async (userId, { items, couponCode, shippingAddressId
       include: { items: { include: { product: true } } },
     })
   })
+}
+
+/**
+ * Compra como invitado: UNA sola escritura (la orden). No crea usuario ni
+ * dirección; contacto y envío se guardan en la propia orden. Devuelve la orden
+ * y el token con el que el invitado accede luego a ese pedido.
+ */
+export const createGuestOrder = async ({ items, couponCode, notes, contact, address, acceptTerms, buyer }) => {
+  if (acceptTerms !== true && acceptTerms !== 'true') {
+    throw badRequest('Debes aceptar los términos y la política de tratamiento de datos', { code: 'TERMS_REQUIRED' })
+  }
+  if (!address) throw badRequest('La dirección de envío es requerida')
+
+  const quote = await buildQuote({ items, couponCode }, { strictCoupon: true })
+  const departamento = (address.departamento || address.department || '').trim()
+  const municipio = (address.municipio || address.city || '').trim()
+  const fullName = String(address.fullName || contact.name || '').trim()
+  const phone = String(address.phone || contact.phone || '').trim()
+
+  const order = await prisma.order.create({
+    data: {
+      userId: null,
+      guestEmail: String(contact.email).trim().toLowerCase(),
+      guestName: fullName.slice(0, 200),
+      guestPhone: phone.slice(0, 30),
+      guestShipping: {
+        fullName, phone, street: String(address.street).trim(), departamento, municipio,
+        zipCode: address.zipCode ? String(address.zipCode).trim() : null,
+      },
+      subtotal: quote.subtotal,
+      discount: quote.discount,
+      shipping: quote.shipping,
+      total: quote.total,
+      couponCode: quote.coupon?.code ?? null,
+      notes: notes || null,
+      termsAcceptedAt: new Date(),
+      ...buyerSnapshot(buyer),
+      items: { create: orderItemsCreate(quote) },
+      statusLogs: { create: { toStatus: 'PENDING', changedById: null, note: 'Orden creada (invitado)' } },
+    },
+    include: { items: { include: { product: true } } },
+  })
+
+  return { order: withGuestCustomer(order), guestToken: signGuestToken(order.id) }
+}
+
+/** Pedido de un invitado (ya autorizado por su token). Misma forma que getOrderById. */
+export const getGuestOrderById = async (orderId) => {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, userId: null },
+    include: {
+      items:   { include: { product: { include: { images: true } } } },
+      payment: true,
+      electronicDocuments: { where: { status: 'ACCEPTED' }, select: { type: true, fullNumber: true } },
+    },
+  })
+  if (!order) throw Object.assign(new Error('Orden no encontrada'), { status: 404 })
+  return withGuestCustomer(order)
 }
 
 export const getOrders = async (userId) => {

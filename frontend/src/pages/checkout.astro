@@ -19,8 +19,17 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
 
       <div class="checkout-form">
 
+        <div id="guest-banner" class="guest-banner" hidden>
+          <p><strong>Estás comprando como invitado.</strong> No necesitas crear una cuenta: te enviaremos el seguimiento de tu pedido al correo.</p>
+          <a id="guest-login-link" href="/auth/login?redirect=/checkout" class="guest-login-link">¿Ya tienes cuenta? Inicia sesión</a>
+        </div>
+
         <fieldset class="form-section">
           <legend class="section-title">Información de contacto</legend>
+          <div class="form-group" id="guest-email-group" hidden>
+            <label class="form-label" for="guest-email">Correo electrónico</label>
+            <input type="email" id="guest-email" class="form-input" placeholder="tucorreo@ejemplo.com" autocomplete="email" maxlength="254" />
+          </div>
           <div class="form-grid">
             <div class="form-group">
               <label class="form-label" for="full-name">Nombre completo</label>
@@ -193,6 +202,7 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
   import { cartItems, ensureCartLoaded } from '../stores/cart.store.js'
   import { applyCoupon, removeCoupon, getCouponCode } from '../stores/coupon.store.js'
   import { api, ApiError, bootstrapAuth } from '../lib/api.js'
+  import { saveGuestToken } from '../lib/guest.js'
   import { escapeHtml } from '../lib/sanitize.js'
   import { cloudinaryUrl, ANCHO_MINIATURA } from '../lib/images.js'
   import { computeNitDv, buildBuyer } from '../lib/nit.js'
@@ -361,19 +371,23 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
   }
 
   // ── Inicio ───────────────────────────────────────────────────
+  let isGuest = false
   const init = async () => {
     const user = await bootstrapAuth()
-    if (!user) {
-      window.location.href = '/auth/login?redirect=/checkout'
-      return
-    }
+    // Sin sesión se compra como invitado: carrito en el navegador y pedido sin cuenta.
+    isGuest = !user
     await ensureCartLoaded()
     if (cartItems.get().length === 0) {
       $('checkout-empty').hidden = false
       return
     }
     $('checkout-content').hidden = false
-    if ($('full-name') && !$('full-name').value) $('full-name').value = user.name || ''
+    if (isGuest) {
+      $('guest-banner').hidden = false
+      $('guest-email-group').hidden = false
+    } else if ($('full-name') && !$('full-name').value) {
+      $('full-name').value = user.name || ''
+    }
     const saved = getCouponCode()
     if (saved) renderCouponState(saved)
     await Promise.all([refreshQuote(), loadPaymentMethods()])
@@ -417,6 +431,10 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
     if (!/^(\+?57)?3\d{9}$|^(\+?57)?[1-8]\d{6,9}$/.test(phone)) {
       return showError(errorEl, 'Ingresa un teléfono colombiano válido (ej. 300 123 4567).')
     }
+    const guestEmail = ($('guest-email')?.value || '').trim()
+    if (isGuest && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(guestEmail)) {
+      return showError(errorEl, 'Ingresa un correo válido para enviarte el seguimiento de tu pedido.')
+    }
     if (!$('accept-terms')?.checked) {
       return showError(errorEl, 'Debes aceptar los términos y autorizar el tratamiento de tus datos para continuar.')
     }
@@ -439,13 +457,20 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
 
     let order = null
     try {
-      order = await api.orders.create({
+      const payload = {
         items: cartPayload(),
         couponCode: getCouponCode() || undefined,
         acceptTerms: true,
         address: { fullName, phone, street, zipCode: zipCode || undefined, departamento, municipio, label: 'Casa' },
         ...(buyer ? { buyer } : {}),
-      })
+      }
+      if (isGuest) {
+        const created = await api.orders.guestCreate({ ...payload, contact: { email: guestEmail, name: fullName, phone } })
+        order = created.order
+        saveGuestToken(order.id, created.guestToken)
+      } else {
+        order = await api.orders.create(payload)
+      }
 
       btn.textContent = 'Conectando con la pasarela…'
       const url = await startPayment(order.id, method)
@@ -459,7 +484,9 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
 
       if (order) {
         // La orden existe pero no se pudo abrir la pasarela: no crear otra.
-        window.location.href = `/perfil/ordenes/${order.id}?pago=error`
+        window.location.href = isGuest
+          ? `/pedido?orderId=${encodeURIComponent(order.id)}&pago=error`
+          : `/perfil/ordenes/${order.id}?pago=error`
         return
       }
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
@@ -484,6 +511,17 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
 </script>
 
 <style>
+  .guest-banner {
+    padding: 0.9rem 1rem;
+    margin-bottom: 1.25rem;
+    border: 1.5px solid var(--color-gray-200);
+    border-radius: var(--radius-md);
+    background: var(--color-gray-50, #fafafa);
+    font-size: 0.9rem;
+  }
+  .guest-banner p { margin: 0 0 0.35rem; }
+  .guest-login-link { font-weight: 600; text-decoration: underline; }
+
   .sr-only {
     position:    absolute;
     width:       1px;

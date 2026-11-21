@@ -2,7 +2,7 @@ import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
 import { captureError } from '../config/sentry.js'
 import { checkTaxRate } from '../services/tax-check.service.js'
-import { expireStaleOrders } from '../services/payment.service.js'
+import { expireStaleOrders, purgeAbandonedOrders } from '../services/payment.service.js'
 import { processPending as processPendingEinvoices } from '../services/einvoice/einvoice.service.js'
 
 const log = logger.child({ component: 'maintenance' })
@@ -27,6 +27,16 @@ export const runMaintenance = async () => {
   } catch (err) {
     log.error({ err }, 'maintenance.failed')
     captureError(err, { job: 'maintenance' })
+  }
+
+  // Pedidos abandonados (cancelados por no pagarse hace 30+ días): paso aparte
+  // para que un fallo aquí no frene el resto del mantenimiento.
+  try {
+    const purged = await purgeAbandonedOrders()
+    if (purged) log.info({ purgedOrders: purged }, 'maintenance.abandoned_purged')
+  } catch (err) {
+    log.error({ err }, 'maintenance.abandoned_purge_failed')
+    captureError(err, { job: 'maintenance', step: 'purge-abandoned-orders' })
   }
 
   // Paso independiente: un fallo de las purgas no debe impedir la revisión del IVA.

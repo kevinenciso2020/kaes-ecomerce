@@ -200,7 +200,8 @@ export const processPaymentUpdate = async ({
             },
           })
           if (order.couponCode) await consumeCoupon(tx, order.couponCode)
-          await tx.cartItem.deleteMany({ where: { userId: order.userId } })
+          // Un invitado no tiene carrito en la BD (vive en su navegador).
+          if (order.userId) await tx.cartItem.deleteMany({ where: { userId: order.userId } })
           newlyConfirmed = true
           outcome = 'CONFIRMED'
         }
@@ -300,5 +301,46 @@ export const expireStaleOrders = async ({ now = new Date() } = {}) => {
     })),
   })
   log.info({ count }, 'orders.expired')
+  return count
+}
+
+/**
+ * Borra los pedidos ABANDONADOS: los que el sistema canceló por no pagarse
+ * ("Expirada sin pago…") y llevan más de ABANDONED_ORDER_RETENTION_DAYS (30)
+ * cancelados. Ahorra filas en la BD (sobre todo con compras de invitado).
+ *
+ * Nunca toca pedidos con dinero o trazabilidad: pago aprobado/reembolsado,
+ * stock descontado, en revisión, con comprobante de transferencia o con
+ * documentos electrónicos DIAN. Los ítems y el historial de estados se borran
+ * en cascada; el pago FAILED/PENDING (sin cobro) se borra antes por su FK.
+ * Devuelve cuántos pedidos se borraron.
+ */
+export const purgeAbandonedOrders = async ({ now = new Date() } = {}) => {
+  const days = Number.parseInt(process.env.ABANDONED_ORDER_RETENTION_DAYS || '30', 10)
+  if (!Number.isFinite(days) || days <= 0) return 0 // 0 = desactivado
+  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
+
+  const abandoned = {
+    status: 'CANCELLED',
+    stockDeducted: false,
+    needsReview: false,
+    paidAt: null,
+    paymentProofPublicId: null,
+    updatedAt: { lt: cutoff },
+    electronicDocuments: { none: {} },
+    statusLogs: { some: { note: { startsWith: 'Expirada sin pago' } } },
+    OR: [{ payment: { is: null } }, { payment: { status: { in: ['FAILED', 'PENDING'] } } }],
+  }
+
+  const rows = await prisma.order.findMany({ where: abandoned, select: { id: true }, take: 200 })
+  if (rows.length === 0) return 0
+  const ids = rows.map((r) => r.id)
+
+  const [, { count }] = await prisma.$transaction([
+    prisma.payment.deleteMany({ where: { orderId: { in: ids }, status: { in: ['FAILED', 'PENDING'] } } }),
+    // Se repite el filtro: si una orden se reactivó entre la consulta y el borrado, no se toca.
+    prisma.order.deleteMany({ where: { ...abandoned, id: { in: ids } } }),
+  ])
+  log.info({ count, days }, 'orders.abandoned_purged')
   return count
 }

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken'
 import { prisma } from '../config/prisma.js'
+import { verifyGuestToken } from '../services/guest.service.js'
 
 const getTokenFromRequest = (req) => {
   const authHeader = req.headers.authorization
@@ -26,6 +27,27 @@ export const isAuth = (req, res, next) => {
     req.log?.warn({ reqId: req.id, errName: err.name }, 'auth.token_invalid')
     return res.status(401).json({ error: 'Token inválido o expirado' })
   }
+}
+
+// Acepta una sesión normal O el token de invitado (cabecera x-guest-token) que
+// da acceso solo a la orden con la que se firmó. Pone req.user o req.guest.
+export const isAuthOrGuest = (req, res, next) => {
+  const token = getTokenFromRequest(req)
+  if (token) {
+    try {
+      req.user = jwt.verify(token, process.env.JWT_SECRET)
+      return next()
+    } catch {
+      // Sesión inválida/expirada: puede seguir como invitado si trae token.
+    }
+  }
+  const orderId = verifyGuestToken(req.headers['x-guest-token'])
+  if (orderId) {
+    req.guest = { orderId }
+    return next()
+  }
+  req.log?.warn({ reqId: req.id }, 'auth.token_missing')
+  return res.status(401).json({ error: token ? 'Token inválido o expirado' : 'Token requerido' })
 }
 
 // Verifica que el usuario tenga rol de administrador (ADMIN o SUPER_ADMIN).

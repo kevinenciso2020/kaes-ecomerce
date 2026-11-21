@@ -4,7 +4,7 @@
  */
 
 // Páginas privadas o transaccionales: no deben aparecer en buscadores.
-export const PRIVATE_PATH_PREFIXES = ['/admin', '/perfil', '/checkout', '/carrito', '/auth']
+export const PRIVATE_PATH_PREFIXES = ['/admin', '/perfil', '/checkout', '/carrito', '/auth', '/pedido']
 
 // Páginas públicas fijas que van en el sitemap.
 export const STATIC_PATHS = [

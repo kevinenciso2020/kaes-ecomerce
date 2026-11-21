@@ -35,3 +35,7 @@ export const requireVerifiedEmail = async (req, res, next) => {
     code: 'EMAIL_NOT_VERIFIED',
   })
 }
+
+/** Igual que requireVerifiedEmail, pero deja pasar al invitado (no tiene cuenta que verificar). */
+export const requireVerifiedEmailUnlessGuest = (req, res, next) =>
+  req.guest && !req.user ? next() : requireVerifiedEmail(req, res, next)

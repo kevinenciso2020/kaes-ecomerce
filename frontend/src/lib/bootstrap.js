@@ -8,9 +8,10 @@ if (typeof window !== 'undefined') {
     const user = await bootstrapAuth()
     if (!user) {
       const path = window.location.pathname
+      // /checkout NO es zona protegida: se puede comprar como invitado. Las páginas
+      // de pago (resultado, transferencia) validan sesión o token por su cuenta.
       const isProtected = path.startsWith('/admin') ||
-                         path.startsWith('/perfil') ||
-                         path.startsWith('/checkout')
+                         path.startsWith('/perfil')
       if (isProtected && !currentUser.get()) {
         window.location.href = '/auth/login?redirect=' + encodeURIComponent(path)
       }

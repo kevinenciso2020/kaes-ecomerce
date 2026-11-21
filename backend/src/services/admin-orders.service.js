@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js'
 import { tryDeductStockForItems, restoreStockForItems } from './stock.service.js'
 import { proofUrl } from './bank-transfer.service.js'
+import { withGuestCustomer } from './guest.service.js'
 
 const ORDER_INCLUDE = {
   user: {
@@ -45,6 +46,8 @@ const buildListWhere = ({ status, userId, dateFrom, dateTo, search, needsReview 
       { id: { contains: search, mode: 'insensitive' } },
       { user: { name:  { contains: search, mode: 'insensitive' } } },
       { user: { email: { contains: search, mode: 'insensitive' } } },
+      { guestEmail: { contains: search, mode: 'insensitive' } },
+      { guestName:  { contains: search, mode: 'insensitive' } },
       { notes: { contains: search, mode: 'insensitive' } },
     ]
   }
@@ -77,7 +80,7 @@ export const listOrders = async ({
   ])
 
   return {
-    orders,
+    orders: orders.map(withGuestCustomer),
     total,
     page: Number(page),
     totalPages: Math.ceil(total / limit),
@@ -95,7 +98,7 @@ export const getOrderById = async (id) => {
     throw err
   }
   // Comprobante de transferencia: URL firmada (el archivo es privado en Cloudinary).
-  return { ...order, paymentProofUrl: proofUrl(order.paymentProofPublicId) }
+  return { ...withGuestCustomer(order), paymentProofUrl: proofUrl(order.paymentProofPublicId) }
 }
 
 // Transiciones permitidas desde el admin.
@@ -131,7 +134,7 @@ export const updateOrderStatus = async (orderId, toStatus, { changedById, note }
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { items: true } })
 
     if (order.status === toStatus) {
-      return tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
+      return withGuestCustomer(await tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE }))
     }
 
     const allowed = ALLOWED_TRANSITIONS[order.status] || []
@@ -173,7 +176,7 @@ export const updateOrderStatus = async (orderId, toStatus, { changedById, note }
       },
     })
 
-    return tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
+    return withGuestCustomer(await tx.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE }))
   }, { timeout: 15_000 })
 }
 
@@ -195,5 +198,5 @@ export const resolveReview = async (orderId, { changedById, note } = {}) => {
       },
     }),
   ])
-  return prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE })
+  return withGuestCustomer(await prisma.order.findUnique({ where: { id: orderId }, include: ORDER_INCLUDE }))
 }

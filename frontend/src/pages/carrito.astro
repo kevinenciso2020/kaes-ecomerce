@@ -55,6 +55,10 @@ import Icon from '../components/ui/Icon.astro'
         <button class="btn btn-primary btn-full" id="checkout-btn" type="button">
           Proceder al pago
         </button>
+        <p id="guest-hint" class="guest-hint" hidden>
+          Sin crear cuenta. ¿Ya tienes una?
+          <a href="/auth/login?redirect=/checkout">Inicia sesión</a>
+        </p>
 
         <a href="/productos" class="continue-shopping">
           <Icon name="arrowLeft" size={14} />
@@ -203,18 +207,25 @@ import Icon from '../components/ui/Icon.astro'
     }
   })
 
-  document.getElementById('checkout-btn')?.addEventListener('click', async () => {
-    const { bootstrapAuth } = await import('../lib/api.js')
-    const user = await bootstrapAuth()
-    if (!user) {
-      window.location.href = '/auth/login?redirect=/carrito'
-      return
-    }
+  // Sin sesión se puede comprar como invitado: el checkout no exige cuenta.
+  document.getElementById('checkout-btn')?.addEventListener('click', () => {
     window.location.href = '/checkout'
   })
+  ;(async () => {
+    const { bootstrapAuth } = await import('../lib/api.js')
+    const user = await bootstrapAuth()
+    if (user) return
+    const btn = document.getElementById('checkout-btn')
+    if (btn) btn.textContent = 'Comprar como invitado'
+    const hint = document.getElementById('guest-hint')
+    if (hint) hint.hidden = false
+  })()
 </script>
 
 <style>
+  .guest-hint { margin: 0.6rem 0 0; font-size: 0.85rem; text-align: center; color: var(--color-gray-500, #6b7280); }
+  .guest-hint a { font-weight: 600; text-decoration: underline; color: inherit; }
+
   .sr-only {
     position:      absolute;
     width:         1px;

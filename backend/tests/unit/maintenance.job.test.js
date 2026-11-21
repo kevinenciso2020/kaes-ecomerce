@@ -8,12 +8,12 @@ vi.mock('../../src/config/prisma.js', () => ({
   },
 }))
 vi.mock('../../src/config/sentry.js', () => ({ captureError: vi.fn(), captureMessage: vi.fn() }))
-vi.mock('../../src/services/payment.service.js', () => ({ expireStaleOrders: vi.fn() }))
+vi.mock('../../src/services/payment.service.js', () => ({ expireStaleOrders: vi.fn(), purgeAbandonedOrders: vi.fn() }))
 vi.mock('../../src/services/tax-check.service.js', () => ({ checkTaxRate: vi.fn() }))
 vi.mock('../../src/services/einvoice/einvoice.service.js', () => ({ processPending: vi.fn() }))
 
 const { runMaintenance } = await import('../../src/jobs/maintenance.js')
-const { expireStaleOrders } = await import('../../src/services/payment.service.js')
+const { expireStaleOrders, purgeAbandonedOrders } = await import('../../src/services/payment.service.js')
 const { checkTaxRate } = await import('../../src/services/tax-check.service.js')
 const { processPending } = await import('../../src/services/einvoice/einvoice.service.js')
 
@@ -21,6 +21,7 @@ describe('runMaintenance', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     expireStaleOrders.mockResolvedValue(0)
+    purgeAbandonedOrders.mockResolvedValue(0)
     checkTaxRate.mockResolvedValue({ status: 'unchanged' })
     processPending.mockResolvedValue({ processed: 0, delivered: 0 })
   })
@@ -46,5 +47,27 @@ describe('runMaintenance', () => {
   it('no lanza aunque checkTaxRate lance', async () => {
     checkTaxRate.mockRejectedValue(new Error('inesperado'))
     await expect(runMaintenance()).resolves.toBeUndefined()
+  })
+})
+
+describe('runMaintenance — pedidos abandonados', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    expireStaleOrders.mockResolvedValue(0)
+    purgeAbandonedOrders.mockResolvedValue(0)
+    checkTaxRate.mockResolvedValue({ status: 'unchanged' })
+    processPending.mockResolvedValue({ processed: 0, delivered: 0 })
+  })
+
+  it('purga los pedidos abandonados en cada corrida', async () => {
+    await runMaintenance()
+    expect(purgeAbandonedOrders).toHaveBeenCalledTimes(1)
+  })
+
+  it('si la purga falla, el IVA y la facturación siguen corriendo', async () => {
+    purgeAbandonedOrders.mockRejectedValue(new Error('FK'))
+    await expect(runMaintenance()).resolves.toBeUndefined()
+    expect(checkTaxRate).toHaveBeenCalledTimes(1)
+    expect(processPending).toHaveBeenCalledTimes(1)
   })
 })

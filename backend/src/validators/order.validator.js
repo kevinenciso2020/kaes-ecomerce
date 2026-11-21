@@ -114,6 +114,25 @@ export const createOrder = [
     .isIn(['1', '2']).withMessage('Tipo de persona no válido'),
 ]
 
+// Compra como invitado: mismas reglas de la orden + contacto obligatorio y dirección requerida.
+export const createGuestOrder = [
+  body('contact').isObject().withMessage('Los datos de contacto son requeridos'),
+  body('contact.email')
+    .trim()
+    .isEmail().withMessage('Ingresa un correo válido')
+    .isLength({ max: 254 }).withMessage('El correo es demasiado largo'),
+  body('contact.name')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 200 }).withMessage('El nombre no puede superar los 200 caracteres'),
+  body('contact.phone')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ max: 30 }).withMessage('El teléfono no puede superar los 30 caracteres'),
+  body('address').exists().withMessage('La dirección de envío es requerida'),
+  ...createOrder,
+]
+
 export const quoteOrder = [
   body('items')
     .isArray({ min: 1, max: 30 }).withMessage('Debe incluir entre 1 y 30 productos'),
