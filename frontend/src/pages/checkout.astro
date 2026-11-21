@@ -381,18 +381,19 @@ import { BUYER_DOC_TYPES } from '../lib/nit.js'
   init()
 
   // ── Confirmar pedido y pagar ─────────────────────────────────
+  const METHOD_NAMES = { wompi: 'Wompi', mercadopago: 'MercadoPago', addi: 'Addi', transfer: 'transferencia bancaria' }
+
+  // El backend intenta el método elegido y, si la pasarela falla, usa otra activa.
   const startPayment = async (orderId, method) => {
-    if (method === 'transfer') {
-      await api.payments.transfer.start(orderId)
-      return `/checkout/transferencia?orderId=${encodeURIComponent(orderId)}`
+    const res = await api.payments.start(orderId, method)
+    const url = res?.redirectPath || res?.checkoutUrl
+    if (!url) throw new Error('No se recibió el enlace de pago')
+    if (res.fallback) {
+      const btn = $('place-order-btn')
+      if (btn) btn.textContent = `${METHOD_NAMES[res.requestedMethod]} no está disponible. Te llevamos a ${METHOD_NAMES[res.method]}…`
+      await new Promise((r) => setTimeout(r, 2000))
     }
-    const res = method === 'mercadopago'
-      ? await api.payments.createPreference(orderId)
-      : method === 'addi'
-        ? await api.payments.addi.createCheckout(orderId)
-        : await api.payments.wompi.createCheckout(orderId)
-    if (!res?.checkoutUrl) throw new Error('No se recibió el enlace de pago')
-    return res.checkoutUrl
+    return url
   }
 
   $('place-order-btn')?.addEventListener('click', async () => {

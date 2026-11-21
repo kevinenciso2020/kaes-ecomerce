@@ -243,6 +243,8 @@ export const api = {
   payments: {
     methods: () => request('/payments/methods'),
     createPreference: (orderId) => request('/payments/create-preference', { method: 'POST', body: JSON.stringify({ orderId }) }),
+    // Inicia el pago con el método elegido; el backend usa otra pasarela si esa falla.
+    start: (orderId, method) => request('/payments/start', { method: 'POST', body: JSON.stringify({ orderId, method }) }),
     getStatus: (orderId) => request(`/payments/status/${orderId}`),
     verify: (orderId, data = {}) => request(`/payments/verify/${orderId}`, { method: 'POST', body: JSON.stringify(data) }),
     wompi: {
