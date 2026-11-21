@@ -36,7 +36,7 @@
   --space-20: 5rem;
 
   --max-width:     1280px;
-  --header-height: 112px; /* barra + fila del buscador */
+  --header-height: 64px;
   --container-padding: 1rem;
 
   --radius-sm: 4px;
@@ -54,11 +54,6 @@
 
 @media (min-width: 768px) {
   :root { --container-padding: 1.5rem; }
-}
-
-/* Escritorio ancho: el buscador cabe en la misma fila del header */
-@media (min-width: 1100px) {
-  :root { --header-height: 64px; }
 }
 
 @media (min-width: 1024px) {
