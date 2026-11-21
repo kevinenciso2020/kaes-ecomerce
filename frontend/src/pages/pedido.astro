@@ -361,6 +361,9 @@ import ShopLayout from '../layouts/ShopLayout.astro'
     margin:    0.2rem 0;
   }
 
+  /* display:flex anula el atributo hidden: sin esto se ven los tres estados a la vez */
+  .loading-page[hidden],
+  .error-page[hidden] { display: none; }
   .loading-page,
   .error-page {
     min-height: 60vh;
