@@ -76,11 +76,9 @@ const backendUrl = () => (process.env.BACKEND_URL || '').replace(/\/$/, '')
 // POST /api/v1/payments/wompi/checkout
 // Devuelve la URL del Web Checkout de Wompi para una orden PENDING.
 // ─────────────────────────────────────────
-const wompiCheckout = async (req, res, next) => {
-  try {
+const startWompi = async (order, req) => {
     if (!wompi.isWompiConfigured()) throw httpError(503, 'Pagos con Wompi no disponibles en este momento')
 
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
     const amountInCents = Math.round(Number(order.total) * 100)
     const reference = wompi.buildReference(order.id)
     const expirationTime = new Date(Date.now() + CHECKOUT_TTL_MINUTES * 60 * 1000).toISOString()
@@ -102,7 +100,13 @@ const wompiCheckout = async (req, res, next) => {
     })
 
     req.log?.info({ orderId: order.id, reference, amountInCents }, 'payment.wompi.checkout_created')
-    return res.json({ checkoutUrl, reference })
+    return { checkoutUrl, reference }
+}
+const wompiCheckout = async (req, res, next) => {
+  try {
+    if (!wompi.isWompiConfigured()) throw httpError(503, 'Pagos con Wompi no disponibles en este momento')
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    return res.json(await startWompi(order, req))
   } catch (err) {
     next(err)
   }
@@ -163,11 +167,9 @@ router.post('/wompi/webhook', async (req, res) => {
 // ─────────────────────────────────────────
 // POST /api/v1/payments/create-preference   (MercadoPago)
 // ─────────────────────────────────────────
-router.post('/create-preference', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
-  try {
+const startMercadoPago = async (order, req) => {
     if (!isMercadoPagoConfigured()) throw httpError(503, 'Pagos con MercadoPago no disponibles en este momento')
 
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
     const shortId = order.id.slice(-8).toUpperCase()
 
     // Un solo ítem por el TOTAL de la orden: así el monto cobrado incluye
@@ -204,7 +206,13 @@ router.post('/create-preference', isAuth, requireVerifiedEmail, paymentInitLimit
 
     req.log?.info({ orderId: order.id, preferenceId: preference.id }, 'payment.mp.preference_created')
     // init_point sirve tanto para credenciales de prueba como productivas.
-    return res.json({ preferenceId: preference.id, checkoutUrl: preference.init_point, initPoint: preference.init_point })
+    return { preferenceId: preference.id, checkoutUrl: preference.init_point, initPoint: preference.init_point }
+}
+router.post('/create-preference', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+  try {
+    if (!isMercadoPagoConfigured()) throw httpError(503, 'Pagos con MercadoPago no disponibles en este momento')
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    return res.json(await startMercadoPago(order, req))
   } catch (err) {
     next(err)
   }
@@ -274,11 +282,8 @@ router.post('/webhook', async (req, res) => {
 // POST /api/v1/payments/addi/checkout
 // Crea la solicitud de crédito en Addi y devuelve la URL a la que se redirige.
 // ─────────────────────────────────────────
-router.post('/addi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
-  try {
+const startAddi = async (order, req) => {
     if (!addi.isAddiConfigured()) throw httpError(503, 'Pagos con Addi no disponibles en este momento')
-
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
 
     const limits = await addi.getAmountLimits(order.total)
     if (limits && (Number(order.total) < limits.min || Number(order.total) > limits.max)) {
@@ -299,7 +304,13 @@ router.post('/addi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, 
     await prisma.order.update({ where: { id: order.id }, data: { paymentProvider: 'ADDI' } })
 
     req.log?.info({ orderId: order.id }, 'payment.addi.application_created')
-    return res.json({ checkoutUrl })
+    return { checkoutUrl }
+}
+router.post('/addi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+  try {
+    if (!addi.isAddiConfigured()) throw httpError(503, 'Pagos con Addi no disponibles en este momento')
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    return res.json(await startAddi(order, req))
   } catch (err) {
     next(err)
   }
@@ -359,13 +370,17 @@ const loadOwnOrder = async (orderId, user) => {
 }
 
 // POST /api/v1/payments/transfer/start — elige transferencia y devuelve las cuentas.
+const startTransfer = async (order, req) => {
+  if (!isTransferConfigured()) throw httpError(503, 'Pagos por transferencia no disponibles en este momento')
+  const info = await BankTransfer.startTransfer(order)
+  req.log?.info({ orderId: order.id }, 'payment.transfer.started')
+  return info
+}
 router.post('/transfer/start', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
   try {
     if (!isTransferConfigured()) throw httpError(503, 'Pagos por transferencia no disponibles en este momento')
     const order = await loadPayableOrder(req.body?.orderId, req.user)
-    const info = await BankTransfer.startTransfer(order)
-    req.log?.info({ orderId: order.id }, 'payment.transfer.started')
-    return res.json(info)
+    return res.json(await startTransfer(order, req))
   } catch (err) {
     next(err)
   }
@@ -507,6 +522,77 @@ router.get('/status/:orderId', isAuth, async (req, res, next) => {
     }
     const { userId, ...rest } = order
     return res.json(rest)
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ─────────────────────────────────────────
+// POST /api/v1/payments/start { orderId, method }
+// Inicia el pago con el método elegido; si la pasarela falla (caída, timeout,
+// error 5xx, no disponible) prueba automáticamente las demás activas.
+// ─────────────────────────────────────────
+const STARTERS = {
+  wompi:       { provider: 'WOMPI',    run: startWompi },
+  mercadopago: { provider: 'MERCADOPAGO', run: startMercadoPago },
+  addi:        { provider: 'ADDI',     run: startAddi },
+  transfer:    { provider: 'BANK_TRANSFER', run: startTransfer },
+}
+// Orden de reemplazo: pasarelas con tarjeta/PSE primero, transferencia al final.
+const FALLBACK_ORDER = ['wompi', 'mercadopago', 'addi', 'transfer']
+const START_TIMEOUT_MS = 12_000
+
+const withTimeout = (promise, ms, label) => {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(httpError(504, `${label} no respondió a tiempo`)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+router.post('/start', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+  try {
+    const requested = String(req.body?.method || '')
+    if (!STARTERS[requested]) throw httpError(400, 'Método de pago no válido')
+
+    // Las validaciones de la orden (pagada, en revisión, sin stock…) no activan el fallback.
+    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const chain = [requested, ...FALLBACK_ORDER.filter((m) => m !== requested)]
+    const failures = []
+
+    for (const method of chain) {
+      try {
+        const result = await withTimeout(STARTERS[method].run(order, req), START_TIMEOUT_MS, method)
+        // Transferencia ya guarda su propio proveedor; los demás lo fijan en su starter.
+        if (failures.length) {
+          req.log?.warn({ orderId: order.id, requested, used: method, failures }, 'payment.fallback_used')
+          captureError(new Error(`Fallback de pago: ${requested} → ${method}`), { orderId: order.id, failures })
+        }
+        return res.json({
+          method,
+          requestedMethod: requested,
+          fallback: method !== requested,
+          ...(method === 'transfer' ? { redirectPath: `/checkout/transferencia?orderId=${encodeURIComponent(order.id)}` } : { checkoutUrl: result.checkoutUrl }),
+        })
+      } catch (err) {
+        const status = err.status || 500
+        // 503 = método no configurado; 409 ADDI_AMOUNT_OUT_OF_RANGE = no aplica a este monto.
+        // 5xx/timeouts/errores del SDK = la pasarela falló. Todos pasan al siguiente.
+        // Cualquier otro 4xx es un error del cliente/orden: no tiene sentido reintentar.
+        const skippable = status >= 500 || err.code === 'ADDI_AMOUNT_OUT_OF_RANGE'
+        if (!skippable) throw err
+        failures.push({ method, status, message: err.message })
+        req.log?.warn({ orderId: order.id, method, status, err: err.message }, 'payment.start_failed')
+      }
+    }
+
+    req.log?.error({ orderId: order.id, requested, failures }, 'payment.all_gateways_failed')
+    captureError(new Error('Ninguna pasarela de pago respondió'), { orderId: order.id, failures })
+    // Respuesta directa: el middleware de errores enmascara el mensaje de los 5xx.
+    return res.status(503).json({
+      error: 'No pudimos conectar con ninguna pasarela de pago en este momento. Tu pedido quedó creado: intenta de nuevo en unos minutos.',
+      code: 'NO_PAYMENT_GATEWAY',
+    })
   } catch (err) {
     next(err)
   }

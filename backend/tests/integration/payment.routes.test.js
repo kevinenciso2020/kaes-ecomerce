@@ -269,6 +269,66 @@ describe('POST /api/v1/payments/create-preference', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────
+// Inicio de pago con fallback entre pasarelas
+// ─────────────────────────────────────────────────────────────
+describe('POST /api/v1/payments/start (fallback)', () => {
+  const start = (body, token = customerToken()) =>
+    request(app).post('/api/v1/payments/start').set('Authorization', `Bearer ${token}`).send(body)
+
+  it('400 si el método no es válido', async () => {
+    const res = await start({ orderId: 'ord1', method: 'paypal' })
+    expect(res.status).toBe(400)
+  })
+
+  it('usa el método elegido sin fallback cuando funciona', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    const res = await start({ orderId: 'ord1', method: 'wompi' })
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ method: 'wompi', requestedMethod: 'wompi', fallback: false })
+    expect(new URL(res.body.checkoutUrl).hostname).toBe('checkout.wompi.co')
+    expect(mocks.preferenceCreate).not.toHaveBeenCalled()
+  })
+
+  it('si MercadoPago falla, cae a Wompi y lo informa', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.preferenceCreate.mockRejectedValueOnce(new Error('MP caído'))
+    const res = await start({ orderId: 'ord1', method: 'mercadopago' })
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ method: 'wompi', requestedMethod: 'mercadopago', fallback: true })
+    expect(mocks.prisma.order.update).toHaveBeenCalledWith({
+      where: { id: 'ord1' },
+      data: expect.objectContaining({ paymentProvider: 'WOMPI' }),
+    })
+  })
+
+  it('si Wompi no está disponible, cae a MercadoPago', async () => {
+    delete process.env.WOMPI_INTEGRITY_SECRET
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.preferenceCreate.mockResolvedValueOnce({ id: 'pref-1', init_point: 'https://mp/init' })
+    const res = await start({ orderId: 'ord1', method: 'wompi' })
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ method: 'mercadopago', fallback: true, checkoutUrl: 'https://mp/init' })
+  })
+
+  it('503 NO_PAYMENT_GATEWAY si ninguna pasarela responde', async () => {
+    delete process.env.WOMPI_INTEGRITY_SECRET
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    mocks.preferenceCreate.mockRejectedValueOnce(new Error('MP caído'))
+    const res = await start({ orderId: 'ord1', method: 'wompi' })
+    expect(res.status).toBe(503)
+    expect(res.body.code).toBe('NO_PAYMENT_GATEWAY')
+  })
+
+  it('un error de la orden (ya pagada) NO activa el fallback', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder({ status: 'CONFIRMED', stockDeducted: true }))
+    const res = await start({ orderId: 'ord1', method: 'wompi' })
+    expect(res.status).toBe(409)
+    expect(res.body.code).toBe('ORDER_ALREADY_PAID')
+    expect(mocks.preferenceCreate).not.toHaveBeenCalled()
+  })
+})
+
 describe('POST /api/v1/payments/webhook (MercadoPago)', () => {
   const sign = (dataId, requestId, ts = '1790000000') => {
     const v1 = crypto.createHmac('sha256', 'mp_secret').update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex')
