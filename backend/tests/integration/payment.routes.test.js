@@ -58,6 +58,7 @@ vi.mock('../../src/services/bank-transfer.service.js', async (importOriginal) =>
 
 import request from 'supertest'
 import app from '../../src/app.js'
+import { signGuestToken } from '../../src/services/guest.service.js'
 
 const tokenFor = (payload) => jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' })
 const customerToken = () => tokenFor({ id: 'u1', email: 'c@d.com', role: 'CUSTOMER', emailVerified: true })
@@ -326,6 +327,46 @@ describe('POST /api/v1/payments/start (fallback)', () => {
     expect(res.status).toBe(409)
     expect(res.body.code).toBe('ORDER_ALREADY_PAID')
     expect(mocks.preferenceCreate).not.toHaveBeenCalled()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Pagos de invitado (token en x-guest-token, sin cuenta)
+// ─────────────────────────────────────────────────────────────
+describe('Pagos como invitado', () => {
+  const guestOrder = (over = {}) => baseOrder({
+    userId: null, user: null, shippingAddress: null,
+    guestEmail: 'ana@correo.com', guestName: 'Ana', guestPhone: '3001234567',
+    guestShipping: { fullName: 'Ana P', phone: '3001234567', street: 'Calle 1', departamento: 'Antioquia', municipio: 'Medellín' },
+    ...over,
+  })
+  const startAs = (token, body = { orderId: 'ord1', method: 'wompi' }) =>
+    request(app).post('/api/v1/payments/start').set('x-guest-token', token).send(body)
+
+  it('paga con el token de SU orden, sin cuenta ni email verificado', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(guestOrder())
+    const res = await startAs(signGuestToken('ord1'))
+    expect(res.status).toBe(200)
+    const url = new URL(res.body.checkoutUrl)
+    expect(url.searchParams.get('customer-data:email')).toBe('ana@correo.com')
+  })
+
+  it('404 con el token de otra orden', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(guestOrder())
+    expect((await startAs(signGuestToken('otra'))).status).toBe(404)
+  })
+
+  it('401 sin sesión ni token; un token de invitado no abre órdenes de cuentas', async () => {
+    expect((await request(app).post('/api/v1/payments/start').send({ orderId: 'ord1', method: 'wompi' })).status).toBe(401)
+    mocks.prisma.order.findUnique.mockResolvedValueOnce(baseOrder())
+    expect((await startAs(signGuestToken('ord1'))).status).toBe(404)
+  })
+
+  it('consulta el estado de su orden con el token', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValueOnce({ id: 'ord1', userId: null, status: 'PENDING', total: '64900', payment: null })
+    const res = await request(app).get('/api/v1/payments/status/ord1').set('x-guest-token', signGuestToken('ord1'))
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('PENDING')
   })
 })
 

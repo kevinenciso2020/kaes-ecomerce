@@ -1,0 +1,383 @@
+---
+import ShopLayout from '../layouts/ShopLayout.astro'
+---
+
+<ShopLayout title="Seguimiento de tu pedido">
+  <div class="order-page container" id="order-content" hidden>
+
+    <a href="/productos" class="back-link">← Seguir comprando</a>
+    <div id="pay-banner" class="pay-banner" hidden></div>
+
+    <div class="order-header">
+      <h1 class="page-title">Orden #<span id="order-id"></span></h1>
+      <p class="order-date">Fecha: <span id="order-date"></span></p>
+      <span id="order-status" class="status-badge"></span>
+    </div>
+
+    <div class="order-grid">
+      <div class="order-card">
+        <h2 class="card-title">Productos</h2>
+        <div id="order-items"></div>
+      </div>
+
+      <div class="order-sidebar">
+        <div class="order-card">
+          <h2 class="card-title">Resumen</h2>
+          <div class="totals" id="order-totals"></div>
+        </div>
+        <div class="order-card" id="pay-card" hidden>
+          <h2 class="card-title">Pago pendiente</h2>
+          <p class="pay-text">Este pedido aún no está pagado. Puedes pagarlo ahora; se cancelará automáticamente si no se paga.</p>
+          <div class="pay-methods" id="pay-methods">
+            <button type="button" class="btn btn-primary btn-full" data-method="wompi" id="pay-wompi">Pagar con Wompi</button>
+            <button type="button" class="btn btn-outline btn-full" data-method="mercadopago" id="pay-mp">Pagar con MercadoPago</button>
+            <button type="button" class="btn btn-outline btn-full" data-method="addi" id="pay-addi" hidden>Pagar a cuotas con Addi</button>
+            <button type="button" class="btn btn-outline btn-full" data-method="transfer" id="pay-transfer" hidden>Pagar por transferencia (Nequi, Bancolombia, Bre-B)</button>
+          </div>
+          <p class="pay-error" id="pay-error" role="alert" hidden></p>
+        </div>
+
+        <div class="order-card" id="invoice-card" hidden>
+          <h2 class="card-title">Factura electrónica</h2>
+          <p class="pay-text" id="invoice-text"></p>
+          <button type="button" class="btn btn-outline btn-full" id="invoice-download">Descargar factura (PDF)</button>
+          <p class="pay-error" id="invoice-error" role="alert" hidden></p>
+        </div>
+
+        <div class="order-card">
+          <h2 class="card-title">Envío</h2>
+          <div id="order-shipping"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="order-loading" class="loading-page">
+    <p>Cargando orden...</p>
+  </div>
+
+  <div id="order-error" hidden class="error-page">
+    <p id="error-message">Error cargando la orden</p>
+    <a href="/productos" class="btn btn-primary">Ir a la tienda</a>
+  </div>
+
+  <div id="order-unauthorized" hidden class="error-page">
+    <p>Este enlace no es válido o venció. Abre el enlace de seguimiento que te enviamos al correo o escríbenos.</p>
+    <a href="/contacto" class="btn btn-primary">Contactar a la tienda</a>
+  </div>
+</ShopLayout>
+
+<script>
+  import { api } from '../lib/api.js'
+  import { escapeHtml } from '../lib/sanitize.js'
+  import { saveGuestToken, getGuestToken } from '../lib/guest.js'
+
+  // Pedido de invitado: el enlace del correo trae ?orderId=…&token=…; se guarda
+  // en el navegador para que el resto del flujo (pago, comprobante) lo use.
+  const params = new URLSearchParams(window.location.search)
+  const orderId = params.get('orderId') || ''
+  if (orderId && params.get('token')) saveGuestToken(orderId, params.get('token'))
+  const guestToken = getGuestToken(orderId)
+
+  const statusLabels = {
+    PENDING:    { label: 'Pendiente',    cls: 'pending' },
+    CONFIRMED:  { label: 'Confirmado',   cls: 'confirmed' },
+    PROCESSING: { label: 'Procesando',   cls: 'processing' },
+    SHIPPED:    { label: 'Enviado',      cls: 'shipped' },
+    DELIVERED:  { label: 'Entregado',    cls: 'delivered' },
+    CANCELLED:  { label: 'Cancelado',    cls: 'cancelled' },
+    REFUNDED:   { label: 'Reembolsado',  cls: 'refunded' },
+  }
+
+  const showOnly = (id) => {
+    ['order-loading', 'order-content', 'order-error', 'order-unauthorized'].forEach((k) => {
+      const el = document.getElementById(k)
+      if (el) el.hidden = k !== id
+    })
+  }
+
+  const money = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('es-CO')
+
+  const setupPayment = async (order) => {
+    const payable = order.status === 'PENDING' && !order.stockDeducted && !order.needsReview
+    const banner = document.getElementById('pay-banner')
+    if (params.get('pago') === 'error') {
+      banner.textContent = 'Tu pedido quedó creado, pero no pudimos abrir la pasarela de pago. Intenta pagarlo de nuevo aquí.'
+      banner.hidden = false
+    }
+    if (order.needsReview) {
+      banner.textContent = 'Recibimos tu pago y estamos revisando tu pedido. Te contactaremos pronto.'
+      banner.hidden = false
+    }
+    if (!payable) return
+
+    // Transferencia con comprobante ya enviado: esperar la revisión.
+    if (order.paymentProvider === 'BANK_TRANSFER' && order.payment?.status === 'PENDING') {
+      banner.innerHTML = 'Recibimos tu comprobante de transferencia y lo estamos revisando. ' +
+        `<a href="/checkout/transferencia?orderId=${encodeURIComponent(order.id)}">Ver estado o cambiar comprobante</a>`
+      banner.hidden = false
+      return
+    }
+
+    document.getElementById('pay-card').hidden = false
+    try {
+      const methods = await api.payments.methods()
+      document.getElementById('pay-wompi').hidden = !methods.wompi
+      document.getElementById('pay-mp').hidden = !methods.mercadopago
+      document.getElementById('pay-addi').hidden = !methods.addi
+      document.getElementById('pay-transfer').hidden = !methods.transfer
+    } catch { /* dejar Wompi y MercadoPago */ }
+
+    document.querySelectorAll('#pay-methods [data-method]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const errEl = document.getElementById('pay-error')
+        errEl.hidden = true
+        document.querySelectorAll('#pay-methods button').forEach((b) => { b.disabled = true })
+        const original = btn.textContent
+        btn.textContent = 'Conectando…'
+        try {
+          const method = btn.dataset.method
+          if (method === 'transfer') {
+            await api.payments.transfer.start(order.id)
+            window.location.href = `/checkout/transferencia?orderId=${encodeURIComponent(order.id)}`
+            return
+          }
+          const res = method === 'mercadopago'
+            ? await api.payments.createPreference(order.id)
+            : method === 'addi'
+              ? await api.payments.addi.createCheckout(order.id)
+              : await api.payments.wompi.createCheckout(order.id)
+          window.location.href = res.checkoutUrl
+        } catch (err) {
+          errEl.textContent = err.message || 'No pudimos iniciar el pago'
+          errEl.hidden = false
+          document.querySelectorAll('#pay-methods button').forEach((b) => { b.disabled = false })
+          btn.textContent = original
+        }
+      })
+    })
+    if (params.get('pagar') === '1') document.getElementById('pay-card').scrollIntoView({ behavior: 'smooth' })
+  }
+
+  async function loadOrder() {
+    if (!orderId || !guestToken) {
+      showOnly('order-unauthorized')
+      return
+    }
+    try {
+      // El token solo abre ESTE pedido (el backend responde 404 si no coincide).
+      const order = await api.orders.guestDetail(orderId, guestToken)
+      showOnly('order-content')
+      setupPayment(order)
+
+      document.getElementById('order-id').textContent = order.id.slice(-6).toUpperCase()
+      document.getElementById('order-date').textContent = new Date(order.createdAt).toLocaleString('es-CO')
+
+      const statusEl = document.getElementById('order-status')
+      const statusInfo = statusLabels[order.status]
+      statusEl.textContent = statusInfo?.label || order.status
+      statusEl.className = `status-badge ${statusInfo?.cls || ''}`
+
+      const itemsEl = document.getElementById('order-items')
+      itemsEl.innerHTML = (order.items || []).map((item) => `
+        <div class="item-row">
+          <div class="item-info">
+            <span class="item-name">${escapeHtml(item.product?.name || 'Producto')}</span>
+            <span class="item-qty">Cantidad: ${item.quantity}${item.size ? ` · Talla ${escapeHtml(item.size)}` : ''}${item.color ? ` · ${escapeHtml(item.color)}` : ''}</span>
+          </div>
+          <span class="item-price">$${(item.quantity * Number(item.price)).toLocaleString('es-CO')}</span>
+        </div>
+      `).join('')
+
+      document.getElementById('order-totals').innerHTML = `
+        <div class="total-row"><span>Subtotal</span><span>$${Number(order.subtotal || 0).toLocaleString('es-CO')}</span></div>
+        <div class="total-row"><span>Descuento</span><span>-$${Number(order.discount || 0).toLocaleString('es-CO')}</span></div>
+        <div class="total-row"><span>Envío</span><span>${Number(order.shipping) > 0 ? money(order.shipping) : 'Gratis'}</span></div>
+        <div class="total-row total-final"><span>Total</span><span>$${Number(order.total).toLocaleString('es-CO')}</span></div>
+      `
+
+      const invoice = (order.electronicDocuments || []).find((d) => d.type === 'INVOICE')
+      if (invoice) {
+        document.getElementById('invoice-card').hidden = false
+        document.getElementById('invoice-text').textContent = `Factura ${invoice.fullNumber}, validada por la DIAN. También la enviamos a tu correo.`
+        document.getElementById('invoice-download').onclick = async (e) => {
+          const btn = e.currentTarget
+          const errEl = document.getElementById('invoice-error')
+          btn.disabled = true
+          errEl.hidden = true
+          try {
+            await api.orders.downloadGuestInvoice(order.id, guestToken)
+          } catch (err) {
+            errEl.textContent = err.message || 'No se pudo descargar la factura'
+            errEl.hidden = false
+          } finally {
+            btn.disabled = false
+          }
+        }
+      }
+
+      const shippingEl = document.getElementById('order-shipping')
+      if (order.shippingAddress) {
+        const addr = order.shippingAddress
+        const departamento = addr.departamento || addr.department || ''
+        const municipio    = addr.municipio || addr.city || ''
+        const zip          = addr.zipCode || addr.postalCode || ''
+        const fullName     = addr.fullName ? `<p>${escapeHtml(addr.fullName)}</p>` : ''
+        const phone        = addr.phone ? `<p>Tel: ${escapeHtml(addr.phone)}</p>` : ''
+        shippingEl.innerHTML = `
+          ${fullName}
+          ${phone}
+          <p>${escapeHtml(addr.street || '')}</p>
+          <p>${escapeHtml(municipio)}${departamento ? ', ' + escapeHtml(departamento) : ''}</p>
+          ${zip ? `<p>${escapeHtml(zip)}</p>` : ''}
+        `
+      } else {
+        shippingEl.innerHTML = '<p>Retiro en tienda</p>'
+      }
+
+    } catch (err) {
+      document.getElementById('error-message').textContent = err.message || 'Error cargando la orden'
+      showOnly('order-error')
+    }
+  }
+
+  loadOrder()
+</script>
+
+<style>
+  .pay-banner { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; border-radius: var(--radius-md); padding: 0.75rem 1rem; margin-bottom: 1rem; font-size: 0.875rem; }
+  .pay-text { font-size: 0.85rem; color: var(--color-gray-600); margin-bottom: 0.85rem; }
+  .pay-methods { display: flex; flex-direction: column; gap: 0.5rem; }
+  .pay-methods button[hidden] { display: none; }
+  .pay-error { color: #991b1b; font-size: 0.85rem; margin-top: 0.6rem; }
+  .order-page {
+    padding-top:    calc(var(--header-height) + 1.5rem);
+    padding-bottom: 3rem;
+  }
+
+  .back-link {
+    display:       inline-block;
+    color:         var(--color-gray-500);
+    text-decoration: none;
+    font-size:     0.85rem;
+    margin-bottom: 1.25rem;
+  }
+  .back-link:hover { color: var(--color-black); }
+
+  .order-header { margin-bottom: 1.5rem; }
+
+  .page-title {
+    font-family: var(--font-serif);
+    font-size:   1.5rem;
+    font-weight: 600;
+    color:       var(--color-black);
+    margin-bottom: 0.4rem;
+  }
+
+  .order-date {
+    font-size:     0.85rem;
+    color:         var(--color-gray-500);
+    margin-bottom: 0.85rem;
+  }
+
+  .status-badge {
+    display:     inline-block;
+    padding:     0.3rem 0.85rem;
+    border-radius: var(--radius-full);
+    font-size:   0.78rem;
+    font-weight: 500;
+  }
+
+  .status-badge.pending    { background: #fef3c7; color: #92400e; }
+  .status-badge.confirmed  { background: #dbeafe; color: #1e40af; }
+  .status-badge.processing { background: #e0e7ff; color: #3730a3; }
+  .status-badge.shipped    { background: #d1fae5; color: #065f46; }
+  .status-badge.delivered  { background: #dcfce7; color: #166534; }
+  .status-badge.cancelled  { background: #fee2e2; color: #991b1b; }
+  .status-badge.refunded   { background: #f3e8ff; color: #6b21a8; }
+
+  .order-grid {
+    display:               grid;
+    grid-template-columns: 1fr;
+    gap:                   1.25rem;
+    align-items:           start;
+  }
+
+  .order-card {
+    background:    var(--color-white);
+    border:        1px solid var(--color-gray-200);
+    border-radius: var(--radius-lg);
+    padding:       1.25rem;
+  }
+
+  .card-title {
+    font-size:      0.7rem;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color:          var(--color-gray-500);
+    margin-bottom:  0.85rem;
+    padding-bottom: 0.6rem;
+    border-bottom:  1px solid var(--color-gray-100);
+  }
+
+  .item-row {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     center;
+    gap:             0.5rem;
+    padding:         0.75rem 0;
+    border-bottom:   1px solid var(--color-gray-100);
+  }
+  .item-row:last-child { border-bottom: none; }
+
+  .item-info  { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+  .item-name  { font-weight: 500; color: var(--color-black); }
+  .item-qty   { font-size: 0.8rem; color: var(--color-gray-500); }
+  .item-price { font-weight: 600; color: var(--color-black); white-space: nowrap; }
+
+  .totals { display: flex; flex-direction: column; gap: 0.4rem; }
+
+  .total-row {
+    display:         flex;
+    justify-content: space-between;
+    font-size:       0.85rem;
+    color:           var(--color-gray-600);
+  }
+
+  .total-final {
+    padding-top:   0.6rem;
+    margin-top:    0.4rem;
+    border-top:    1px solid var(--color-gray-200);
+    font-weight:   600;
+    font-size:     0.95rem;
+    color:         var(--color-black);
+  }
+
+  #order-shipping p {
+    font-size: 0.85rem;
+    color:     var(--color-gray-600);
+    margin:    0.2rem 0;
+  }
+
+  .loading-page,
+  .error-page {
+    min-height: 60vh;
+    display:    flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap:        1rem;
+    color:      var(--color-gray-500);
+    padding:    1rem;
+    text-align: center;
+  }
+
+  @media (min-width: 768px) {
+    .order-page { padding-top: calc(var(--header-height) + 2rem); padding-bottom: 4rem; }
+    .order-grid { grid-template-columns: 1fr 340px; gap: 1.5rem; }
+    .order-card { padding: 1.5rem; }
+    .page-title { font-size: 1.75rem; }
+  }
+</style>

@@ -7,8 +7,8 @@ import * as addi from '../config/addi.js'
 import { isTransferConfigured } from '../config/bank-transfer.js'
 import { prisma } from '../config/prisma.js'
 import { captureError } from '../config/sentry.js'
-import { isAuth } from '../middleware/auth.middleware.js'
-import { requireVerifiedEmail } from '../middleware/requireVerifiedEmail.middleware.js'
+import { isAuthOrGuest } from '../middleware/auth.middleware.js'
+import { requireVerifiedEmailUnlessGuest } from '../middleware/requireVerifiedEmail.middleware.js'
 import { paymentInitLimiter } from '../middleware/rateLimit.middleware.js'
 import { proofUpload, cleanupTempFiles } from '../middleware/upload.middleware.js'
 import {
@@ -18,10 +18,10 @@ import {
   mapAddiStatus,
 } from '../services/payment.service.js'
 import * as BankTransfer from '../services/bank-transfer.service.js'
+import { canAccessOrder, withGuestCustomer } from '../services/guest.service.js'
 
 const router = express.Router()
 
-const isAdminRole = (role) => role === 'ADMIN' || role === 'SUPER_ADMIN'
 
 const httpError = (status, message, code) => Object.assign(new Error(message), { status, code })
 
@@ -29,7 +29,7 @@ const httpError = (status, message, code) => Object.assign(new Error(message), {
 const CHECKOUT_TTL_MINUTES = 60
 
 /** Carga una orden del usuario lista para pagar o lanza el error adecuado. */
-const loadPayableOrder = async (orderId, user) => {
+const loadPayableOrder = async (orderId, actor) => {
   if (!orderId || typeof orderId !== 'string') throw httpError(400, 'orderId requerido')
 
   const order = await prisma.order.findUnique({
@@ -41,7 +41,7 @@ const loadPayableOrder = async (orderId, user) => {
       payment: { select: { status: true } },
     },
   })
-  if (!order || (order.userId !== user.id && !isAdminRole(user.role))) {
+  if (!canAccessOrder(order, actor)) {
     throw httpError(404, 'Orden no encontrada')
   }
   if (order.stockDeducted || order.status === 'CONFIRMED') {
@@ -66,7 +66,7 @@ const loadPayableOrder = async (orderId, user) => {
       throw httpError(409, 'Uno de los productos de tu pedido se agotó. Revisa tu carrito.', 'INSUFFICIENT_STOCK')
     }
   }
-  return order
+  return withGuestCustomer(order)
 }
 
 const frontendUrl = () => (process.env.FRONTEND_URL || '').replace(/\/$/, '')
@@ -105,15 +105,15 @@ const startWompi = async (order, req) => {
 const wompiCheckout = async (req, res, next) => {
   try {
     if (!wompi.isWompiConfigured()) throw httpError(503, 'Pagos con Wompi no disponibles en este momento')
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const order = await loadPayableOrder(req.body?.orderId, req)
     return res.json(await startWompi(order, req))
   } catch (err) {
     next(err)
   }
 }
-router.post('/wompi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, wompiCheckout)
+router.post('/wompi/checkout', isAuthOrGuest, requireVerifiedEmailUnlessGuest, paymentInitLimiter, wompiCheckout)
 // Alias de compatibilidad con el frontend anterior.
-router.post('/wompi/create-checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, wompiCheckout)
+router.post('/wompi/create-checkout', isAuthOrGuest, requireVerifiedEmailUnlessGuest, paymentInitLimiter, wompiCheckout)
 
 // ─────────────────────────────────────────
 // POST /api/v1/payments/wompi/webhook
@@ -208,10 +208,10 @@ const startMercadoPago = async (order, req) => {
     // init_point sirve tanto para credenciales de prueba como productivas.
     return { preferenceId: preference.id, checkoutUrl: preference.init_point, initPoint: preference.init_point }
 }
-router.post('/create-preference', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+router.post('/create-preference', isAuthOrGuest, requireVerifiedEmailUnlessGuest, paymentInitLimiter, async (req, res, next) => {
   try {
     if (!isMercadoPagoConfigured()) throw httpError(503, 'Pagos con MercadoPago no disponibles en este momento')
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const order = await loadPayableOrder(req.body?.orderId, req)
     return res.json(await startMercadoPago(order, req))
   } catch (err) {
     next(err)
@@ -306,10 +306,10 @@ const startAddi = async (order, req) => {
     req.log?.info({ orderId: order.id }, 'payment.addi.application_created')
     return { checkoutUrl }
 }
-router.post('/addi/checkout', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+router.post('/addi/checkout', isAuthOrGuest, requireVerifiedEmailUnlessGuest, paymentInitLimiter, async (req, res, next) => {
   try {
     if (!addi.isAddiConfigured()) throw httpError(503, 'Pagos con Addi no disponibles en este momento')
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const order = await loadPayableOrder(req.body?.orderId, req)
     return res.json(await startAddi(order, req))
   } catch (err) {
     next(err)
@@ -363,9 +363,9 @@ router.post('/addi/callback', async (req, res) => {
 // ─────────────────────────────────────────
 // Transferencia manual (Nequi / Bancolombia / Bre-B)
 // ─────────────────────────────────────────
-const loadOwnOrder = async (orderId, user) => {
+const loadOwnOrder = async (orderId, actor) => {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { payment: true } })
-  if (!order || (order.userId !== user.id && !isAdminRole(user.role))) throw httpError(404, 'Orden no encontrada')
+  if (!canAccessOrder(order, actor)) throw httpError(404, 'Orden no encontrada')
   return order
 }
 
@@ -376,10 +376,10 @@ const startTransfer = async (order, req) => {
   req.log?.info({ orderId: order.id }, 'payment.transfer.started')
   return info
 }
-router.post('/transfer/start', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+router.post('/transfer/start', isAuthOrGuest, requireVerifiedEmailUnlessGuest, paymentInitLimiter, async (req, res, next) => {
   try {
     if (!isTransferConfigured()) throw httpError(503, 'Pagos por transferencia no disponibles en este momento')
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const order = await loadPayableOrder(req.body?.orderId, req)
     return res.json(await startTransfer(order, req))
   } catch (err) {
     next(err)
@@ -387,9 +387,9 @@ router.post('/transfer/start', isAuth, requireVerifiedEmail, paymentInitLimiter,
 })
 
 // GET /api/v1/payments/transfer/:orderId — datos y estado (para la página de transferencia).
-router.get('/transfer/:orderId', isAuth, async (req, res, next) => {
+router.get('/transfer/:orderId', isAuthOrGuest, async (req, res, next) => {
   try {
-    const order = await loadOwnOrder(req.params.orderId, req.user)
+    const order = await loadOwnOrder(req.params.orderId, req)
     const info = BankTransfer.getTransferInfo(order)
     return res.json({
       ...info,
@@ -405,14 +405,14 @@ router.get('/transfer/:orderId', isAuth, async (req, res, next) => {
 // POST /api/v1/payments/transfer/:orderId/proof — sube el comprobante (campo "proof").
 router.post(
   '/transfer/:orderId/proof',
-  isAuth,
-  requireVerifiedEmail,
+  isAuthOrGuest,
+  requireVerifiedEmailUnlessGuest,
   paymentInitLimiter,
   proofUpload.single('proof'),
   async (req, res, next) => {
     try {
       if (!isTransferConfigured()) throw httpError(503, 'Pagos por transferencia no disponibles en este momento')
-      const order = await loadPayableOrder(req.params.orderId, req.user)
+      const order = await loadPayableOrder(req.params.orderId, req)
       const info = await BankTransfer.uploadProof(order, req.file)
       return res.status(201).json(info)
     } catch (err) {
@@ -428,11 +428,11 @@ router.post(
 // directamente con el proveedor (fuente de verdad) y lo procesa igual que un
 // webhook (idempotente). Sirve si el webhook se demora o falla.
 // ─────────────────────────────────────────
-router.post('/verify/:orderId', isAuth, paymentInitLimiter, async (req, res, next) => {
+router.post('/verify/:orderId', isAuthOrGuest, paymentInitLimiter, async (req, res, next) => {
   try {
     const { orderId } = req.params
     const order = await prisma.order.findUnique({ where: { id: orderId }, select: { id: true, userId: true, mpPreferenceId: true, paymentProvider: true } })
-    if (!order || (order.userId !== req.user.id && !isAdminRole(req.user.role))) {
+    if (!canAccessOrder(order, req)) {
       throw httpError(404, 'Orden no encontrada')
     }
 
@@ -508,7 +508,7 @@ router.post('/verify/:orderId', isAuth, paymentInitLimiter, async (req, res, nex
 // ─────────────────────────────────────────
 // GET /api/v1/payments/status/:orderId
 // ─────────────────────────────────────────
-router.get('/status/:orderId', isAuth, async (req, res, next) => {
+router.get('/status/:orderId', isAuthOrGuest, async (req, res, next) => {
   try {
     const order = await prisma.order.findUnique({
       where: { id: req.params.orderId },
@@ -517,7 +517,7 @@ router.get('/status/:orderId', isAuth, async (req, res, next) => {
         payment: { select: { status: true, provider: true } },
       },
     })
-    if (!order || (order.userId !== req.user.id && !isAdminRole(req.user.role))) {
+    if (!canAccessOrder(order, req)) {
       return res.status(404).json({ error: 'Orden no encontrada' })
     }
     const { userId, ...rest } = order
@@ -550,13 +550,13 @@ const withTimeout = (promise, ms, label) => {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
-router.post('/start', isAuth, requireVerifiedEmail, paymentInitLimiter, async (req, res, next) => {
+router.post('/start', isAuthOrGuest, requireVerifiedEmailUnlessGuest, paymentInitLimiter, async (req, res, next) => {
   try {
     const requested = String(req.body?.method || '')
     if (!STARTERS[requested]) throw httpError(400, 'Método de pago no válido')
 
     // Las validaciones de la orden (pagada, en revisión, sin stock…) no activan el fallback.
-    const order = await loadPayableOrder(req.body?.orderId, req.user)
+    const order = await loadPayableOrder(req.body?.orderId, req)
     const chain = [requested, ...FALLBACK_ORDER.filter((m) => m !== requested)]
     const failures = []
 

@@ -48,6 +48,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
 <script>
   import { api, ApiError, bootstrapAuth } from '../../lib/api.js'
+  import { getGuestToken } from '../../lib/guest.js'
   import { resetLocalCart } from '../../stores/cart.store.js'
   import { escapeHtml } from '../../lib/sanitize.js'
 
@@ -65,7 +66,9 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
   const render = (info) => {
     $('transfer-loading').hidden = true
     $('transfer-content').hidden = false
-    $('transfer-order-link').href = `/perfil/ordenes/${encodeURIComponent(info.orderId)}`
+    $('transfer-order-link').href = getGuestToken(info.orderId)
+      ? `/pedido?orderId=${encodeURIComponent(info.orderId)}`
+      : `/perfil/ordenes/${encodeURIComponent(info.orderId)}`
     $('transfer-total').textContent = money(info.total)
     $('transfer-ref').textContent = info.reference
 
@@ -163,7 +166,8 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
       window.location.href = '/perfil/ordenes'
       return
     }
-    const user = await bootstrapAuth()
+    // Invitado: basta el token guardado al crear su pedido (sin cuenta).
+    const user = getGuestToken(orderId) ? true : await bootstrapAuth()
     if (!user) {
       window.location.href = `/auth/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
       return

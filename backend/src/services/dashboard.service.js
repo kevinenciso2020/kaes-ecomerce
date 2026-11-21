@@ -1,3 +1,4 @@
+import { withGuestCustomer } from './guest.service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../config/prisma.js'
 import { logger } from '../config/logger.js'
@@ -200,7 +201,7 @@ export const getSalesByCategory = async ({ range = '90d' } = {}) => {
  * Órdenes recientes (top N).
  */
 export const getRecentOrders = async ({ limit = 10 } = {}) => {
-  return prisma.order.findMany({
+  const orders = await prisma.order.findMany({
     take: Number(limit),
     orderBy: { createdAt: 'desc' },
     include: {
@@ -208,6 +209,7 @@ export const getRecentOrders = async ({ limit = 10 } = {}) => {
       _count: { select: { items: true } },
     },
   })
+  return orders.map(withGuestCustomer)
 }
 
 /**

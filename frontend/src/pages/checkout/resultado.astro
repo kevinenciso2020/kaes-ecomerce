@@ -20,6 +20,7 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
 
 <script>
   import { api, ApiError, bootstrapAuth } from '../../lib/api.js'
+  import { getGuestToken } from '../../lib/guest.js'
   import { resetLocalCart } from '../../stores/cart.store.js'
 
   const params = new URLSearchParams(window.location.search)
@@ -77,8 +78,12 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
     }
 
     const actions = []
-    if (orderId) actions.push(`<a href="/perfil/ordenes/${encodeURIComponent(orderId)}" class="btn btn-primary">Ver mi pedido</a>`)
-    if (state === 'declined' && orderId) actions.push(`<a href="/perfil/ordenes/${encodeURIComponent(orderId)}?pagar=1" class="btn btn-outline">Reintentar pago</a>`)
+    const guest = Boolean(getGuestToken(orderId))
+    const id = encodeURIComponent(orderId || '')
+    const orderHref = guest ? `/pedido?orderId=${id}` : `/perfil/ordenes/${id}`
+    const retryHref = getGuestToken(orderId) ? `${orderHref}&pagar=1` : `${orderHref}?pagar=1`
+    if (orderId) actions.push(`<a href="${orderHref}" class="btn btn-primary">Ver mi pedido</a>`)
+    if (state === 'declined' && orderId) actions.push(`<a href="${retryHref}" class="btn btn-outline">Reintentar pago</a>`)
     if (state === 'approved') actions.push('<a href="/productos" class="btn btn-outline">Seguir comprando</a>')
     if (state === 'error' || state === 'review') actions.push('<a href="/contacto" class="btn btn-outline">Contactar a la tienda</a>')
     $('result-actions').innerHTML = actions.join('')
@@ -131,7 +136,8 @@ import ShopLayout from '../../layouts/ShopLayout.astro'
       window.location.href = '/perfil/ordenes'
       return
     }
-    const user = await bootstrapAuth()
+    // Invitado: basta el token guardado al crear su pedido (sin cuenta).
+    const user = getGuestToken(orderId) ? true : await bootstrapAuth()
     if (!user) {
       window.location.href = `/auth/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
       return

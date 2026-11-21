@@ -1,3 +1,4 @@
+import { guestHeaders } from './guest.js'
 // PUBLIC_API_URL es obligatoria (p. ej. https://api.kaes.co/api/v1). Sin
 // fallback a una URL hardcodeada: si falta, se nota en el primer request.
 const BASE_URL = (import.meta.env.PUBLIC_API_URL || '').replace(/\/$/, '')
@@ -119,8 +120,8 @@ const request = async (endpoint, { raw = false, ...options } = {}) => {
 }
 
 /** Descarga un archivo autenticado (PDF/XML) y lo guarda en el navegador. */
-const downloadFile = async (endpoint, fallbackName) => {
-  const res = await request(endpoint, { raw: true })
+const downloadFile = async (endpoint, fallbackName, headers) => {
+  const res = await request(endpoint, { raw: true, ...(headers ? { headers } : {}) })
   const disposition = res.headers.get('Content-Disposition') || ''
   const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] || fallbackName
   const url = URL.createObjectURL(await res.blob())
@@ -173,6 +174,10 @@ export const api = {
   },
   orders: {
     quote:  (data) => request('/orders/quote', { method: 'POST', body: JSON.stringify(data) }),
+    // Invitado: crea la orden sin cuenta y devuelve { order, guestToken }.
+    guestCreate: (data) => request('/orders/guest', { method: 'POST', body: JSON.stringify(data) }),
+    guestDetail: (id, token) => request(`/orders/guest/${encodeURIComponent(id)}`, { headers: { 'x-guest-token': token } }),
+    downloadGuestInvoice: (id, token) => downloadFile(`/orders/guest/${encodeURIComponent(id)}/invoice.pdf`, `factura-${id}.pdf`, { 'x-guest-token': token }),
     create: (data) => request('/orders',      { method: 'POST', body: JSON.stringify(data) }),
     list:   ()     => request('/orders'),
     detail: (id)   => request(`/orders/${id}`),
@@ -242,24 +247,24 @@ export const api = {
   },
   payments: {
     methods: () => request('/payments/methods'),
-    createPreference: (orderId) => request('/payments/create-preference', { method: 'POST', body: JSON.stringify({ orderId }) }),
+    createPreference: (orderId) => request('/payments/create-preference', { method: 'POST', headers: guestHeaders(orderId), body: JSON.stringify({ orderId }) }),
     // Inicia el pago con el método elegido; el backend usa otra pasarela si esa falla.
-    start: (orderId, method) => request('/payments/start', { method: 'POST', body: JSON.stringify({ orderId, method }) }),
-    getStatus: (orderId) => request(`/payments/status/${orderId}`),
-    verify: (orderId, data = {}) => request(`/payments/verify/${orderId}`, { method: 'POST', body: JSON.stringify(data) }),
+    start: (orderId, method) => request('/payments/start', { method: 'POST', headers: guestHeaders(orderId), body: JSON.stringify({ orderId, method }) }),
+    getStatus: (orderId) => request(`/payments/status/${orderId}`, { headers: guestHeaders(orderId) }),
+    verify: (orderId, data = {}) => request(`/payments/verify/${orderId}`, { method: 'POST', headers: guestHeaders(orderId), body: JSON.stringify(data) }),
     wompi: {
-      createCheckout: (orderId) => request('/payments/wompi/checkout', { method: 'POST', body: JSON.stringify({ orderId }) }),
+      createCheckout: (orderId) => request('/payments/wompi/checkout', { method: 'POST', headers: guestHeaders(orderId), body: JSON.stringify({ orderId }) }),
     },
     addi: {
-      createCheckout: (orderId) => request('/payments/addi/checkout', { method: 'POST', body: JSON.stringify({ orderId }) }),
+      createCheckout: (orderId) => request('/payments/addi/checkout', { method: 'POST', headers: guestHeaders(orderId), body: JSON.stringify({ orderId }) }),
     },
     transfer: {
-      start:       (orderId)       => request('/payments/transfer/start', { method: 'POST', body: JSON.stringify({ orderId }) }),
-      info:        (orderId)       => request(`/payments/transfer/${encodeURIComponent(orderId)}`),
+      start:       (orderId)       => request('/payments/transfer/start', { method: 'POST', headers: guestHeaders(orderId), body: JSON.stringify({ orderId }) }),
+      info:        (orderId)       => request(`/payments/transfer/${encodeURIComponent(orderId)}`, { headers: guestHeaders(orderId) }),
       uploadProof: (orderId, file) => {
         const form = new FormData()
         form.append('proof', file)
-        return request(`/payments/transfer/${encodeURIComponent(orderId)}/proof`, { method: 'POST', body: form, headers: {} })
+        return request(`/payments/transfer/${encodeURIComponent(orderId)}/proof`, { method: 'POST', body: form, headers: guestHeaders(orderId) })
       },
     },
   },

@@ -226,7 +226,9 @@ model CartItem {
 
 model Order {
   id                String           @id @default(cuid())
-  userId            String
+  // null = compra como invitado (sin fila en users ni en addresses: el
+  // contacto y la dirección viven en la propia orden para no gastar BD).
+  userId            String?
   status            OrderStatus      @default(PENDING)
   subtotal          Decimal          @db.Decimal(10, 2)
   discount          Decimal          @default(0) @db.Decimal(10, 2)
@@ -261,7 +263,13 @@ model Order {
   buyerName         String?          @db.VarChar(450)
   buyerPersonType   String?          @db.VarChar(1)
 
-  user                User                 @relation(fields: [userId], references: [id])
+  // Compra como invitado: contacto y dirección de envío (snapshot).
+  guestEmail        String?          @db.VarChar(254)
+  guestName         String?          @db.VarChar(200)
+  guestPhone        String?          @db.VarChar(30)
+  guestShipping     Json?
+
+  user                User?                @relation(fields: [userId], references: [id], onDelete: Restrict)
   items               OrderItem[]
   payment             Payment?
   shippingAddress     Address?             @relation(fields: [shippingAddressId], references: [id])

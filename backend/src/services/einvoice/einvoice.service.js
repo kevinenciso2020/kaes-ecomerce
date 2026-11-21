@@ -7,6 +7,7 @@
 //   ACCEPTED → validado por la DIAN (inmutable; se corrige con nota crédito)
 //   REJECTED → la DIAN lo rechazó; requiere corregir y "Reintentar" desde el admin
 //   ERROR    → falló el envío; se reintenta con backoff hasta MAX_ATTEMPTS
+import { withGuestCustomer } from '../guest.service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../config/prisma.js'
 import { logger } from '../../config/logger.js'
@@ -161,7 +162,7 @@ export const amountsFromOrder = (order, config) =>
   })
 
 const buildSignedDocument = async (doc, config) => {
-  const order = await prisma.order.findUnique({ where: { id: doc.orderId }, include: ORDER_INCLUDE })
+  const order = withGuestCustomer(await prisma.order.findUnique({ where: { id: doc.orderId }, include: ORDER_INCLUDE }))
   const invoice = doc.type === 'CREDIT_NOTE' ? await prisma.electronicDocument.findUnique({ where: { id: doc.referenceId } }) : null
   // El adquiriente se congela en la primera generación; la nota crédito usa el de su factura.
   const buyer = doc.buyerSnapshot ?? invoice?.buyerSnapshot ?? buyerFromOrder(order)
@@ -425,7 +426,7 @@ const validatedAt = (doc) => (doc.status === 'ACCEPTED' && doc.dianResponse?.rec
 export const MAX_DELIVERY_ATTEMPTS = 5
 
 export const buildDeliveryFiles = async (doc, config) => {
-  const order = await prisma.order.findUnique({ where: { id: doc.orderId }, include: ORDER_INCLUDE })
+  const order = withGuestCustomer(await prisma.order.findUnique({ where: { id: doc.orderId }, include: ORDER_INCLUDE }))
   const buyer = doc.buyerSnapshot ?? buyerFromOrder(order)
   // Fecha real de validación de la DIAN (no la última modificación de la fila).
   const now = colombiaDateTime(validatedAt(doc) ?? new Date())
@@ -576,6 +577,17 @@ export const getDocumentPdf = async (id) => {
 export const getCustomerInvoicePdf = async (userId, orderId) => {
   const order = await prisma.order.findFirst({ where: { id: orderId, userId }, select: { id: true } })
   if (!order) throw notFound('Orden no encontrada')
+  return invoicePdfForOrder(orderId)
+}
+
+/** Igual para una orden de invitado (el acceso ya lo autorizó su token). */
+export const getGuestInvoicePdf = async (orderId) => {
+  const order = await prisma.order.findFirst({ where: { id: orderId, userId: null }, select: { id: true } })
+  if (!order) throw notFound('Orden no encontrada')
+  return invoicePdfForOrder(orderId)
+}
+
+const invoicePdfForOrder = async (orderId) => {
   const doc = await prisma.electronicDocument.findUnique({ where: { orderId_type: { orderId, type: 'INVOICE' } } })
   if (!doc || doc.status !== 'ACCEPTED') throw notFound('La factura electrónica de esta orden aún no está disponible')
   return getDocumentPdf(doc.id)

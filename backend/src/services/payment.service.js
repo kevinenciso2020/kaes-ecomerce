@@ -200,7 +200,8 @@ export const processPaymentUpdate = async ({
             },
           })
           if (order.couponCode) await consumeCoupon(tx, order.couponCode)
-          await tx.cartItem.deleteMany({ where: { userId: order.userId } })
+          // Un invitado no tiene carrito en la BD (vive en su navegador).
+          if (order.userId) await tx.cartItem.deleteMany({ where: { userId: order.userId } })
           newlyConfirmed = true
           outcome = 'CONFIRMED'
         }

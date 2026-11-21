@@ -1,5 +1,5 @@
 import * as OrderService from '../services/order.service.js'
-import { getCustomerInvoicePdf } from '../services/einvoice/einvoice.service.js'
+import { getCustomerInvoicePdf, getGuestInvoicePdf as getGuestInvoicePdfService } from '../services/einvoice/einvoice.service.js'
 
 export const quoteOrder = async (req, res, next) => {
   try {
@@ -32,6 +32,32 @@ export const getOrderById = async (req, res, next) => {
 export const getInvoicePdf = async (req, res, next) => {
   try {
     const { pdf, fileName } = await getCustomerInvoicePdf(req.user.id, req.params.id)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
+    res.send(pdf)
+  } catch (err) { next(err) }
+}
+
+// ── Invitado ─────────────────────────────────────────────────────
+export const createGuestOrder = async (req, res, next) => {
+  try {
+    const { items, couponCode, notes, contact, address, acceptTerms, buyer } = req.body
+    const result = await OrderService.createGuestOrder({ items, couponCode, notes, contact, address, acceptTerms, buyer })
+    res.status(201).json(result)
+  } catch (err) { next(err) }
+}
+
+export const getGuestOrder = async (req, res, next) => {
+  try {
+    if (req.guest?.orderId !== req.params.id) return res.status(404).json({ error: 'Orden no encontrada' })
+    res.json(await OrderService.getGuestOrderById(req.params.id))
+  } catch (err) { next(err) }
+}
+
+export const getGuestInvoicePdf = async (req, res, next) => {
+  try {
+    if (req.guest?.orderId !== req.params.id) return res.status(404).json({ error: 'Orden no encontrada' })
+    const { pdf, fileName } = await getGuestInvoicePdfService(req.params.id)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`)
     res.send(pdf)
