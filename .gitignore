@@ -12,3 +12,7 @@ coverage/
 # cloudflare / wrangler
 .wrangler/
 .dev.vars*
+backend/.env.bak
+*.env.bak
+backend/.env.bak
+*.env.bak
