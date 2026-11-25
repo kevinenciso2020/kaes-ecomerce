@@ -4,5 +4,5 @@ node_modules
 
 /generated/prisma
 
-agents.md
-claude.md
+AGENTS.md
+CLAUDE.md
